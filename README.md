@@ -2,7 +2,7 @@
 
 面向中文用户的 Navidrome 第三方网页播放器。目标是让自己的音乐库更好找、更好听、更好看。
 
-当前状态：**可运行的首版开发工程，尚未完成真实曲库和发布验收**。产品名称已确认 Tooku；视觉参考 Apple Music 的简洁白色界面，默认浅色，深色可选。本地 Git 已初始化为 main，尚未创建提交或推送。
+当前状态：**可运行的开发工程，真实曲库已进行基础联调，尚未完成发布验收**。白色视觉参考 Apple Music，主界面采用歌单优先的 MusicBee 布局，明暗模式与主题色可选。本地 Git 已提交基线，本轮功能在 codex/library-workspace 分支；没有远程推送。
 
 ## 本地运行
 
@@ -29,6 +29,8 @@ npm.cmd run build
 现已实现：登录和扩展检测、专辑/歌手浏览、中文输入法安全的检索、收藏、普通歌单与保存核实、常驻播放器、队列与循环/随机、逐行/静态歌词、歌词偏移、Media Session、本机快照/收听历史、响应式与主题设置。**实现不代表所有 Navidrome 音频格式、权限和扩展都已实测。**
 
 实际验证和待办见 [开发记录](docs/09-development-status.md)。PWA、拼音搜索、双语/逐词歌词、在线歌词、服务端队列同步和高级音频实验尚未实现。
+
+主界面支持真实曲库切换、独立歌单分类、嵌套文件夹和每库默认视图；账户和外观设置在左上角。分类仅保存于当前浏览器，歌单内容仍在 Navidrome；见 [主界面说明](docs/10-library-workspace.md)。
 
 ## 可选 Docker 部署
 
@@ -83,6 +85,7 @@ node tests/fixtures/server.mjs
 | [播放器设计](docs/06-player.md) | 状态机、队列、歌词时钟、兼容性限制 |
 | [开发计划](docs/07-roadmap.md) | 里程碑、任务依赖、工期估算与验收门槛 |
 | [开发与验收](docs/08-development-and-testing.md) | 本地联调、部署方案、测试矩阵、发布标准 |
+| [主界面说明](docs/10-library-workspace.md) | 曲库切换、文件夹、设置和存储边界 |
 | [开发记录](docs/09-development-status.md) | 实现进度、真实/模拟验证边界与下一步 |
 
 下一步继续完成 M0 代表性格式、转码、真实歌词、权限和写入验收，并迭代播放器细节。依赖许可证已记录于 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，可用 `node scripts/license-notices.mjs` 重新生成；Tooku 原创代码的开源许可尚未指定。
