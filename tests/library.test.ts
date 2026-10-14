@@ -21,3 +21,8 @@ it('prevents folder cycles and preserves children and playlist placements when r
   expect(reparentFolder(profile, 'parent', 'child')).toBe(profile);
   const after = removeFolder(profile, 'parent'); expect(after.folders[0].parentId).toBeNull(); expect(after.placements.p).toEqual({ libraryId: '1', folderId: null });
 });
+it('filters an artist with albums in multiple libraries using paged library boundaries', async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({'subsonic-response':{status:'ok',artist:{name:'共享歌手',album:[{id:'a',name:'第一库专辑'},{id:'b',name:'第二库专辑'}]}}}))).mockResolvedValueOnce(new Response(JSON.stringify({'subsonic-response':{status:'ok',albumList2:{album:[{id:'b',name:'第二库专辑'}]}}})));
+  vi.stubGlobal('fetch',fetch); const result = await new MusicApi('https://example.test','fixture','test').artist('artist',undefined,'2');
+  expect(result.albums.map((a) => a.id)).toEqual(['b']); expect(new URL(fetch.mock.calls[1][0]).searchParams.get('musicFolderId')).toBe('2');
+});

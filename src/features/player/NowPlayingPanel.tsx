@@ -1,0 +1,11 @@
+import { useState } from 'react';
+import { ListMusic, Maximize2 } from 'lucide-react';
+import { Cover, IconButton } from '../../components/Common';
+import { AlbumLink, ArtistLinks } from '../../components/TrackLinks';
+import { usePlayer, player } from './engine';
+import { Lyrics } from './PlayerUI';
+
+export function NowPlayingPanel({ openQueue, openPlayer }: { openQueue: () => void; openPlayer: () => void }) {
+  const entries = usePlayer((s) => s.entries); const currentId = usePlayer((s) => s.currentId); const currentIndex = entries.findIndex((e) => e.entryId === currentId); const current = entries[currentIndex]; const upcoming = entries.slice(currentIndex + 1, currentIndex + 4); const [tab, setTab] = useState<'details' | 'lyrics'>('details');
+  return <aside className="now-panel" aria-label="播放侧栏"><section className="panel-upcoming"><div className="panel-heading"><h2>接下来</h2><IconButton label="打开播放队列" onClick={openQueue}><ListMusic size={19} /></IconButton></div>{upcoming.length ? upcoming.map((entry) => <button className="panel-next-track" key={entry.entryId} onClick={() => player.select(entry.entryId)}><Cover id={entry.track.coverArt} size={120} /><span><strong>{entry.track.title}</strong><span>{entry.track.artist}</span></span></button>) : <p className="panel-empty">{current ? '已到队列末尾' : '选择歌曲开始播放'}</p>}</section><div className="panel-tabs" role="tablist" aria-label="播放侧栏内容"><button role="tab" aria-selected={tab === 'details'} onClick={() => setTab('details')}>详情</button><button role="tab" aria-selected={tab === 'lyrics'} onClick={() => setTab('lyrics')}>歌词</button><IconButton label="展开完整播放器" disabled={!current} onClick={openPlayer}><Maximize2 size={17} /></IconButton></div><div className="now-panel-body">{current ? tab === 'lyrics' ? <Lyrics key={current.track.id} track={current.track} /> : <div className="panel-record"><button className="panel-cover" aria-label={`展开播放器：${current.track.title}`} onClick={openPlayer}><Cover id={current.track.coverArt} size={600} /></button><h3><AlbumLink track={current.track} title /></h3><div className="panel-artist"><ArtistLinks track={current.track} resolve /></div><div className="panel-album"><AlbumLink track={current.track} /></div></div> : <div className="panel-idle"><ListMusic size={44} /></div>}</div></aside>;
+}

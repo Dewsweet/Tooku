@@ -15,6 +15,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
   api = new MusicApi('http://example.test', 'fixture', 'not-real');
   vi.spyOn(api, 'favorites').mockResolvedValue({ songs: [], albums: [], artists: [] });
+  vi.spyOn(api, 'song').mockResolvedValue({ id: 'a', title: '当前曲目', artist: '测试歌手' });
   vi.spyOn(api, 'lyrics').mockResolvedValue({ synced: true, offsetMs: 0, lines: [{ startMs: 0, text: '第一句测试歌词' }, { startMs: 10000, text: '第二句测试歌词' }] });
   useSession.getState().setSession(api); usePreferences.setState({ reducedMotion: true });
   document.documentElement.dataset.motion = 'reduced';

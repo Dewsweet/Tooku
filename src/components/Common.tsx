@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { Music2, LoaderCircle, RefreshCw, Play, Plus, Heart, ListPlus } from 'lucide-react';
+import { Music2, LoaderCircle, RefreshCw, Play, Plus, Heart, ListPlus, ListMusic } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useSession, queryClient, errorMessage } from '../state/session';
 import type { Album, Track } from '../domain/models';
 import { player } from '../features/player/engine';
 import type { MusicApi } from '../api/client';
+import { AlbumLink, ArtistLinks } from './TrackLinks';
+import { usePlayer } from '../features/player/engine';
 
 export function useApi() { const api = useSession((s) => s.api); if (!api) throw new Error('请先连接服务。'); return api; }
 export function IconButton({ label, children, ...props }: { label: string; children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -38,18 +40,19 @@ export async function toggleFavorite(api: MusicApi, track: Track) {
 }
 export function TrackList({ tracks, addToPlaylist, actions }: { tracks: Track[]; addToPlaylist?: (track: Track) => void; actions?: (track: Track, index: number) => ReactNode }) {
   const api = useApi(); const [busy, setBusy] = useState<string | null>(null);
+  const current = usePlayer((s) => s.entries.find((e) => e.entryId === s.currentId)?.track.id);
   const favorites = useQuery({ queryKey: [api.identity, 'favorites'], queryFn: ({ signal }) => api.favorites(signal) });
   const starredIds = new Set(favorites.data?.songs.map((song) => song.id));
-  return <div className="track-list" role="list" aria-label="歌曲列表">{tracks.map((track, index) => <div className="track-row" role="listitem" key={`${track.id}-${index}`}>
-    <span className="track-number">{index + 1}</span><IconButton label={`播放 ${track.title}`} onClick={() => player.replace([track])}><Play size={16} fill="currentColor" /></IconButton>
-    <Cover id={track.coverArt} size={100} className="track-cover" />
-    <div className="track-info"><span className="track-title">{track.title}</span><span className="track-subtitle">{track.artist}{track.album && ` · ${track.album}`}</span></div>
+  return <div className="track-list" role="list" aria-label="歌曲列表"><div className="track-table-heading" aria-hidden="true"><span>#</span><span>歌曲</span><span>歌手</span><span>专辑</span><span>时长</span><span /></div>{tracks.map((track, index) => <div className={`track-row ${track.id === current ? 'is-current' : ''}`} role="listitem" key={`${track.id}-${index}`}>
+    <button className="track-number-play" aria-label={`播放 ${track.title}`} onClick={() => player.replace(tracks, index)}><span>{index + 1}</span><Play size={15} fill="currentColor" /></button>
+    <div className="track-info"><Cover id={track.coverArt} size={100} className="track-cover" /><div className="track-copy"><button className="track-title" onClick={() => player.replace(tracks, index)}>{track.title}</button><span className="track-subtitle"><ArtistLinks track={track} /></span></div></div>
+    <div className="track-artist"><ArtistLinks track={track} /></div><div className="track-album"><AlbumLink track={track} /></div>
     <span className="track-duration">{formatTime(track.duration)}</span>
     {actions ? actions(track, index) : <div className="track-actions">
       <IconButton label={`${(favorites.data ? starredIds.has(track.id) : track.starred) ? '取消收藏' : '收藏'} ${track.title}`} disabled={busy === track.id} aria-pressed={favorites.data ? starredIds.has(track.id) : Boolean(track.starred)} onClick={async () => { setBusy(track.id); await toggleFavorite(api, { ...track, starred: (favorites.data ? starredIds.has(track.id) : track.starred) ? 'true' : undefined }); setBusy(null); }}><Heart size={16} fill={(favorites.data ? starredIds.has(track.id) : track.starred) ? 'currentColor' : 'none'} /></IconButton>
       <IconButton label={`下一首播放 ${track.title}`} onClick={() => { player.append([track], true); useSession.getState().notify('已加入下一首播放'); }}><ListPlus size={17} /></IconButton>
       <IconButton label={`添加 ${track.title} 到队列`} onClick={() => { player.append([track]); useSession.getState().notify('已添加到队列'); }}><Plus size={17} /></IconButton>
-      {addToPlaylist && <button className="text-button" onClick={() => addToPlaylist(track)}>歌单</button>}
+      {addToPlaylist && <IconButton label={`添加 ${track.title} 到歌单`} onClick={() => addToPlaylist(track)}><ListMusic size={17} /></IconButton>}
     </div>}
   </div>)}</div>;
 }

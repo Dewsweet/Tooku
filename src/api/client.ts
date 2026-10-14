@@ -123,6 +123,7 @@ export class MusicApi {
     const dto = object((await this.request('getAlbum', { id }, signal)).album);
     return { ...album(dto), songs: list(dto.song).map(track).sort((a, b) => (a.discNumber ?? 1) - (b.discNumber ?? 1) || (a.track ?? 0) - (b.track ?? 0)) };
   }
+  async song(id: string, signal?: AbortSignal) { return track(object((await this.request('getSong', { id }, signal)).song)); }
   async artists(signal?: AbortSignal, musicFolderId?: string): Promise<Artist[]> {
     const data = object((await this.request('getArtists', { musicFolderId }, signal)).artists);
     return list(data.index).flatMap((group) => list(group.artist)).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手'), albumCount: num(a.albumCount), coverArt: str(a.coverArt) }));

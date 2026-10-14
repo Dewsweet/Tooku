@@ -2,11 +2,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from './session';
+import { useEffect } from 'react';
+import type { MusicLibrary } from '../domain/models';
+const noLibraries: MusicLibrary[] = [];
 
 export interface PlaylistFolder { id: string; name: string; libraryId: string; parentId: string | null }
 export interface Placement { libraryId: string; folderId: string | null }
 export interface LibraryProfile {
-  activeId?: string; folders: PlaylistFolder[]; placements: Record<string, Placement>;
+  activeId?: string; defaultId?: string; folders: PlaylistFolder[]; placements: Record<string, Placement>;
   views: Record<string, 'playlists' | 'songs' | 'albums'>;
 }
 export const emptyLibraryProfile: LibraryProfile = { folders: [], placements: {}, views: {} };
@@ -45,9 +48,12 @@ export function useMusicLibrary() {
   const api = useSession((s) => s.api);
   const profile = useLibrary((s) => api ? s.profiles[api.identity] ?? emptyLibraryProfile : emptyLibraryProfile);
   const query = useQuery({ queryKey: [api?.identity, 'libraries'], enabled: Boolean(api), queryFn: ({ signal }) => api!.libraries(signal) });
-  const libraries = query.data ?? [];
+  const libraries = query.data ?? noLibraries;
   const active = libraries.find((l) => l.id === profile.activeId) ?? libraries[0];
-  return { ...query, libraries, active, libraryId: active?.id, defaultId: libraries[0]?.id, profile };
+  useEffect(() => {
+    if (api && libraries.length && !profile.defaultId) useLibrary.getState().change(api.identity, (p) => p.defaultId ? p : { ...p, defaultId: libraries[0].id });
+  }, [api, libraries, profile.defaultId]);
+  return { ...query, libraries, active, libraryId: active?.id, defaultId: profile.defaultId ?? libraries[0]?.id, profile };
 }
 export function playlistPlacement(profile: LibraryProfile, playlistId: string, defaultId: string): Placement {
   return profile.placements[playlistId] ?? { libraryId: defaultId, folderId: null };

@@ -10,6 +10,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); useSession.getState().setSessio
 it('waits for Chinese input composition to finish before submitting a search', async () => {
   vi.useFakeTimers();
   const api = new MusicApi('https://example.test', 'fixture', 'not-real');
+  vi.spyOn(api, 'libraries').mockResolvedValue([{id:'1',name:'测试曲库'}]);
   const search = vi.spyOn(api, 'search').mockResolvedValue({ songs: [], albums: [], artists: [] });
   useSession.getState().setSession(api);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -23,6 +24,6 @@ it('waits for Chinese input composition to finish before submitting a search', a
   fireEvent.compositionEnd(input);
   await act(async () => { await vi.advanceTimersByTimeAsync(301); });
   expect(search).toHaveBeenCalledTimes(1);
-  expect(search).toHaveBeenCalledWith('周杰伦', 0, expect.any(AbortSignal));
+  expect(search).toHaveBeenCalledWith('周杰伦', 0, expect.any(AbortSignal), '1');
   client.clear(); api.dispose();
 });
