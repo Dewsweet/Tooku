@@ -5,10 +5,12 @@ export interface Album {
 }
 export interface Track {
   id: string; title: string; artist: string; album?: string; albumId?: string;
+  artistId?: string; artists?: { id?: string; name: string }[];
   coverArt?: string; duration?: number; track?: number; discNumber?: number;
   suffix?: string; bitRate?: number; starred?: string;
 }
-export interface Playlist { id: string; name: string; owner?: string; songCount?: number; changed?: string }
+export interface Playlist { id: string; name: string; owner?: string; songCount?: number; changed?: string; coverArt?: string }
+export interface MusicLibrary { id: string; name: string }
 export interface QueueEntry { entryId: string; track: Track }
 export interface LyricLine { startMs?: number; text: string }
 export interface Lyrics { lines: LyricLine[]; offsetMs: number; synced: boolean; lang?: string }

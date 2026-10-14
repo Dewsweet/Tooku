@@ -1,5 +1,5 @@
 import md5 from 'blueimp-md5';
-import type { Album, Artist, Lyrics, Playlist, Track } from '../domain/models';
+import type { Album, Artist, Lyrics, Playlist, Track, MusicLibrary } from '../domain/models';
 
 type DTO = Record<string, unknown>;
 export const object = (value: unknown): DTO => value && typeof value === 'object' && !Array.isArray(value) ? value as DTO : {};
@@ -8,10 +8,10 @@ const str = (v: unknown): string | undefined => typeof v === 'string' ? v : unde
 const num = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 const text = (v: unknown, fallback: string) => str(v) || fallback;
 export function track(dto: DTO): Track {
-  const artists = list(dto.artists).map((a) => str(a.name)).filter(Boolean);
+  const artists = list(dto.artists).filter((a) => str(a.name)).map((a) => ({ id: str(a.id), name: str(a.name)! }));
   return {
     id: text(dto.id, ''), title: text(dto.title, '未知歌曲'),
-    artist: artists.length ? artists.join(' / ') : text(dto.artist, '未知歌手'),
+    artist: artists.length ? artists.map((a) => a.name).join(' / ') : text(dto.artist, '未知歌手'), artistId: str(dto.artistId), artists,
     album: str(dto.album), albumId: str(dto.albumId), coverArt: str(dto.coverArt),
     duration: num(dto.duration), track: num(dto.track), discNumber: num(dto.discNumber),
     suffix: str(dto.suffix), bitRate: num(dto.bitRate), starred: str(dto.starred),
@@ -23,7 +23,7 @@ export function album(dto: DTO): Album {
     songCount: num(dto.songCount), duration: num(dto.duration), starred: str(dto.starred) };
 }
 function playlist(dto: DTO): Playlist {
-  return { id: text(dto.id, ''), name: text(dto.name, '未命名歌单'), owner: str(dto.owner), songCount: num(dto.songCount), changed: str(dto.changed) };
+  return { id: text(dto.id, ''), name: text(dto.name, '未命名歌单'), owner: str(dto.owner), songCount: num(dto.songCount), changed: str(dto.changed), coverArt: str(dto.coverArt) };
 }
 
 const errors: Record<number, string> = {
@@ -111,28 +111,48 @@ export class MusicApi {
     } catch { /* optional detection must not block a valid login */ }
     return text(ping.serverVersion, '版本未知');
   }
-  async albums(type = 'newest', offset = 0, signal?: AbortSignal) {
-    const data = await this.request('getAlbumList2', { type, size: 30, offset }, signal);
+  async libraries(signal?: AbortSignal): Promise<MusicLibrary[]> {
+    const data = await this.request('getMusicFolders', {}, signal);
+    return list(object(data.musicFolders).musicFolder).filter((f) => typeof f.id === 'string' || typeof f.id === 'number').map((f) => ({ id: String(f.id), name: text(f.name, '音乐库') }));
+  }
+  async albums(type = 'newest', offset = 0, signal?: AbortSignal, musicFolderId?: string) {
+    const data = await this.request('getAlbumList2', { type, size: 30, offset, musicFolderId }, signal);
     return list(object(data.albumList2).album).map(album);
   }
   async album(id: string, signal?: AbortSignal) {
     const dto = object((await this.request('getAlbum', { id }, signal)).album);
     return { ...album(dto), songs: list(dto.song).map(track).sort((a, b) => (a.discNumber ?? 1) - (b.discNumber ?? 1) || (a.track ?? 0) - (b.track ?? 0)) };
   }
-  async artists(signal?: AbortSignal): Promise<Artist[]> {
-    const data = object((await this.request('getArtists', {}, signal)).artists);
+  async artists(signal?: AbortSignal, musicFolderId?: string): Promise<Artist[]> {
+    const data = object((await this.request('getArtists', { musicFolderId }, signal)).artists);
     return list(data.index).flatMap((group) => list(group.artist)).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手'), albumCount: num(a.albumCount), coverArt: str(a.coverArt) }));
   }
-  async artist(id: string, signal?: AbortSignal) {
+  async artist(id: string, signal?: AbortSignal, musicFolderId?: string) {
     const data = object((await this.request('getArtist', { id }, signal)).artist);
-    return { name: text(data.name, '未知歌手'), albums: list(data.album).map(album) };
+    let albums = list(data.album).map(album);
+    // getArtist aggregates libraries; getAlbumList2 supplies the reliable library boundary.
+    if (musicFolderId && albums.length) {
+      const allowed = new Set<string>(); let offset = 0;
+      while (true) {
+        const page = list(object((await this.request('getAlbumList2', { type: 'alphabeticalByName', size: 500, offset, musicFolderId }, signal)).albumList2).album);
+        page.forEach((item) => allowed.add(text(item.id, '')));
+        if (page.length < 500) break;
+        offset += 500;
+      }
+      albums = albums.filter((item) => allowed.has(item.id));
+    }
+    return { name: text(data.name, '未知歌手'), albums };
   }
-  async search(query: string, offset = 0, signal?: AbortSignal) {
-    const data = object((await this.request('search3', { query, songCount: 30, albumCount: 30, artistCount: 30, songOffset: offset, albumOffset: offset, artistOffset: offset }, signal)).searchResult3);
+  async songs(offset = 0, signal?: AbortSignal, musicFolderId?: string) {
+    const data = object((await this.request('search3', { query: '', songCount: 50, songOffset: offset, albumCount: 0, artistCount: 0, musicFolderId }, signal)).searchResult3);
+    return list(data.song).map(track);
+  }
+  async search(query: string, offset = 0, signal?: AbortSignal, musicFolderId?: string) {
+    const data = object((await this.request('search3', { query, songCount: 30, albumCount: 30, artistCount: 30, songOffset: offset, albumOffset: offset, artistOffset: offset, musicFolderId }, signal)).searchResult3);
     return { songs: list(data.song).map(track), albums: list(data.album).map(album), artists: list(data.artist).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手') })) };
   }
-  async favorites(signal?: AbortSignal) {
-    const data = object((await this.request('getStarred2', {}, signal)).starred2);
+  async favorites(signal?: AbortSignal, musicFolderId?: string) {
+    const data = object((await this.request('getStarred2', { musicFolderId }, signal)).starred2);
     return { songs: list(data.song).map(track), albums: list(data.album).map(album), artists: list(data.artist).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手') })) };
   }
   async star(id: string, starred: boolean, kind: 'song' | 'album' | 'artist' = 'song') {
