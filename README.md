@@ -2,7 +2,7 @@
 
 面向中文用户的 Navidrome 第三方网页播放器。目标是让自己的音乐库更好找、更好听、更好看。
 
-当前状态：**可运行的开发工程，真实曲库已进行基础联调，尚未完成发布验收**。白色视觉参考 Apple Music，主界面采用歌单优先的 MusicBee 布局，明暗模式与主题色可选。本地 Git 已提交基线，本轮功能在 codex/library-workspace 分支；没有远程推送。
+当前状态：**可运行的开发工程，真实曲库已进行基础联调，尚未完成发布验收**。保留 Apple Music 的简洁视觉，主界面现采用 Spotify 式全局头部与三栏布局，明暗模式与主题色可选。本地 Git 已提交基线，本轮功能在 codex/library-workspace 分支；没有远程推送。
 
 ## 本地运行
 
@@ -30,7 +30,7 @@ npm.cmd run build
 
 实际验证和待办见 [开发记录](docs/09-development-status.md)。PWA、拼音搜索、双语/逐词歌词、在线歌词、服务端队列同步和高级音频实验尚未实现。
 
-主界面支持真实曲库切换、独立歌单分类、嵌套文件夹和每库默认视图；账户和外观设置在左上角。分类仅保存于当前浏览器，歌单内容仍在 Navidrome；见 [主界面说明](docs/10-library-workspace.md)。
+新版主页展示曲库概览、歌单和专辑。Logo/主页/搜索位于头部，右上角为头像和设置；真实曲库在设置中切换。播放侧栏可选择版块与顺序，歌单文件夹继续独立管理。头像、布局和分类仅保存于当前浏览器，歌单内容仍在 Navidrome；本轮改动和待人工确认项见 [主页改版与人工清单](docs/11-home-refresh-and-checklist.md)。
 
 ## 可选 Docker 部署
 
@@ -85,6 +85,7 @@ node tests/fixtures/server.mjs
 | [播放器设计](docs/06-player.md) | 状态机、队列、歌词时钟、兼容性限制 |
 | [开发计划](docs/07-roadmap.md) | 里程碑、任务依赖、工期估算与验收门槛 |
 | [开发与验收](docs/08-development-and-testing.md) | 本地联调、部署方案、测试矩阵、发布标准 |
+| [主页改版与人工清单](docs/11-home-refresh-and-checklist.md) | 当前布局、头像、侧栏配置及人工验收 |
 | [主界面说明](docs/10-library-workspace.md) | 曲库切换、文件夹、设置和存储边界 |
 | [开发记录](docs/09-development-status.md) | 实现进度、真实/模拟验证边界与下一步 |
 
