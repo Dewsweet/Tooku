@@ -9,7 +9,7 @@ export interface Track {
   coverArt?: string; duration?: number; track?: number; discNumber?: number;
   suffix?: string; bitRate?: number; starred?: string;
 }
-export interface Playlist { id: string; name: string; owner?: string; songCount?: number; changed?: string; coverArt?: string }
+export interface Playlist { id: string; name: string; owner?: string; songCount?: number; changed?: string; coverArt?: string; duration?: number; comment?: string }
 export interface MusicLibrary { id: string; name: string }
 export interface QueueEntry { entryId: string; track: Track }
 export interface LyricLine { startMs?: number; text: string }

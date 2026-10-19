@@ -1,15 +1,16 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { MusicApi } from '../src/api/client';
 import { useSession } from '../src/state/session';
 import { emptyLibraryProfile, useLibrary } from '../src/state/library';
 import { FolderEditor, PlaylistLocation } from '../src/features/library/Organization';
-import { Playlists, AddToPlaylist } from '../src/pages/Playlists';
+import { Playlists, PlaylistDetail, AddToPlaylist } from '../src/pages/Playlists';
 import { TrackList } from '../src/components/Common';
 import { PlayerBar } from '../src/features/player/PlayerUI';
 import { player, usePlayer } from '../src/features/player/engine';
+import { Interactions } from '../src/components/Interactions';
 
 let api: MusicApi; let client: QueryClient;
 const song = { id:'s',title:'测试歌曲',artist:'测试歌手',artistId:'artist',album:'测试专辑',albumId:'album' };
@@ -43,6 +44,31 @@ it('offers only editable playlists in the active library when adding a song', ()
 it('plays a selected playlist entry with the remaining playlist order, including duplicates', () => {
   const replace=vi.spyOn(player,'replace').mockImplementation(()=>{});const tracks=[song,{...song,id:'second',title:'第二首'},song];
   surface(<TrackList tracks={tracks} />);fireEvent.click(screen.getByRole('button',{name:'播放 第二首'}));expect(replace).toHaveBeenCalledWith(tracks,1);
+});
+it('plays a row on a blank-area double click and exposes queue actions in a custom context menu', async () => {
+  const replace = vi.spyOn(player, 'replace').mockImplementation(() => {}); const append = vi.spyOn(player, 'append').mockImplementation(() => {});
+  surface(<Interactions><TrackList tracks={[song]} addToPlaylist={() => {}} /></Interactions>);
+  const row = screen.getByRole('listitem'); fireEvent.doubleClick(within(row).getByText('0:00')); expect(replace).toHaveBeenCalledWith([song], 0);
+  expect(within(row).getAllByRole('button')).toHaveLength(3);
+  fireEvent.contextMenu(row, { clientX: 150, clientY: 150 }); fireEvent.click(screen.getByRole('menuitem', { name: '下一首播放' }));
+  await waitFor(() => expect(append).toHaveBeenCalledWith([song], true)); expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});
+it('saves a dragged playlist order including duplicates and can undo the saved change', async () => {
+  const songs = [song, { ...song, id: 'second', title: '第二首' }, song]; const before = { id: 'p1', name: '华语', owner: 'fixture', changed: 'v1', songs }; const after = { ...before, changed: 'v2', songs: [songs[1], songs[2], songs[0]] };
+  client.setQueryData([api.identity, 'playlist', 'p1'], before); vi.spyOn(api, 'playlist').mockResolvedValue(before);
+  const save = vi.spyOn(api, 'savePlaylist').mockResolvedValueOnce(after).mockResolvedValueOnce({ ...before, changed: 'v3' });
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
+  const rows = screen.getAllByRole('listitem'); const store = new Map(); const transfer = { types: ['application/x-tooku-track'], setData: (key: string, value: string) => store.set(key, value), getData: (key: string) => store.get(key) };
+  fireEvent.dragStart(rows[0], { dataTransfer: transfer }); fireEvent.dragOver(rows[2], { dataTransfer: transfer, clientY: 10 }); fireEvent.drop(rows[2], { dataTransfer: transfer });
+  await waitFor(() => expect(save).toHaveBeenCalledWith('p1', '华语', ['second', 's', 's'], 'v1'));
+  fireEvent.click(await screen.findByRole('button', { name: '撤销上次修改' }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith('p1', '华语', ['s', 'second', 's'], 'v2'));
+});
+it('keeps another owner playlist read-only and creates folders at the current location without a location picker', () => {
+  client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '他人的歌单', owner: 'other', changed: 'v1', songs: [song] });
+  const rendered = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></MemoryRouter></QueryClientProvider>);
+  expect(screen.getByRole('listitem')).toHaveAttribute('draggable', 'false'); expect(screen.getByRole('button', { name: '歌单封面' })).toBeDisabled(); rendered.unmount();
+  surface(<FolderEditor parent="parent" onClose={() => {}} />); expect(screen.queryByRole('combobox', { name: '文件夹位置' })).not.toBeInTheDocument();
 });
 it('links the dock title and artist separately and keeps only the full-player expansion control', () => {
   usePlayer.setState({entries:[{entryId:'e',track:song}],currentId:'e'});surface(<PlayerBar openQueue={()=>{}} openLyrics={()=>{}} />);

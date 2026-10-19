@@ -23,7 +23,7 @@ export function album(dto: DTO): Album {
     songCount: num(dto.songCount), duration: num(dto.duration), starred: str(dto.starred) };
 }
 function playlist(dto: DTO): Playlist {
-  return { id: text(dto.id, ''), name: text(dto.name, '未命名歌单'), owner: str(dto.owner), songCount: num(dto.songCount), changed: str(dto.changed), coverArt: str(dto.coverArt) };
+  return { id: text(dto.id, ''), name: text(dto.name, '未命名歌单'), owner: str(dto.owner), songCount: num(dto.songCount), changed: str(dto.changed), coverArt: str(dto.coverArt), duration: num(dto.duration), comment: str(dto.comment) };
 }
 
 const errors: Record<number, string> = {
@@ -187,6 +187,14 @@ export class MusicApi {
     if (before.name !== name) await this.request('updatePlaylist', { playlistId: id, name }, undefined, true);
     const after = await this.playlist(id);
     if (after.name !== name || after.songs.map((s) => s.id).join('|') !== songs.join('|')) throw new ApiError('保存后歌单与草稿不同，请重新读取核实。');
+    return after;
+  }
+  async updatePlaylistDetails(id: string, details: { name: string; comment: string }, changed?: string) {
+    const before = await this.playlist(id);
+    if (before.changed !== changed) throw new ApiError('歌单已被其他客户端修改。请重新读取后再保存。');
+    await this.request('updatePlaylist', { playlistId: id, name: details.name, comment: details.comment }, undefined, true);
+    const after = await this.playlist(id);
+    if (after.name !== details.name || (after.comment ?? '') !== details.comment) throw new ApiError('保存结果与填写内容不同，请重新读取核实。');
     return after;
   }
   async lyrics(id: string, artist: string, title: string, signal?: AbortSignal): Promise<Lyrics> {

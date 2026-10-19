@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from './session';
 import { useEffect } from 'react';
-import type { MusicLibrary } from '../domain/models';
+import type { MusicLibrary, Playlist } from '../domain/models';
 const noLibraries: MusicLibrary[] = [];
 
 export interface PlaylistFolder { id: string; name: string; libraryId: string; parentId: string | null }
@@ -11,6 +11,7 @@ export interface Placement { libraryId: string; folderId: string | null }
 export interface LibraryProfile {
   activeId?: string; defaultId?: string; folders: PlaylistFolder[]; placements: Record<string, Placement>;
   views: Record<string, 'playlists' | 'songs' | 'albums'>;
+  order?: Record<string, string[]>;
 }
 export const emptyLibraryProfile: LibraryProfile = { folders: [], placements: {}, views: {} };
 export function descendants(folders: PlaylistFolder[], id: string): Set<string> {
@@ -57,4 +58,36 @@ export function useMusicLibrary() {
 }
 export function playlistPlacement(profile: LibraryProfile, playlistId: string, defaultId: string): Placement {
   return profile.placements[playlistId] ?? { libraryId: defaultId, folderId: null };
+}
+
+export type LibraryItem = { key: string; kind: 'folder'; folder: PlaylistFolder } | { key: string; kind: 'playlist'; playlist: Playlist };
+export const orderKey = (libraryId: string, parentId: string | null) => JSON.stringify([libraryId, parentId]);
+export function libraryItems(profile: LibraryProfile, playlists: Playlist[], libraryId: string, parentId: string | null, defaultId: string): LibraryItem[] {
+  const items: LibraryItem[] = [
+    ...profile.folders.filter((f) => f.libraryId === libraryId && f.parentId === parentId).map((folder) => ({ key: `folder:${folder.id}`, kind: 'folder' as const, folder })),
+    ...playlists.filter((p) => { const at = playlistPlacement(profile, p.id, defaultId); return at.libraryId === libraryId && at.folderId === parentId; }).map((playlist) => ({ key: `playlist:${playlist.id}`, kind: 'playlist' as const, playlist })),
+  ];
+  const order = profile.order?.[orderKey(libraryId, parentId)] ?? []; const rank = new Map(order.map((key, index) => [key, index]));
+  return items.sort((a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity));
+}
+export function moveLibraryItem(profile: LibraryProfile, playlists: Playlist[], key: string, libraryId: string, parentId: string | null, before: string | null, defaultId: string): LibraryProfile {
+  if (before === key) return profile;
+  if (parentId && !profile.folders.some((f) => f.id === parentId && f.libraryId === libraryId)) return profile;
+  let next: LibraryProfile;
+  if (key.startsWith('folder:')) {
+    const id = key.slice(7); const folder = profile.folders.find((f) => f.id === id && f.libraryId === libraryId);
+    if (!folder || parentId && descendants(profile.folders, id).has(parentId) || profile.folders.some((f) => f.id !== id && f.libraryId === libraryId && f.parentId === parentId && f.name === folder?.name)) return profile;
+    next = reparentFolder(profile, id, parentId);
+  } else if (key.startsWith('playlist:')) {
+    const id = key.slice(9); if (!playlists.some((p) => p.id === id) || playlistPlacement(profile, id, defaultId).libraryId !== libraryId) return profile;
+    next = { ...profile, placements: { ...profile.placements, [id]: { libraryId, folderId: parentId } } };
+  } else return profile;
+  const siblings = libraryItems(next, playlists, libraryId, parentId, defaultId).map((item) => item.key).filter((item) => item !== key);
+  const index = before ? siblings.indexOf(before) : -1; siblings.splice(index < 0 ? siblings.length : index, 0, key);
+  return { ...next, order: { ...next.order, [orderKey(libraryId, parentId)]: siblings } };
+}
+export function folderPath(folders: PlaylistFolder[], id: string): string {
+  const parts: string[] = []; const visited = new Set(); let current = folders.find((f) => f.id === id);
+  while (current && !visited.has(current.id)) { visited.add(current.id); parts.unshift(current.name); current = folders.find((f) => f.id === current!.parentId); }
+  return parts.join(' / ');
 }
