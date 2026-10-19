@@ -31,7 +31,7 @@ export function Select({ value, onChange, children, disabled, id, className = ''
     document.addEventListener('pointerdown', outside); return () => document.removeEventListener('pointerdown', outside);
   }, [open]);
   useEffect(() => { if (open) popup.current?.querySelector<HTMLElement>(`[data-option-index="${active}"]`)?.scrollIntoView?.({ block: 'nearest' }); }, [open, active]);
-  return <><button type="button" id={id} ref={button} className={`styled-select ${className}`} role="combobox" aria-label={label} aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open ? `${generated}-${active}` : undefined} aria-haspopup="listbox" title={title} disabled={disabled} onClick={() => open ? close() : show()} onBlur={(event) => { if (!popup.current?.contains(event.relatedTarget as Node)) setOpen(false); }} onKeyDown={(event) => {
+  return <><button type="button" id={id} ref={button} className={`styled-select ${className}`} role="combobox" aria-label={label} aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open ? `${generated}-${active}` : undefined} aria-haspopup="listbox" data-tooltip={title} disabled={disabled} onClick={() => open ? close() : show()} onBlur={(event) => { if (!popup.current?.contains(event.relatedTarget as Node)) setOpen(false); }} onKeyDown={(event) => {
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     else if (event.key === 'Tab') setOpen(false);
     else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (open) choose(active); else show(); }

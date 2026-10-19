@@ -25,7 +25,7 @@ export function Progress({ context = 'dock' }: { context?: 'dock' | 'room' }) {
         onChange={(e) => { const next = { value: Number(e.target.value), entryId }; draft.current = next; setPreview(next); }}
         onPointerUp={commit} onKeyUp={commit} onBlur={commit} onPointerCancel={() => { draft.current = null; setPreview(null); }} />
     </div>
-    <button className="duration-time" title={remaining ? '显示总时长' : '显示剩余时间'} aria-label={remaining ? '显示总时长' : '显示剩余时间'} onClick={() => setRemaining(!remaining)}>{duration ? `${remaining ? '−' : ''}${formatTime(remaining ? duration - displayed : duration)}` : '—:—'}</button>
+    <button className="duration-time" data-tooltip={remaining ? '显示总时长' : '显示剩余时间'} aria-label={remaining ? '显示总时长' : '显示剩余时间'} onClick={() => setRemaining(!remaining)}>{duration ? `${remaining ? '−' : ''}${formatTime(remaining ? duration - displayed : duration)}` : '—:—'}</button>
   </div>;
 }
 

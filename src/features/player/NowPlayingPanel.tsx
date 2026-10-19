@@ -8,14 +8,13 @@ import { usePlayer, player } from './engine';
 import { Lyrics } from './Lyrics';
 import { PanelLayoutControls } from './PanelLayoutControls';
 import { QueuePanel } from './QueuePanel';
-import { PanelResizeHandle } from './PanelResizeHandle';
 import './panel.css';
 
 export function NowPlayingPanel({ openQueue, openPlayer, onClose, view, onViewChange }: { openQueue: () => void; openPlayer: () => void; onClose: () => void; view: 'now'|'queue'; onViewChange: (view: 'now'|'queue') => void }) {
   const entries = usePlayer((s) => s.entries); const currentId = usePlayer((s) => s.currentId); const currentIndex = entries.findIndex((e) => e.entryId === currentId); const current = entries[currentIndex];
   const prefs = usePreferences(); const [configuring, setConfiguring] = useState(false); const sections = normalizePanelSections(prefs.panelSections).filter((s) => s.enabled);
   const queuePreview = entries.slice(Math.max(0, currentIndex), Math.max(0, currentIndex) + 6);
-  return <aside className="now-panel" aria-label="播放侧栏"><PanelResizeHandle /><header className="now-panel-heading"><div className="panel-view-tabs" role="group" aria-label="播放侧栏视图"><button aria-pressed={view === 'now'} onClick={() => onViewChange('now')}>正在播放</button><button aria-pressed={view === 'queue'} onClick={() => onViewChange('queue')}>队列</button></div><div><IconButton label="调整侧栏版块" onClick={() => setConfiguring(true)}><SlidersHorizontal size={17} /></IconButton><IconButton label="关闭播放侧栏" onClick={onClose}><X size={19} /></IconButton></div></header>
+  return <aside className="now-panel" aria-label="播放侧栏"><header className="now-panel-heading"><div className="panel-view-tabs" role="group" aria-label="播放侧栏视图"><button aria-pressed={view === 'now'} onClick={() => onViewChange('now')}>正在播放</button><button aria-pressed={view === 'queue'} onClick={() => onViewChange('queue')}>队列</button></div><div><IconButton label="调整侧栏版块" onClick={() => setConfiguring(true)}><SlidersHorizontal size={17} /></IconButton><IconButton label="关闭播放侧栏" onClick={onClose}><X size={19} /></IconButton></div></header>
     <div className="now-panel-scroll">{view === 'queue' ? <QueuePanel /> : <div className="now-panel-stack" key={sections.map((s) => s.id).join('-')}>
       {!sections.length && <div className="panel-placeholder"><SlidersHorizontal size={28} /><p>按你的习惯安排这里</p><button className="subtle-button" onClick={() => setConfiguring(true)}>选择显示版块</button></div>}
       {sections.map(({ id }) => <section className={`panel-module panel-module-${id}`} key={id} aria-label={{ cover: '歌曲封面', lyrics: '侧栏歌词', details: '歌曲详情', queue: '侧栏播放队列' }[id]}>

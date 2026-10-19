@@ -20,6 +20,7 @@ import { NowPlayingPanel } from './features/player/NowPlayingPanel';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { Home } from './pages/Home';
 import { ApiError } from './api/client';
+import { PanelResizeHandle } from './features/player/PanelResizeHandle';
 
 const navigation = [
   { to: '/albums', name: '专辑', icon: Disc3 }, { to: '/artists', name: '歌手', icon: Mic2 },
@@ -80,7 +81,7 @@ export default function App() {
     <div className="app-main" inert={mobile && menu || panelOverlay}><main ref={contentRef} className="content" key={library.libraryId}><Routes>
       <Route path="/" element={<Home addToPlaylist={setAdding} />} /><Route path="/songs" element={<Navigate to="/search?type=songs" replace />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Settings logout={() => logout(false)} />} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
     </Routes></main></div>
-    {panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
+    {!compactPanel && prefs.sidePanel && <PanelResizeHandle />}{panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
     {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel view={queue ? 'queue' : 'now'} onViewChange={(view) => setQueue(view === 'queue')} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
     <div inert={mobile && menu || panelOverlay}><PlayerBar queueOpen={queue && panelVisible} openQueue={toggleQueue} openLyrics={() => currentId && setLyrics(true)} /></div>
     {lyrics && <LyricsPlayer onClose={() => setLyrics(false)} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}

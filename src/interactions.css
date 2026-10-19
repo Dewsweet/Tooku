@@ -1,0 +1,93 @@
+.interaction-root { min-height: 100%; }
+.context-menu, .app-tooltip { position: fixed; inset: auto; margin: 0; box-sizing: border-box; color: var(--text); border: 1px solid var(--line); background: var(--bg); z-index: 1000; }
+.context-menu { min-width: 210px; max-width: min(320px,calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 6px; border-radius: 12px; box-shadow: 0 12px 44px #11152229,0 2px 7px #1115220d; }
+.context-menu:popover-open { animation: surface-enter .12s ease both; }
+.context-menu > button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; color: var(--text); padding: 11px 12px; border-radius: 6px; font-size: 13px; min-height: 39px; }
+.context-menu > button:hover, .context-menu > button:focus-visible { background: var(--surface); outline: none; }
+.context-menu > button:disabled { opacity: .4; cursor: default; }
+.context-menu .menu-divider { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 14px; border-radius: 0 0 6px 6px; }
+.context-menu .menu-danger { color: var(--accent); }
+.context-menu svg, .menu-icon-space { flex-shrink: 0; width: 16px; }
+.app-tooltip { pointer-events: none; max-width: min(280px,calc(100vw - 14px)); padding: 8px 11px; border-radius: 7px; font-size: 12px; line-height: 1.5; box-shadow: 0 4px 14px #1115221a; background: var(--text); color: var(--bg); border: 0; }
+.app-tooltip:popover-open { animation: surface-enter .12s ease both; }
+.workspace-shell > .panel-resize-handle { position: fixed; inset: var(--header-height) calc(var(--gutter) + var(--panel-width)) var(--dock-height) auto; width: var(--gutter); background: transparent; border-radius: 0; z-index: 20; }
+.workspace-shell > .panel-resize-handle::after { content: ''; position: absolute; top: 13px; bottom: 13px; left: calc(50% - 1px); width: 2px; border-radius: 2px; background: var(--muted); opacity: 0; transition: opacity .16s; }
+.workspace-shell > .panel-resize-handle:hover::after, .workspace-shell > .panel-resize-handle:focus-visible::after, .is-resizing-panel .panel-resize-handle::after { opacity: .8; }
+.workspace-shell .track-list { container-type: inline-size; position: relative; }
+.workspace-shell .track-table-heading, .workspace-shell .track-row { grid-template-columns: 30px minmax(130px,var(--track-title-width,2.8fr)) minmax(75px,var(--track-artist-width,1.5fr)) minmax(85px,var(--track-album-width,1.8fr)) minmax(48px,var(--track-time-width,.6fr)) 36px; gap: 12px; }
+.workspace-shell .track-table-heading { color: var(--muted); padding: 0 8px; height: 42px; font-size: 12px; margin-bottom: 9px; position: relative; }
+.track-column-label { position: relative; min-width: 0; padding: 12px 0; }
+.track-column-handle { position: absolute; top: 4px; bottom: 4px; right: -8px; width: 10px; cursor: col-resize; touch-action: none; }
+.track-column-handle::after { content: ''; position: absolute; top: 7px; bottom: 7px; left: 4px; width: 1px; background: var(--muted); opacity: 0; }
+.track-column-handle:hover::after, .track-column-handle:focus-visible::after { opacity: .7; }
+.track-column-3 .track-column-handle { left: -8px; right: auto; }
+.is-resizing-columns, .is-resizing-columns * { cursor: col-resize !important; user-select: none !important; }
+.workspace-shell .track-row { padding: 7px 8px; min-height: 62px; position: relative; transition: background .15s; }
+.workspace-shell .track-row:nth-child(even) { background: transparent; }
+.workspace-shell .track-row:hover, .workspace-shell .track-row:focus-within { background: var(--surface); }
+.workspace-shell .track-row[draggable=true] { cursor: grab; }
+.workspace-shell .track-row[draggable=true]:active { cursor: grabbing; }
+.track-row.track-drop-before::before, .track-drop-end { content: ''; position: absolute; left: 8px; right: 8px; height: 2px; top: -2px; background: var(--accent); z-index: 2; }
+.track-drop-end { top: auto; bottom: 0; }
+.workspace-shell .track-actions, .workspace-shell .track-actions .icon-button { width: 34px; min-width: 0; }
+.workspace-shell .track-actions.has-favorite { opacity: 1; color: var(--accent); }
+.track-table-heading > span { display: block; }
+.track-info, .track-artist, .track-album, .track-duration { min-width: 0; }
+.workspace-shell .track-artist, .workspace-shell .track-album { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.playlist-hero-cover { position: relative; padding: 0; background: transparent; color: white; border-radius: 11px; flex-shrink: 0; width: clamp(128px,14vw,190px); overflow: hidden; }
+.playlist-hero-cover > .entity-detail-cover { width: 100%; }
+.playlist-hero-cover > span { position: absolute; inset: 0; background: #10121a88; opacity: 0; display: flex; align-items: center; justify-content: center; gap: 12px; flex-direction: column; font-size: 13px; transition: opacity .2s; }
+.playlist-hero-cover:hover:not(:disabled) > span, .playlist-hero-cover:focus-visible > span { opacity: 1; }
+.playlist-hero-cover:disabled { opacity: 1; cursor: default; }
+.playlist-detail-hero .page-heading { gap: 18px; }
+.playlist-detail-hero .playlist-summary { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.playlist-summary p { margin: -5px 0 11px; max-width: 650px; overflow-wrap: anywhere; }
+.playlist-controls .icon-button { width: 42px; height: 42px; border-radius: 50%; }
+.playlist-order-status { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+.playlist-order-status .text-button { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.playlist-details-editor { display: grid; grid-template-columns: 140px 1fr; gap: 22px; }
+.playlist-edit-cover { position: relative; width: 140px; height: 140px; border-radius: 10px; padding: 0; overflow: hidden; background: var(--surface); }
+.playlist-edit-cover > img, .playlist-edit-cover > .entity-artwork { display: block; width: 100%; height: 100%; object-fit: cover; }
+.playlist-edit-cover > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; background: #11151b66; color: white; font-size: 12px; opacity: 0; transition: opacity .2s; }
+.playlist-edit-cover:hover > span, .playlist-edit-cover:focus-visible > span { opacity: 1; }
+.playlist-details-editor textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); padding: 12px; font: inherit; resize: vertical; min-height: 85px; }
+.playlist-cover-note { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 11px; line-height: 1.5; margin: 0 0 20px; }
+.playlist-cover-note .text-button { font-size: 12px; flex-shrink: 0; margin-left: auto; }
+.organization-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(175px,1fr)); gap: 23px; min-height: 90px; padding-bottom: 35px; }
+.organization-grid .playlist-card { min-width: 0; }
+.organization-grid .playlist-card p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.organization-folder-card { position: relative; min-width: 0; border-radius: 11px; }
+.organization-folder-card > a { display: block; }
+.organization-folder-art { display: grid; aspect-ratio: 1; place-items: center; border-radius: 11px; background: linear-gradient(135deg,var(--soft),var(--surface)); color: var(--accent); }
+.organization-folder-card h3 { font-size: 14px; margin: 14px 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.organization-folder-card p { font-size: 12px; color: var(--muted); margin: 0; }
+.organization-draggable { position: relative; }
+.organization-draggable img { -webkit-user-drag: none; user-select: none; }
+.organization-draggable[data-drop=before]::before, .organization-draggable[data-drop=after]::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--accent); z-index: 2; }
+.organization-draggable[data-drop=before]::before { top: -3px; }
+.organization-draggable[data-drop=after]::after { bottom: -3px; }
+[data-drop=inside] { outline: 1.5px solid var(--accent); outline-offset: -1px; border-radius: 8px; background: var(--soft); }
+.organization-parent { display: flex; align-items: center; gap: 9px; color: var(--muted); padding: 14px 10px; margin: -10px 0 20px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.organization-parent > span { margin-left: auto; font-size: 11px; opacity: .65; }
+.organization-hint { color: var(--muted); font-size: 11px; margin-left: auto; }
+.tree-root-drop { display: none; color: var(--muted); font-size: 11px; padding: 13px; border-radius: 8px; text-align: center; border: 1px dashed var(--line); margin: 14px 0 3px; }
+.playlist-tree:has([data-drop]) > .tree-root-drop, .tree-root-drop[data-drop=inside] { display: block; }
+.artist-detail-hero { position: relative; padding: 26px 22px 37px; margin: -10px -22px 0; border-radius: 14px 14px 0 0; background: linear-gradient(135deg,var(--soft),var(--surface)); animation: surface-enter .35s ease both; }
+.artist-discography { position: relative; padding-top: 31px; animation: discography-enter .45s ease both; }
+.artist-discography::before { content: ''; position: absolute; top: 0; left: -22px; right: -22px; height: 45px; background: linear-gradient(var(--surface),transparent); pointer-events: none; }
+.artist-discography-heading { position: relative; display: flex; align-items: baseline; gap: 12px; margin-bottom: 23px; }
+.artist-discography-heading h2 { font-size: 21px; font-weight: 700; margin: 0; }
+.artist-discography-heading > span { color: var(--muted); font-size: 12px; }
+@keyframes discography-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+:root[data-motion=reduced] .context-menu, :root[data-motion=reduced] .app-tooltip, :root[data-motion=reduced] .artist-discography, :root[data-motion=reduced] .artist-detail-hero { animation: none; }
+@media(min-width:768px) { .workspace-shell .track-table-heading > span { display: block; } .workspace-shell .track-artist, .workspace-shell .track-album { display: block; } }
+@container (max-width: 650px) {
+  .workspace-shell .track-table-heading, .workspace-shell .track-row { grid-template-columns: 24px minmax(100px,var(--track-title-width,2.8fr)) minmax(80px,var(--track-artist-width,1.5fr)) minmax(48px,var(--track-time-width,.6fr)) 34px; gap: 9px; }
+  .workspace-shell .track-album, .workspace-shell .track-table-heading > .track-column-2 { display: none; }
+}
+@container (max-width: 470px) {
+  .workspace-shell .track-table-heading, .workspace-shell .track-row { grid-template-columns: 24px minmax(0,1fr) 48px 34px; gap: 7px; }
+  .workspace-shell .track-artist, .workspace-shell .track-table-heading > .track-column-1 { display: none; }
+}
+@media(max-width:767px) { .workspace-shell .track-actions { grid-column: auto; margin-top: 0; opacity: 1; } .track-column-handle { display: none; } }
+@media(max-width:560px) { .playlist-details-editor { grid-template-columns: 1fr; } .playlist-edit-cover { width: 150px; height: 150px; margin: auto; } .organization-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 15px; } .organization-hint, .organization-parent > span { display: none; } .playlist-cover-note { align-items: flex-start; flex-direction: column; } .playlist-cover-note .text-button { margin-left: 0; } }
