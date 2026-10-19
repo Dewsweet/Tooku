@@ -119,6 +119,21 @@ export class MusicApi {
     const data = await this.request('getAlbumList2', { type, size: 30, offset, musicFolderId }, signal);
     return list(object(data.albumList2).album).map(album);
   }
+  async libraryOverview(musicFolderId: string, signal?: AbortSignal) {
+    const seen = new Set<string>(); let songCount = 0; let duration = 0; let completeSongs = true; let completeDuration = true;
+    for (let offset = 0; ; offset += 500) {
+      const data = await this.request('getAlbumList2', { type: 'alphabeticalByName', size: 500, offset, musicFolderId }, signal);
+      const page = list(object(data.albumList2).album); let added = 0;
+      for (const item of page) {
+        const id = str(item.id); if (!id || seen.has(id)) continue;
+        seen.add(id); added++; songCount += num(item.songCount) ?? 0; duration += num(item.duration) ?? 0;
+        completeSongs &&= num(item.songCount) !== undefined; completeDuration &&= num(item.duration) !== undefined;
+      }
+      if (page.length < 500) break;
+      if (!added) throw new ApiError('服务器返回了重复的分页结果，请稍后刷新音乐库概览。');
+    }
+    return { albums: seen.size, songs: completeSongs ? songCount : null, duration: completeDuration ? duration : null };
+  }
   async album(id: string, signal?: AbortSignal) {
     const dto = object((await this.request('getAlbum', { id }, signal)).album);
     return { ...album(dto), songs: list(dto.song).map(track).sort((a, b) => (a.discNumber ?? 1) - (b.discNumber ?? 1) || (a.track ?? 0) - (b.track ?? 0)) };

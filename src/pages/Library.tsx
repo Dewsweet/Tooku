@@ -1,18 +1,13 @@
 import { useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Play, Heart, Shuffle } from 'lucide-react';
 import { AlbumGrid, Cover, Empty, PageTitle, QueryState, TrackList, useApi } from '../components/Common';
-import { Playlists } from './Playlists';
-import { useLibrary, useMusicLibrary } from '../state/library';
+import { useMusicLibrary } from '../state/library';
 import { player } from '../features/player/engine';
 import { queryClient, useSession, errorMessage } from '../state/session';
 import type { Track } from '../domain/models';
 
-export function Home({ addToPlaylist }: { addToPlaylist: (track: Track) => void }) {
-  const api = useApi(); const { libraryId, profile } = useMusicLibrary(); const view = profile.views[libraryId ?? ''] ?? 'playlists';
-  return <><div className="library-home-tabs" role="tablist" aria-label="音乐库视图">{([['playlists','歌单'],['songs','歌曲'],['albums','专辑']] as const).map(([value,label]) => <button role="tab" aria-selected={view === value} key={value} onClick={() => libraryId && useLibrary.getState().change(api.identity, (p) => ({...p, views: {...p.views, [libraryId]: value}}))}>{label}</button>)}</div>{view === 'albums' ? <Albums /> : view === 'songs' ? <Songs addToPlaylist={addToPlaylist} /> : <Playlists />}</>;
-}
 export function Songs({ addToPlaylist }: { addToPlaylist: (track: Track) => void }) {
   const api = useApi(); const { libraryId } = useMusicLibrary();
   const query = useInfiniteQuery({ queryKey: [api.identity, 'songs', libraryId], enabled: Boolean(libraryId), initialPageParam: 0, queryFn: ({pageParam,signal}) => api.songs(pageParam,signal,libraryId), getNextPageParam: (last,pages) => last.length === 50 ? pages.length * 50 : undefined });
@@ -20,7 +15,7 @@ export function Songs({ addToPlaylist }: { addToPlaylist: (track: Track) => void
   return <><PageTitle title="歌曲"><button className="primary-button" disabled={!songs.length} onClick={() => player.replace(songs)}><Play size={17} fill="currentColor" />播放</button></PageTitle><QueryState pending={query.isLoading} error={query.error} retry={() => query.refetch()} />{songs.length ? <TrackList tracks={songs} addToPlaylist={addToPlaylist} /> : query.data && <Empty title="还没有歌曲" />}{query.hasNextPage && <button className="load-more subtle-button" disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>加载更多</button>}</>;
 }
 export function Albums() {
-  const api = useApi(); const { libraryId } = useMusicLibrary(); const [type, setType] = useState('newest');
+  const api = useApi(); const { libraryId } = useMusicLibrary(); const [params] = useSearchParams(); const [type, setType] = useState(params.get('sort') === 'frequent' ? 'frequent' : 'newest');
   const query = useInfiniteQuery({ queryKey: [api.identity, 'albums', libraryId, type], enabled: Boolean(libraryId), initialPageParam: 0,
     queryFn: ({ pageParam, signal }) => api.albums(type, pageParam, signal, libraryId), getNextPageParam: (last, pages) => last.length === 30 ? pages.length * 30 : undefined });
   return <><PageTitle title="专辑"><select aria-label="专辑排序" value={type} onChange={(e) => setType(e.target.value)}><option value="newest">最近添加</option><option value="alphabeticalByName">专辑名称</option><option value="alphabeticalByArtist">歌手名称</option><option value="frequent">经常播放</option><option value="random">随机发现</option></select></PageTitle><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} />{query.data && <AlbumGrid albums={query.data.pages.flat()} />}{query.data && !query.data.pages[0].length && <Empty title="还没有专辑" />}{query.hasNextPage && <button className="load-more subtle-button" disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>{query.isFetchingNextPage ? '正在加载…' : '加载更多专辑'}</button>}</>;
