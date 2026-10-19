@@ -29,7 +29,7 @@ it('creates a nested folder and moves a playlist into that folder without server
   const request=vi.spyOn(api,'request'); const close=vi.fn(); const editor=surface(<FolderEditor parent="parent" onClose={close} />);
   fireEvent.change(screen.getByLabelText('名称'),{target:{value:'流行'}});fireEvent.click(screen.getByRole('button',{name:'保存'}));
   const folder=useLibrary.getState().profiles[api.identity].folders.find((f)=>f.name==='流行')!;expect(folder.parentId).toBe('parent');expect(close).toHaveBeenCalledOnce();editor.unmount();
-  surface(<PlaylistLocation playlist={{id:'p1',name:'华语'}} onClose={()=>{}} />);fireEvent.change(screen.getByLabelText('歌单文件夹'),{target:{value:folder.id}});fireEvent.click(screen.getByRole('button',{name:'移动'}));
+  surface(<PlaylistLocation playlist={{id:'p1',name:'华语'}} onClose={()=>{}} />);fireEvent.click(screen.getByRole('combobox',{name:'歌单文件夹'}));fireEvent.click(screen.getByRole('option',{name:'语言 / 流行'}));fireEvent.click(screen.getByRole('button',{name:'移动'}));
   expect(useLibrary.getState().profiles[api.identity].placements.p1).toEqual({libraryId:'1',folderId:folder.id});expect(request).not.toHaveBeenCalled();
 });
 it('keeps the visible playlists independent when changing the active real library', () => {

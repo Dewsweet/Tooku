@@ -1,16 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
-import { Music2, Disc3, Mic2, Heart, Clock3, X } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { NavLink, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Disc3, Mic2, Heart, Clock3, X } from 'lucide-react';
 import { queryClient, useSession } from './state/session';
-import { usePreferences } from './state/preferences';
+import { panelWidthCss, usePreferences } from './state/preferences';
 import { player, usePlayer } from './features/player/engine';
 import { Login } from './pages/Login';
-import { AlbumDetail, Albums, ArtistDetail, Artists, Songs } from './pages/Library';
+import { AlbumDetail, Albums, ArtistDetail, Artists } from './pages/Library';
 import { Search } from './pages/Search';
 import { Favorites, History } from './pages/Collection';
 import { AddToPlaylist, PlaylistDetail, Playlists } from './pages/Playlists';
 import { Settings } from './pages/Settings';
-import { PlayerBar, Queue, LyricsPlayer } from './features/player/PlayerUI';
+import { PlayerBar, LyricsPlayer } from './features/player/PlayerUI';
 import { IconButton } from './components/Common';
 import type { Track } from './domain/models';
 import { clearProfile } from './storage/local';
@@ -22,7 +22,6 @@ import { Home } from './pages/Home';
 import { ApiError } from './api/client';
 
 const navigation = [
-  { to: '/songs', name: '歌曲', icon: Music2 },
   { to: '/albums', name: '专辑', icon: Disc3 }, { to: '/artists', name: '歌手', icon: Mic2 },
   { to: '/favorites', name: '收藏', icon: Heart }, { to: '/history', name: '最近在听', icon: Clock3 },
 ];
@@ -60,29 +59,31 @@ export default function App() {
   useEffect(() => {
     if (!api || !prefs.shortcuts) return;
     const handle = (e: KeyboardEvent) => {
-      if (e.isComposing || e.target instanceof HTMLElement && (e.target.matches('input, textarea, select, [contenteditable="true"]') || e.target.closest('[contenteditable="true"]'))) return;
+      if (e.defaultPrevented || e.isComposing || e.target instanceof HTMLElement && (e.target.matches('input, textarea, select, [contenteditable="true"]') || e.target.closest('[contenteditable="true"]'))) return;
       if (document.querySelector('dialog[open]')) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); navigate('/search'); }
-      if (e.target instanceof HTMLElement && e.target.closest('button, a')) return;
+      if (e.target instanceof HTMLElement && e.target.closest('button, a, [role="separator"], .room-lyrics-lines')) return;
       if (e.code === 'Space') { e.preventDefault(); player.toggle(); }
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); player.seek(usePlayer.getState().position + (e.key === 'ArrowRight' ? 10 : -10)); }
     };
     window.addEventListener('keydown', handle); return () => window.removeEventListener('keydown', handle);
   }, [api, prefs.shortcuts, navigate]);
+  function openQueue() { setQueue(true); setMenu(false); if (compactPanel) setPanelOverlay(true); else prefs.update({ sidePanel: true }); }
+  function toggleQueue() { if (queue && panelVisible) { setQueue(false); if (compactPanel) setPanelOverlay(false); else prefs.update({ sidePanel: false }); } else openQueue(); }
   if (!api) return <Login />;
-  return <div className={`app-shell workspace-shell ${!compactPanel && prefs.sidePanel ? 'with-now-panel' : ''} ${panelOverlay ? 'panel-overlay-open' : ''}`}>
+  return <div style={{ '--panel-width': panelWidthCss(prefs.panelWidth) } as CSSProperties} className={`app-shell workspace-shell ${!compactPanel && prefs.sidePanel ? 'with-now-panel' : ''} ${panelOverlay ? 'panel-overlay-open' : ''}`}>
     <WorkspaceHeader identity={api.identity} username={api.username} menuOpen={menu} panelOpen={panelVisible} toggleMenu={() => { setPanelOverlay(false); setMenu(!menu); }} togglePanel={() => { setMenu(false); if (compactPanel) setPanelOverlay(!panelOverlay); else prefs.update({sidePanel:!prefs.sidePanel}); }} logout={() => logout(false)} />
     <aside id="workspace-sidebar" inert={mobile && !menu || panelOverlay} className={`sidebar ${menu ? 'open' : ''}`}>
       <nav className="sidebar-primary" aria-label="主导航">{navigation.map(({ to, name, icon: Icon }) => <NavLink key={to} to={to} onClick={() => setMenu(false)}><Icon size={20} /><span>{name}</span></NavLink>)}</nav>
       <div className="sidebar-scroll"><PlaylistTree key={library.libraryId} closeNavigation={() => setMenu(false)} /></div>
     </aside>{menu && <button className="menu-scrim" aria-label="关闭导航遮罩" onClick={() => setMenu(false)} />}
     <div className="app-main" inert={mobile && menu || panelOverlay}><main ref={contentRef} className="content" key={library.libraryId}><Routes>
-      <Route path="/" element={<Home addToPlaylist={setAdding} />} /><Route path="/songs" element={<Songs addToPlaylist={setAdding} />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Settings logout={() => logout(false)} />} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
+      <Route path="/" element={<Home addToPlaylist={setAdding} />} /><Route path="/songs" element={<Navigate to="/search?type=songs" replace />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Settings logout={() => logout(false)} />} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
     </Routes></main></div>
     {panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
-    {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel openQueue={() => setQueue(true)} openPlayer={() => currentId && setLyrics(true)} onClose={() => { if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
-    <div inert={mobile && menu || panelOverlay}><PlayerBar queueOpen={queue} openQueue={() => setQueue(true)} openLyrics={() => currentId && setLyrics(true)} /></div>
-    {queue && <Queue onClose={() => setQueue(false)} />}{lyrics && <LyricsPlayer onClose={() => setLyrics(false)} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
+    {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel view={queue ? 'queue' : 'now'} onViewChange={(view) => setQueue(view === 'queue')} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
+    <div inert={mobile && menu || panelOverlay}><PlayerBar queueOpen={queue && panelVisible} openQueue={toggleQueue} openLyrics={() => currentId && setLyrics(true)} /></div>
+    {lyrics && <LyricsPlayer onClose={() => setLyrics(false)} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
     {notice && <div className="toast" role="status">{notice}<IconButton label="关闭提示" onClick={() => useSession.getState().notify('')}><X size={17} /></IconButton></div>}
   </div>;
 }

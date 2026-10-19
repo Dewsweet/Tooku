@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MusicApi } from '../src/api/client';
@@ -62,6 +62,14 @@ it('uses lyric timestamps for click-to-seek and keeps the source offset separate
   surface(<LyricsPlayer onClose={() => {}} />);
   fireEvent.click(await screen.findByRole('button', { name: '第二句测试歌词' })); expect(seek).toHaveBeenCalledWith(10.5);
   usePreferences.setState({ lyricDelay: 0 });
+});
+it('centers lyrics using viewport geometry and resumes sync after manual scrolling is idle', async () => {
+  surface(<LyricsPlayer onClose={() => {}} />); const line = await screen.findByRole('button', { name: '第二句测试歌词' });
+  const viewport = screen.getByLabelText('歌词内容'); Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 300 }); viewport.scrollTop = 50;
+  vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 300 } as DOMRect); vi.spyOn(line, 'getBoundingClientRect').mockReturnValue({ top: 500, height: 40 } as DOMRect);
+  vi.useFakeTimers(); fireEvent.wheel(viewport); expect(screen.getByRole('button', { name: '同步' })).toHaveAttribute('aria-pressed', 'false');
+  act(() => vi.advanceTimersByTime(5000)); expect(screen.getByRole('button', { name: '同步' })).toHaveAttribute('aria-pressed', 'true');
+  expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 320, behavior: 'instant' });
 });
 it('restores the previous volume after unmuting', async () => {
   const volume = vi.spyOn(player, 'volume').mockImplementation((value) => usePlayer.setState({ volume: value }));

@@ -4,6 +4,8 @@ import { persist } from 'zustand/middleware';
 export const panelSectionNames = { cover: '封面', lyrics: '歌词', details: '歌曲详情', queue: '播放队列' } as const;
 export type PanelSectionId = keyof typeof panelSectionNames;
 export interface PanelSection { id: PanelSectionId; enabled: boolean }
+export const normalizePanelWidth = (width: number) => Math.min(560, Math.max(280, Number.isFinite(width) ? width : 328));
+export const panelWidthCss = (width: number) => `min(${normalizePanelWidth(width)}px, max(280px, calc(100vw - 782px)))`;
 export const defaultPanelSections: PanelSection[] = [
   { id: 'cover', enabled: true }, { id: 'lyrics', enabled: true }, { id: 'details', enabled: true }, { id: 'queue', enabled: true },
 ];
@@ -19,10 +21,10 @@ export function normalizePanelSections(value: unknown): PanelSection[] {
 }
 
 interface Preferences {
-  theme: 'light' | 'dark'; accent: string; sidePanel: boolean; panelSections: PanelSection[]; lyricSize: number; lyricDelay: number; reducedMotion: boolean; shortcuts: boolean;
+  theme: 'light' | 'dark'; accent: string; sidePanel: boolean; panelWidth: number; panelSections: PanelSection[]; lyricSize: number; lyricDelay: number; reducedMotion: boolean; shortcuts: boolean;
   update: (patch: Partial<Omit<Preferences, 'update'>>) => void;
 }
 export const usePreferences = create<Preferences>()(persist((set) => ({
-  theme: 'light', accent: '#c83e55', sidePanel: true, panelSections: defaultPanelSections, lyricSize: 30, lyricDelay: 0, reducedMotion: false, shortcuts: true,
+  theme: 'light', accent: '#c83e55', sidePanel: true, panelWidth: 328, panelSections: defaultPanelSections, lyricSize: 30, lyricDelay: 0, reducedMotion: false, shortcuts: true,
   update: (patch) => set(patch),
 }), { name: 'tooku-preferences', version: 1 }));

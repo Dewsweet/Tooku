@@ -1,10 +1,11 @@
+import { Select } from '../../components/Select';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, Maximize2, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, SlidersHorizontal, ArrowUpRight, Check, Music2 } from 'lucide-react';
-import { Cover, Empty, IconButton, QueryState, formatTime, useApi, toggleFavorite } from '../../components/Common';
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, Maximize2, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, SlidersHorizontal } from 'lucide-react';
+import { Cover, Empty, IconButton, formatTime, useApi, toggleFavorite } from '../../components/Common';
 import { Modal } from '../../components/Modal';
 import { usePlayer, player } from './engine';
-import { lyricIndex } from '../../domain/queue';
+import { Lyrics } from './Lyrics';
 import { usePreferences } from '../../state/preferences';
 import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
 import type { Track } from '../../domain/models';
@@ -91,25 +92,6 @@ export function Queue({ onClose }: { onClose: () => void }) {
   return <Modal title="播放队列" variant="queue" onClose={onClose}><QueueContents /></Modal>;
 }
 
-export function Lyrics({ track }: { track?: Track }) {
-  const api = useApi(); const preferences = usePreferences(); const reduced = useReducedMotion();
-  const ref = useRef<HTMLDivElement>(null); const [follow, setFollow] = useState(true); const position = usePlayer((s) => s.position);
-  const query = useQuery({ queryKey: [api.identity, 'lyrics', track?.id], enabled: Boolean(track), queryFn: ({ signal }) => api.lyrics(track!.id, track!.artist, track!.title, signal) });
-  const lyrics = query.data; const delay = (lyrics?.offsetMs ?? 0) + preferences.lyricDelay;
-  const active = lyrics?.synced ? lyricIndex(lyrics.lines.map((l) => l.startMs), position * 1000 - delay) : -1;
-  useEffect(() => {
-    const container = ref.current; const line = container?.querySelector<HTMLElement>('[aria-current="true"]');
-    if (follow && line && container) container.scrollTo({ top: Math.max(0, line.offsetTop - container.offsetTop - container.clientHeight * 0.36), behavior: reduced ? 'instant' : 'smooth' });
-  }, [active, follow, reduced, track?.id]);
-  return <div className="room-lyrics-panel"><div className="room-panel-label"><span>歌词</span>{lyrics?.synced && <span className="synced-label"><Check size={12} />动态歌词</span>}</div>
-    <QueryState pending={query.isPending && Boolean(track)} error={query.error} retry={() => query.refetch()} />
-    <div ref={ref} className="room-lyrics-lines" style={{ '--lyric-size': `${preferences.lyricSize}px` } as CSSProperties} onWheel={() => setFollow(false)} onTouchStart={() => setFollow(false)} tabIndex={0} aria-label="歌词内容" onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) setFollow(false); }}>
-      {lyrics?.lines.length ? lyrics.lines.map((line, i) => <button className={`room-lyric ${lyrics.synced && i !== active ? 'inactive' : ''} ${i === active ? 'current' : ''}`} key={`${track?.id}-${i}`} aria-current={i === active} disabled={line.startMs === undefined} onClick={() => { if (line.startMs !== undefined) player.seek((line.startMs + delay) / 1000); setFollow(true); }}>{line.text || '♪'}</button>) : !query.isPending && !query.error && <div className="instrumental-state"><span className="instrumental-notes"><Music2 size={35} /></span><h3>暂无歌词</h3></div>}
-    </div>
-    <div className="room-lyrics-footer"><span>{lyrics?.lines.length ? `来自音乐服务器${lyrics.synced ? '' : ' · 静态歌词'}` : ''}</span>{!follow && lyrics?.synced && <button className="follow-button subtle-button" onClick={() => setFollow(true)}><ArrowUpRight size={15} />回到当前歌词</button>}</div>
-  </div>;
-}
-
 export function LyricsPlayer({ onClose }: { onClose: () => void }) {
   const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId); const preferences = usePreferences();
   const [panel, setPanel] = useState<'lyrics' | 'queue'>('lyrics'); const [options, setOptions] = useState(false);
@@ -122,7 +104,7 @@ export function LyricsPlayer({ onClose }: { onClose: () => void }) {
       <div className="room-signal"><Equalizer playing={state.status === 'playing'} /><span>{({ playing: '正在播放', paused: '已暂停', loading: '正在加载', buffering: '正在缓冲', blocked: '点击播放以继续', error: '播放遇到问题', idle: '等待播放' })[state.status]}</span>{current?.track.suffix && <span className="format-badge">{current.track.suffix.toUpperCase()}<span>源文件</span></span>}</div>
       <Progress context="room" /><Transport large />
       <div className="room-extras"><Volume room /><IconButton label="歌词显示设置" aria-expanded={options} className={`icon-button ${options ? 'selected' : ''}`} onClick={() => setOptions(!options)}><SlidersHorizontal size={18} /></IconButton></div>
-      {options && <div className="room-options"><label>歌词字号<select value={preferences.lyricSize} onChange={(e) => preferences.update({ lyricSize: Number(e.target.value) })}>{[24, 30, 36, 42].map((size) => <option key={size} value={size}>{size}</option>)}</select></label><label>歌词延迟 · 毫秒<input type="number" step={100} min={-10000} max={10000} value={preferences.lyricDelay} onChange={(e) => preferences.update({ lyricDelay: Math.max(-10000, Math.min(10000, Number(e.target.value))) })} /></label></div>}
+      {options && <div className="room-options"><label>歌词字号<Select value={preferences.lyricSize} onChange={(value) => preferences.update({ lyricSize: Number(value) })}>{[24, 30, 36, 42].map((size) => <option key={size} value={size}>{size}</option>)}</Select></label><label>歌词延迟 · 毫秒<input type="number" step={100} min={-10000} max={10000} value={preferences.lyricDelay} onChange={(e) => preferences.update({ lyricDelay: Math.max(-10000, Math.min(10000, Number(e.target.value))) })} /></label></div>}
       {state.error && <div className="room-error" role="alert"><p>{state.error}</p><button className="text-button" onClick={() => player.mode('compatible')}>使用兼容模式重试</button></div>}
     </section><section className="room-content" id={panel === 'lyrics' ? 'room-lyrics' : 'room-queue'} role="tabpanel" aria-label={panel === 'lyrics' ? '歌词' : '队列'} key={panel}>{panel === 'lyrics' ? <Lyrics key={current?.track.id} track={current?.track} /> : <QueueContents embedded />}</section></div>
     <div className="room-bottom"><span />{next ? <button className="room-next" aria-label={`下一首：${next.track.title}`} onClick={() => player.next()}><Cover id={next.track.coverArt} size={100} className="next-cover" /><span><small>下一首</small><strong>{next.track.title}</strong></span><SkipForward size={15} /></button> : <span className="room-last">{state.entries.length ? '队列末尾' : ''}</span>}</div>

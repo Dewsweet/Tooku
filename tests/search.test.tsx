@@ -5,17 +5,19 @@ import { MemoryRouter } from 'react-router-dom';
 import { MusicApi } from '../src/api/client';
 import { useSession } from '../src/state/session';
 import { Search } from '../src/pages/Search';
+import { WorkspaceHeader } from '../src/components/WorkspaceHeader';
 
 afterEach(() => { cleanup(); vi.useRealTimers(); useSession.getState().setSession(null); vi.restoreAllMocks(); });
 it('waits for Chinese input composition to finish before submitting a search', async () => {
   vi.useFakeTimers();
   const api = new MusicApi('https://example.test', 'fixture', 'not-real');
   vi.spyOn(api, 'libraries').mockResolvedValue([{id:'1',name:'测试曲库'}]);
+  vi.spyOn(api, 'playlists').mockResolvedValue([]); vi.spyOn(api, 'albums').mockResolvedValue([]);
   const search = vi.spyOn(api, 'search').mockResolvedValue({ songs: [], albums: [], artists: [] });
   useSession.getState().setSession(api);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/search']}><Search addToPlaylist={() => {}} /></MemoryRouter></QueryClientProvider>);
-  const input = screen.getByLabelText('搜索音乐');
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/search']}><WorkspaceHeader identity={api.identity} username={api.username} menuOpen={false} panelOpen={false} toggleMenu={() => {}} togglePanel={() => {}} logout={() => {}} /><Search addToPlaylist={() => {}} /></MemoryRouter></QueryClientProvider>);
+  const input = screen.getByLabelText('搜索音乐库');
   fireEvent.compositionStart(input);
   fireEvent.change(input, { target: { value: 'zhou' } });
   await act(async () => { await vi.advanceTimersByTimeAsync(400); });

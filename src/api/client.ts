@@ -157,7 +157,7 @@ export class MusicApi {
       }
       albums = albums.filter((item) => allowed.has(item.id));
     }
-    return { name: text(data.name, '未知歌手'), albums };
+    return { name: text(data.name, '未知歌手'), coverArt: str(data.coverArt), albums };
   }
   async songs(offset = 0, signal?: AbortSignal, musicFolderId?: string) {
     const data = object((await this.request('search3', { query: '', songCount: 50, songOffset: offset, albumCount: 0, artistCount: 0, musicFolderId }, signal)).searchResult3);
@@ -165,7 +165,7 @@ export class MusicApi {
   }
   async search(query: string, offset = 0, signal?: AbortSignal, musicFolderId?: string) {
     const data = object((await this.request('search3', { query, songCount: 30, albumCount: 30, artistCount: 30, songOffset: offset, albumOffset: offset, artistOffset: offset, musicFolderId }, signal)).searchResult3);
-    return { songs: list(data.song).map(track), albums: list(data.album).map(album), artists: list(data.artist).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手') })) };
+    return { songs: list(data.song).map(track), albums: list(data.album).map(album), artists: list(data.artist).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手'), coverArt: str(a.coverArt) })) };
   }
   async favorites(signal?: AbortSignal, musicFolderId?: string) {
     const data = object((await this.request('getStarred2', { musicFolderId }, signal)).starred2);
