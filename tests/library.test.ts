@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { MusicApi } from '../src/api/client';
-import { emptyLibraryProfile, reparentFolder, removeFolder, useLibrary, playlistPlacement, libraryItems, moveLibraryItem } from '../src/state/library';
+import { emptyLibraryProfile, reparentFolder, removeFolder, useLibrary, playlistPlacement, libraryItems, moveLibraryItem, toggleFolderCollapsed } from '../src/state/library';
 afterEach(() => { vi.unstubAllGlobals(); useLibrary.setState({ profiles: {} }); });
 it('normalizes numeric library IDs and scopes browsing/search/favorites requests', async () => {
   const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ 'subsonic-response': { status: 'ok', musicFolders: { musicFolder: [{ id: 1, name: '散歌' }, { id: 8, name: '专辑' }] } } }))));
@@ -20,6 +20,27 @@ it('prevents folder cycles and preserves children and playlist placements when r
   const profile = { ...emptyLibraryProfile, folders: [{ id: 'parent', name: '语言', libraryId: '1', parentId: null }, { id: 'child', name: '华语', libraryId: '1', parentId: 'parent' }], placements: { p: { libraryId: '1', folderId: 'parent' } } };
   expect(reparentFolder(profile, 'parent', 'child')).toBe(profile);
   const after = removeFolder(profile, 'parent'); expect(after.folders[0].parentId).toBeNull(); expect(after.placements.p).toEqual({ libraryId: '1', folderId: null });
+});
+it('persists folding by account and folder across browser rehydration and cleans deleted folders', async () => {
+  const profile = { ...emptyLibraryProfile, folders: [
+    { id: 'parent', name: '语言', libraryId: '1', parentId: null },
+    { id: 'child', name: '华语', libraryId: '1', parentId: 'parent' },
+    { id: 'other', name: '其他库', libraryId: '2', parentId: null },
+  ] };
+  expect(toggleFolderCollapsed(profile, 'missing')).toBe(profile);
+  useLibrary.getState().change('a', () => toggleFolderCollapsed(toggleFolderCollapsed(profile, 'parent'), 'child'));
+  useLibrary.getState().change('b', () => profile);
+  const cached = localStorage.getItem('tooku-library-organization')!;
+  useLibrary.setState({ profiles: {} }); localStorage.setItem('tooku-library-organization', cached);
+  await useLibrary.persist.rehydrate();
+  expect(useLibrary.getState().profiles.a.collapsedFolders).toEqual(['child', 'parent']);
+  expect(useLibrary.getState().profiles.b.collapsedFolders).toBeUndefined();
+  const removed = removeFolder(useLibrary.getState().profiles.a, 'parent');
+  expect(removed.collapsedFolders).toEqual(['child']);
+  expect(removed.folders.find((f) => f.id === 'child')?.parentId).toBeNull();
+  const opened = toggleFolderCollapsed(removed, 'child');
+  expect(opened).not.toHaveProperty('collapsedFolders');
+  expect(toggleFolderCollapsed(opened, 'other').collapsedFolders).toEqual(['other']);
 });
 it('orders folders and playlists together and preserves other library boundaries', () => {
   const lists = [{ id: 'p', name: '歌曲' }, { id: 'q', name: '其他曲库' }];

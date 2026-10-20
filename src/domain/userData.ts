@@ -10,6 +10,7 @@ export interface UserOrganization {
   folders: { id: string; name: string; libraryId: string; parentId: string | null }[];
   placements: Record<string, { libraryId: string; folderId: string | null }>;
   views: Record<string, 'playlists' | 'songs' | 'albums'>; order?: Record<string, string[]>;
+  collapsedFolders?: string[];
 }
 export interface UserData {
   version: 1;
@@ -50,14 +51,16 @@ export function isUserData(v: unknown): v is UserData {
     || !p.panelSections.every((s) => record(s) && keys(s, ['id', 'enabled']) && ['cover', 'lyrics', 'details', 'queue'].includes(String(s.id)) && typeof s.enabled === 'boolean')) return false;
   if (!record(art) || !keys(art, ['avatar', 'playlistCovers', 'artistCovers']) || art.avatar !== undefined && !image(art.avatar) || !map(art.playlistCovers, image)
     || art.artistCovers !== undefined && (!record(art.artistCovers) || !map(art.artistCovers, image) || !Object.keys(art.artistCovers).every(id))) return false;
-  if (!record(o) || !keys(o, ['activeId', 'defaultId', 'folders', 'placements', 'views', 'order']) || !optionalId(o.activeId) || !optionalId(o.defaultId)
+  if (!record(o) || !keys(o, ['activeId', 'defaultId', 'folders', 'placements', 'views', 'order', 'collapsedFolders']) || !optionalId(o.activeId) || !optionalId(o.defaultId)
     || !Array.isArray(o.folders) || o.folders.length > 2000 || !o.folders.every((f) => record(f) && keys(f, ['id', 'name', 'libraryId', 'parentId']) && id(f.id) && text(f.name) && f.name.trim().length && id(f.libraryId) && (f.parentId === null || id(f.parentId)))
     || !map(o.placements, (p) => record(p) && keys(p, ['libraryId', 'folderId']) && id(p.libraryId) && (p.folderId === null || id(p.folderId)))
     || !map(o.views, (v) => ['playlists', 'songs', 'albums'].includes(String(v)))
-    || o.order !== undefined && !map(o.order, (v) => Array.isArray(v) && v.length <= 10000 && v.every(text))) return false;
+    || o.order !== undefined && !map(o.order, (v) => Array.isArray(v) && v.length <= 10000 && v.every(text))
+    || o.collapsedFolders !== undefined && (!Array.isArray(o.collapsedFolders) || o.collapsedFolders.length > 2000 || !o.collapsedFolders.every(id) || new Set(o.collapsedFolders).size !== o.collapsedFolders.length)) return false;
   const folders = o.folders;
   if (new Set(folders.map((f) => f.id)).size !== folders.length) return false;
   const byId = new Map(folders.map((f) => [f.id, f])); const siblings = new Set<string>();
+  if (Array.isArray(o.collapsedFolders) && o.collapsedFolders.some((closed) => !byId.has(closed))) return false;
   for (const f of folders) {
     const nameKey = JSON.stringify([f.libraryId, f.parentId, f.name]); if (siblings.has(nameKey)) return false; siblings.add(nameKey);
     const visited = new Set([f.id]); let parent = f.parentId;

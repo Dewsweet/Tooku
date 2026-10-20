@@ -12,8 +12,16 @@ export interface LibraryProfile {
   activeId?: string; defaultId?: string; folders: PlaylistFolder[]; placements: Record<string, Placement>;
   views: Record<string, 'playlists' | 'songs' | 'albums'>;
   order?: Record<string, string[]>;
+  collapsedFolders?: string[];
 }
 export const emptyLibraryProfile: LibraryProfile = { folders: [], placements: {}, views: {} };
+export function toggleFolderCollapsed(profile: LibraryProfile, id: string): LibraryProfile {
+  if (!profile.folders.some((folder) => folder.id === id)) return profile;
+  const closed = new Set(profile.collapsedFolders ?? []);
+  if (closed.has(id)) closed.delete(id); else closed.add(id);
+  const { collapsedFolders: previous, ...rest } = profile;
+  return closed.size ? { ...rest, collapsedFolders: [...closed].sort() } : previous ? rest : profile;
+}
 export function descendants(folders: PlaylistFolder[], id: string): Set<string> {
   const result = new Set([id]); let changed = true;
   while (changed) { changed = false; for (const folder of folders) if (folder.parentId && result.has(folder.parentId) && !result.has(folder.id)) { result.add(folder.id); changed = true; } }
@@ -26,7 +34,9 @@ export function reparentFolder(profile: LibraryProfile, id: string, parentId: st
 }
 export function removeFolder(profile: LibraryProfile, id: string): LibraryProfile {
   const folder = profile.folders.find((f) => f.id === id); if (!folder) return profile;
-  return { ...profile, folders: profile.folders.filter((f) => f.id !== id).map((f) => f.parentId === id ? { ...f, parentId: folder.parentId } : f),
+  const { collapsedFolders, ...rest } = profile;
+  const remaining = collapsedFolders?.filter((closed) => closed !== id);
+  return { ...rest, ...(remaining?.length ? { collapsedFolders: remaining } : {}), folders: profile.folders.filter((f) => f.id !== id).map((f) => f.parentId === id ? { ...f, parentId: folder.parentId } : f),
     placements: Object.fromEntries(Object.entries(profile.placements).map(([key, value]) => [key, value.folderId === id ? { ...value, folderId: folder.parentId } : value])) };
 }
 interface LibraryState {

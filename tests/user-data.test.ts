@@ -26,6 +26,15 @@ async function listening(server: Server) {
   return `http://127.0.0.1:${address.port}`;
 }
 describe('versioned user storage', () => {
+  it('accepts old documents and validates optional folder folding against existing unique IDs', () => {
+    const data = sampleData();
+    expect(isUserData(data)).toBe(true);
+    const organization = { ...data.organization, folders: [{ id: 'folder', name: '目录', libraryId: 'music', parentId: null }], collapsedFolders: ['folder'] };
+    expect(isUserData({ ...data, organization })).toBe(true);
+    for (const collapsedFolders of [['missing'], ['folder', 'folder'], ['https://example.test/private'], 'folder']) {
+      expect(isUserData({ ...data, organization: { ...organization, collapsedFolders } })).toBe(false);
+    }
+  });
   it('accepts legacy profiles and persists validated artist pictures in the account document', () => {
     const data = sampleData();
     expect(isUserData(data)).toBe(true);
@@ -53,6 +62,7 @@ describe('versioned user storage', () => {
   it('persists after restart, isolates accounts, retains duplicate tracks and compares revisions atomically', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tooku-store-')); cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
     const filename = join(dir, 'data.sqlite'); let store = new UserStore(filename); const data = sampleData();
+    data.organization.folders = [{ id: 'folder', name: '目录', libraryId: 'music', parentId: null }]; data.organization.collapsedFolders = ['folder'];
     expect(store.write('alice', 0, data).revision).toBe(1);
     expect(() => store.write('alice', 0, data)).toThrow(DataError);
     expect(store.read('bob').data).toBeNull(); store.close(); store = new UserStore(filename); cleanups.push(() => store.close());

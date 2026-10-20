@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.stubGlobal('DragEvent', MouseEvent);
   Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(this: HTMLDialogElement){this.open=true;}});
   Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(this: HTMLDialogElement){this.open=false;}});
-  api=new MusicApi('https://example.test','fixture','test'); useSession.getState().setSession(api);
+  api=new MusicApi('https://example.test','fixture','test'); useSession.getState().setSession(api); useSession.setState({ notice: '' });
   client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
   client.setQueryData([api.identity,'libraries'],[{id:'1',name:'散歌'},{id:'2',name:'专辑'}]);
   client.setQueryData([api.identity,'playlists'],[{id:'p1',name:'华语',songCount:1,owner:'fixture'},{id:'p2',name:'日语',songCount:1,owner:'fixture'}]);
@@ -56,16 +56,33 @@ it('plays a row on a blank-area double click and exposes queue actions in a cust
   fireEvent.contextMenu(row, { clientX: 150, clientY: 150 }); fireEvent.click(screen.getByRole('menuitem', { name: '下一首播放' }));
   await waitFor(() => expect(append).toHaveBeenCalledWith([song], true)); expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });
-it('saves a dragged playlist order including duplicates and can undo the saved change', async () => {
+it('silently saves a dragged playlist order including duplicates without an undo button', async () => {
   const songs = [song, { ...song, id: 'second', title: '第二首' }, song]; const before = { id: 'p1', name: '华语', owner: 'fixture', changed: 'v1', songs }; const after = { ...before, changed: 'v2', songs: [songs[1], songs[2], songs[0]] };
   client.setQueryData([api.identity, 'playlist', 'p1'], before); vi.spyOn(api, 'playlist').mockResolvedValue(before);
-  const save = vi.spyOn(api, 'savePlaylist').mockResolvedValueOnce(after).mockResolvedValueOnce({ ...before, changed: 'v3' });
+  const save = vi.spyOn(api, 'savePlaylist').mockResolvedValueOnce(after);
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
   const rows = screen.getAllByRole('listitem'); const store = new Map(); const transfer = { types: ['application/x-tooku-track'], setData: (key: string, value: string) => store.set(key, value), getData: (key: string) => store.get(key) };
   fireEvent.dragStart(rows[0], { dataTransfer: transfer }); fireEvent.dragOver(rows[2], { dataTransfer: transfer, clientY: 10 }); fireEvent.drop(rows[2], { dataTransfer: transfer });
   await waitFor(() => expect(save).toHaveBeenCalledWith('p1', '华语', ['second', 's', 's'], 'v1'));
-  fireEvent.click(await screen.findByRole('button', { name: '撤销上次修改' }));
-  await waitFor(() => expect(save).toHaveBeenLastCalledWith('p1', '华语', ['s', 'second', 's'], 'v2'));
+  await waitFor(() => expect(client.getQueryData([api.identity, 'playlist', 'p1'])).toEqual(after));
+  expect(save).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('button', { name: '撤销上次修改' })).not.toBeInTheDocument();
+  expect(useSession.getState().notice).toBe('');
+});
+it('keeps the saved order when a reorder fails and offers a readback without automatically retrying', async () => {
+  const before = { id: 'p1', name: '华语', owner: 'fixture', changed: 'v1', songs: [song, { ...song, id: 'second', title: '第二首' }] };
+  client.setQueryData([api.identity, 'playlist', 'p1'], before);
+  const read = vi.spyOn(api, 'playlist').mockResolvedValue(before);
+  const save = vi.spyOn(api, 'savePlaylist').mockRejectedValue(new Error('保存结果未知，请重新读取。'));
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
+  fireEvent.contextMenu(screen.getAllByRole('listitem')[1]);
+  fireEvent.click(screen.getByRole('menuitem', { name: '上移' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('保存结果未知');
+  expect(client.getQueryData([api.identity, 'playlist', 'p1'])).toEqual(before);
+  expect(save).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '重新读取服务器歌单' }));
+  await waitFor(() => expect(read).toHaveBeenCalledOnce());
+  expect(save).toHaveBeenCalledOnce(); expect(useSession.getState().notice).toBe('');
 });
 it('keeps another owner playlist read-only and creates folders at the current location without a location picker', () => {
   client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '他人的歌单', owner: 'other', changed: 'v1', songs: [song] });
@@ -90,11 +107,33 @@ it('shows a lock and an explanation for an account without playlist editing perm
 it('keeps server-managed tracks read-only while the owner can still edit metadata', () => {
   client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '同步歌单', owner: 'fixture', readonly: true, changed: 'v1', songs: [song] });
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
-  expect(screen.getByText('曲序只读')).toBeInTheDocument();
+  expect(screen.getByText('自动维护歌单')).toHaveAttribute('data-tooltip', expect.stringContaining('请修改原文件后重新扫描'));
   expect(screen.getByRole('button', { name: '更换歌单封面' })).toBeEnabled();
   expect(screen.getByRole('listitem')).toHaveAttribute('draggable', 'false');
   fireEvent.click(screen.getByRole('button', { name: '歌单选项' }));
   expect(screen.getByRole('menuitem', { name: '歌单信息与封面' })).toBeEnabled();
+});
+
+it('defaults folders to open and retains folding across tree remounts and library changes', () => {
+  const view = surface(<PlaylistTree closeNavigation={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: '收起文件夹 语言' }));
+  expect(useLibrary.getState().profiles[api.identity].collapsedFolders).toEqual(['parent']);
+  view.unmount();
+  surface(<PlaylistTree closeNavigation={() => {}} />);
+  expect(screen.getByRole('button', { name: '展开文件夹 语言' })).toHaveAttribute('aria-expanded', 'false');
+  act(() => useLibrary.getState().change(api.identity, (p) => ({ ...p, activeId: '2' })));
+  expect(screen.queryByRole('button', { name: '展开文件夹 语言' })).not.toBeInTheDocument();
+  act(() => useLibrary.getState().change(api.identity, (p) => ({ ...p, activeId: '1' })));
+  fireEvent.click(screen.getByRole('button', { name: '展开文件夹 语言' }));
+  expect(useLibrary.getState().profiles[api.identity].collapsedFolders).toBeUndefined();
+  expect(screen.getByRole('button', { name: '收起文件夹 语言' })).toHaveAttribute('aria-expanded', 'true');
+});
+it('keeps folding usable and explains a browser storage failure', () => {
+  surface(<PlaylistTree closeNavigation={() => {}} />);
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+  fireEvent.click(screen.getByRole('button', { name: '收起文件夹 语言' }));
+  expect(screen.getByRole('button', { name: '展开文件夹 语言' })).toHaveAttribute('aria-expanded', 'false');
+  expect(useSession.getState().notice).toBe('文件夹状态暂未保存到浏览器，刷新后可能恢复。');
 });
 
 it('keeps card and tree folder actions in context menus and uses / for creation at root', () => {

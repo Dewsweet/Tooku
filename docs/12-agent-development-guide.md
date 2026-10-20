@@ -46,7 +46,7 @@ React 页面 / 通用控件
 | 专辑与歌手页 | `src/pages/Library.tsx`、`ArtistDetail.tsx` | 专辑自动分批浏览；歌手横幅、播放与专辑区，保留当前库边界 |
 | 全站滚动条 | `src/components/ContentScrollbar.tsx`、`ScrollArea.tsx` | 中部、左栏和播放侧栏叠加贴边 8 px 滑块；监听滚动和内容尺寸，支持拖动、键盘及清理；弹窗/菜单使用 `src/scrollbars.css` 原生回退 |
 | 自动加载 | `src/components/AutoLoadMore.tsx` | 监听中部 `.content` 滚动容器；接近底部预读，失败时停止，卸载清理监听 |
-| 歌单管理与详情 | `src/features/library/PlaylistViews.tsx` | 直接排序、随机播放、撤销、只读判断；详情通过 key 隔离每张歌单的编辑状态 |
+| 歌单管理与详情 | `src/features/library/PlaylistViews.tsx` | 直接排序保存、随机播放、只读判断；详情通过 key 隔离每张歌单的编辑状态 |
 | 歌单信息与选图 | `src/features/library/PlaylistDetailsEditor.tsx`、`PlaylistCoverPicker.tsx` | 详情封面直达选图/裁剪，三点菜单编辑名称/简介；名称/简介写 Navidrome，封面沿用 Tooku 账号同步 |
 | 新建歌单 | `src/features/library/CreatePlaylist.tsx` | 左栏可选位置；管理页使用当前目录 |
 | 左栏树和移动弹窗 | `src/features/library/Organization.tsx` | 与管理页共用组织数据；`pages/Playlists.tsx` 保留导出和添加歌曲入口 |
@@ -82,12 +82,13 @@ React 页面 / 通用控件
 - 歌曲标题及播放按钮有明确入口；双击行空白是补充操作，不拦截歌手、专辑等链接的自身语义。
 - 表格使用同一底色，仅悬停/选中反馈；列宽可调。加入队列、下一首、添加歌单、移动等操作进统一右键菜单，行尾只留收藏。
 - 收藏页的歌曲、专辑、歌手筛选与主页共用 `FilterPills`，保留键盘焦点与按下状态，支持窄屏换行。三类内容分别复用歌曲表格、专辑网格、圆形图片加姓名的歌手网格；空状态仅显示“还没有收藏的歌曲/专辑/歌手”，不加引导小字。收藏歌手保留接口返回的 `coverArt`，复用已有自定义图片与加载失败回退。
-- 普通歌单详情采用播放、随机、更多选项的操作组；封面悬停/聚焦显示“选择照片”，点击直接选择图片并裁剪，保存后仅更新 Tooku 账号封面；三点菜单进入名称、简介和封面编辑。不使用单独曲目编辑页。长歌单时长约到整小时，短于一小时保留分钟，专辑仍保留原分钟精度。
-- 有权限的歌单可在列表直接拖动保存，重复歌曲保留；失败后可重读核实，支持撤销上次已保存修改。
+- 普通歌单详情采用播放、随机、更多选项的操作组；封面悬停/聚焦显示“选择照片”，点击直接选择图片并裁剪，保存后仅更新 Tooku 账号封面；三点菜单进入名称、简介和封面编辑；编辑弹窗使用 210 px 方形封面，与右侧表单上下对齐，名称与简介分组留出间距，窄屏改为上下排列。不使用单独曲目编辑页。长歌单时长约到整小时，短于一小时保留分钟，专辑仍保留原分钟精度。
+- 有权限的歌单可在列表直接拖动保存，重复歌曲保留；保存成功不显示通知或撤销按钮；失败后显示错误并可重读核实，不自动重试结果未知的写入。
 - 歌单管理主体仅浏览，卡片保留图片与名称，不提供拖放或引导小字；左栏保留歌单/文件夹拖动，歌单位置用横线提示，文件夹内部只变色，根目录末尾保持固定落点以免拖动时布局闪烁。`components/dragPreview.ts` 为左栏和歌曲拖动清除默认链接数据，仅携带 Tooku 自定义 MIME，使用名称或“歌曲 · 歌手”的精简预览；预览在下一帧、拖动结束或卸载时清理。Chrome 自身是否仍显示系统拖放功能需人工确认。歌曲上移/下移菜单、权限和重复项不变，列表已更新时拒绝过期拖放。
 - 主体卡片和左栏文件夹不显示三点图标，操作保留在右键菜单；详情页保留三点菜单。新建歌单不显示“创建于…”提示，根目录在文件夹选择和路径中统一写作 `/`。
-- 歌单权限规则共用 `domain/playlistPermissions.ts`：优先识别服务端明确的 `readonly: false`，缺失时兼容拥有者判断；`readonly: true` 禁止改动歌曲，元信息仍按拥有者权限判断。无编辑权限时显示锁图标和“只读歌单”，封面提示无法修改；拥有元信息权限但曲目由服务端管理时显示“曲序只读”。歌曲添加、详情页和 `MusicApi.savePlaylist` 写前读取共用判断，真正的写入权限仍由服务端裁决。可拖动行禁止文字选择，普通只读行仍可选择文字。
+- 歌单权限规则共用 `domain/playlistPermissions.ts`：优先识别服务端明确的 `readonly: false`，缺失时兼容拥有者判断；`readonly: true` 禁止改动歌曲，元信息仍按拥有者权限判断。无编辑权限时显示锁图标和“只读歌单”，封面提示无法修改；拥有元信息权限但曲目由服务端管理时显示“自动维护歌单”，悬停/聚焦说明应修改原 m3u/m3u8 文件后重新扫描。歌曲添加、详情页和 `MusicApi.savePlaylist` 写前读取共用判断，真正的写入权限仍由服务端裁决。可拖动行禁止文字选择，普通只读行仍可选择文字。
 - 左栏歌单区的新建图标创建歌单，可选择文件夹，留空为根目录；管理页在根目录或文件夹内就地创建歌单/文件夹。
+- 左栏文件夹默认展开；`organization.collapsedFolders` 仅记录折叠的文件夹 ID，浏览器刷新、切库后保留，通过既有账号同步写入 Tooku SQLite。展开全部时省略该字段，旧数据和旧备份仍默认展开。删除文件夹会清理对应状态，子文件夹状态保留。
 - 文件夹和歌单混排。不能把文件夹移入自身或子级；删除文件夹将内容归位上一级，不删除 Navidrome 歌单。
 
 ### 表面、文案与动效
@@ -107,7 +108,7 @@ React 页面 / 通用控件
 | 音乐文件、专辑、歌手、新上传的歌手图片、服务器收藏 | Navidrome | 以服务器授权和返回值为准 |
 | 歌单名称、简介、曲目和曲序 | Navidrome | Tooku 通过协议读写并核实 |
 | 头像、自定义歌单封面及旧版私人歌手图片 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-profiles` | 本地按 `api.identity`，服务端按已验证 owner；旧版 data URL 不自动上传 Navidrome |
-| 文件夹、歌单位置/混排、曲库视图与选中库 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
+| 文件夹及展开状态、歌单位置/混排、曲库视图与选中库 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
 | 明暗、主题色、布局、列宽、歌词和快捷键偏好 | SQLite 账号文档 / IndexedDB sync；`tooku-preferences` 作为当前偏好与设备回退 | 切号还原设备回退，账号修改存在各自 sync 缓存 |
 | 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
 | 同步基线、未上传数据、导入前副本 | IndexedDB `profiles` 中 `sync` / `before-import` | 原数据保留；清除本机播放快照不清迁移基线 |
@@ -144,7 +145,7 @@ Navidrome 的 `getPlaylists` 返回账号可见的歌单。每库归属是 Tooku
 
 歌单曲序使用 `savePlaylist`，基本信息使用 `updatePlaylistDetails`，不要为修改简介重写所有歌曲。先检查 `changed`，写后重读验证；失败/超时不能盲目自动重试。保留已知的非原子并发限制。
 
-异步操作期间防重复提交；拖放发生后如果列表已变化，应取消旧拖放。歌单详情按 ID 隔离状态，避免旧歌单的异步结果或撤销操作进入新歌单。只读按钮和拖放都应禁用，但权限仍由服务器执行。
+异步操作期间防重复提交；拖放发生后如果列表已变化，应取消旧拖放。歌单详情按 ID 隔离状态，避免旧歌单的异步结果进入新歌单。只读按钮和拖放都应禁用，但权限仍由服务器执行。
 
 ### 播放
 
@@ -181,7 +182,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 音频生命周期、过期播放结果 | `tests/player.test.ts` |
 | 歌词、进度、弹窗和播放器 UI | `tests/player-ui.test.tsx` |
 | 多库、目录边界、混排 | `tests/library.test.ts` |
-| 歌单拖放/撤销、只读、列表、链接 | `tests/organization-ui.test.tsx` |
+| 歌单拖放保存、文件夹展开状态、只读、列表、链接 | `tests/organization-ui.test.tsx` |
 | 搜索输入法 | `tests/search.test.tsx` |
 | 菜单、提示、焦点 | `tests/interactions.test.tsx` |
 | 专辑播放入口 | `tests/albums.test.tsx` |

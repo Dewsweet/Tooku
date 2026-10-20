@@ -58,27 +58,33 @@ describe('user data migration and sync', () => {
     expect(useProfiles.getState().artistCovers[api.identity]?.['artist-one']).toBe(image);
   });
 
-  it('restores a legacy backup without artist pictures while retaining other accounts', async () => {
+  it('restores a legacy backup without artist pictures or folding while retaining other accounts', async () => {
     await connectUserSync(api);
     const legacy = structuredClone(localUserData()!);
     expect(legacy.profile.artistCovers).toBeUndefined();
     useProfiles.getState().setArtistCover(api.identity, 'one', 'data:image/jpeg;base64,AA==');
     useProfiles.getState().setArtistCover('other-account', 'one', 'data:image/jpeg;base64,AQ==');
+    const folderProfile = { folders: [{ id: 'one', name: '目录', libraryId: 'music', parentId: null }], placements: {}, views: {}, collapsedFolders: ['one'] };
+    useLibrary.getState().change(api.identity, () => folderProfile);
+    useLibrary.getState().change('other-account', () => folderProfile);
     await vi.advanceTimersByTimeAsync(900);
     await chooseUserData('local', legacy);
     expect(useProfiles.getState().artistCovers[api.identity]).toEqual({});
     expect(useProfiles.getState().artistCovers['other-account'].one).toBe('data:image/jpeg;base64,AQ==');
     expect(remote.data?.profile.artistCovers).toBeUndefined();
+    expect(useLibrary.getState().profiles[api.identity].collapsedFolders).toBeUndefined();
+    expect(useLibrary.getState().profiles['other-account'].collapsedFolders).toEqual(['one']);
   });
 
-  it('automatically uploads the original browser and restores avatar and playlist order in a fresh browser', async () => {
+  it('automatically uploads the original browser and restores avatar, playlist order and folding in a fresh browser', async () => {
     const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBz8AAAAASUVORK5CYII=';
     const order = { [orderKey('music', null)]: ['playlist:second', 'playlist:first'] };
     useProfiles.getState().setAvatar(api.identity, avatar);
-    useLibrary.getState().change(api.identity, () => ({ defaultId: 'music', folders: [{ id: 'one', name: '旧目录', libraryId: 'music', parentId: null }], placements: {}, views: {}, order }));
+    useLibrary.getState().change(api.identity, () => ({ defaultId: 'music', folders: [{ id: 'one', name: '旧目录', libraryId: 'music', parentId: null }], placements: {}, views: {}, order, collapsedFolders: ['one'] }));
     await connectUserSync(api);
     expect(remote.data?.profile.avatar).toBe(avatar);
     expect(remote.data?.organization.order).toEqual(order);
+    expect(remote.data?.organization.collapsedFolders).toEqual(['one']);
     expect(memory.has(`${api.identity}|before-import`)).toBe(true); expect(useUserSync.getState().status).toBe('ready');
     // A different browser has neither localStorage stores nor IndexedDB sync history.
     disconnectUserSync(); memory.clear(); localStorage.clear();
@@ -88,6 +94,7 @@ describe('user data migration and sync', () => {
     expect(useUserSync.getState().status).toBe('ready');
     expect(useProfiles.getState().avatars[api.identity]).toBe(avatar);
     const organization = useLibrary.getState().profiles[api.identity];
+    expect(organization.collapsedFolders).toEqual(['one']);
     expect(libraryItems(organization, [{ id: 'first', name: '第一张' }, { id: 'second', name: '第二张' }], 'music', null, 'music').filter((i) => i.kind === 'playlist').map((i) => i.key)).toEqual(order[orderKey('music', null)]);
     expect(client.write).not.toHaveBeenCalled();
   });

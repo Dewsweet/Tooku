@@ -46,16 +46,18 @@
 .playlist-controls .icon-button { width: 42px; height: 42px; border-radius: 50%; }
 .playlist-readonly { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--muted); font-size: 13px; }
 .playlist-readonly:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.playlist-order-status { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
-.playlist-order-status .text-button { display: flex; gap: 6px; align-items: center; font-size: 12px; }
-.playlist-details-editor { display: grid; grid-template-columns: 140px 1fr; gap: 22px; }
-.playlist-edit-cover { position: relative; width: 140px; height: 140px; border-radius: 10px; padding: 0; overflow: hidden; background: var(--surface); }
+.modal:has(.playlist-details-editor) { width: 600px; }
+.playlist-details-editor { --playlist-editor-size: 210px; display: grid; grid-template-columns: var(--playlist-editor-size) minmax(0,1fr); gap: 24px; align-items: start; }
+.playlist-edit-cover { position: relative; width: var(--playlist-editor-size); height: var(--playlist-editor-size); border-radius: 10px; padding: 0; overflow: hidden; background: var(--surface); }
 .playlist-edit-cover > img, .playlist-edit-cover > .entity-artwork { display: block; width: 100%; height: 100%; object-fit: cover; }
 .playlist-edit-cover > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; background: #11151b66; color: white; font-size: 12px; opacity: 0; transition: opacity .2s; }
 .playlist-edit-cover:hover > span, .playlist-edit-cover:focus-visible > span { opacity: 1; }
-.playlist-details-editor textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); padding: 12px; font: inherit; resize: vertical; min-height: 85px; }
-.playlist-cover-note { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 11px; line-height: 1.5; margin: 0 0 20px; }
-.playlist-cover-note .text-button { font-size: 12px; flex-shrink: 0; margin-left: auto; }
+.playlist-details-fields { height: var(--playlist-editor-size); display: grid; grid-template-rows: auto minmax(0,1fr); gap: 18px; min-width: 0; }
+.playlist-details-fields label { display: flex; flex-direction: column; gap: 8px; margin: 0; min-height: 0; }
+.playlist-details-fields input, .playlist-details-fields textarea { margin-top: 0; }
+.playlist-details-fields textarea { flex: 1; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); padding: 12px; font: inherit; resize: none; min-height: 0; }
+.playlist-details-actions { display: flex; align-items: center; gap: 16px; margin-top: 22px; }
+.playlist-details-actions .primary-button { margin-left: auto; }
 .organization-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(175px,1fr)); gap: 23px; min-height: 90px; padding-bottom: 35px; }
 .organization-grid .playlist-card { min-width: 0; }
 .organization-folder-card { position: relative; min-width: 0; border-radius: 11px; }
@@ -83,4 +85,4 @@
   .workspace-shell .track-artist, .workspace-shell .track-table-heading > .track-column-1 { display: none; }
 }
 @media(max-width:767px) { .workspace-shell .track-actions { grid-column: auto; margin-top: 0; opacity: 1; } .track-column-handle { display: none; } }
-@media(max-width:560px) { .playlist-details-editor { grid-template-columns: 1fr; } .playlist-edit-cover { width: 150px; height: 150px; margin: auto; } .organization-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 15px; } .playlist-cover-note { align-items: flex-start; flex-direction: column; } .playlist-cover-note .text-button { margin-left: 0; } }
+@media(max-width:560px) { .playlist-details-editor { grid-template-columns: 1fr; } .playlist-edit-cover { width: 180px; height: 180px; margin: auto; } .organization-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 15px; } }
