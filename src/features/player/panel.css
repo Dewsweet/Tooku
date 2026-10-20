@@ -19,12 +19,10 @@
 .panel-module-heading .icon-button { width: 28px; height: 28px; border-radius: 50%; }
 .panel-module-lyrics { background: linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface)); }
 .panel-module-lyrics .room-lyrics-panel { height: 300px; }
-.panel-module-lyrics .room-panel-label { display: none; }
 .panel-module-lyrics .room-lyrics-lines { padding: 45px 1px 100px; height: auto; min-height: 0; flex: 1; mask-image: linear-gradient(transparent,black 8%,black 90%,transparent); }
 .panel-module-lyrics .room-lyric { font-size: 23px; line-height: 1.55; padding: 11px 0; letter-spacing: -.3px; }
-.panel-module-lyrics .room-lyric.inactive { opacity: .7; }
+.panel-module-lyrics .room-lyric.inactive { color: var(--muted); opacity: .7; }
 .panel-module-lyrics .room-lyrics-footer { padding: 8px 0 0; min-height: 0; }
-.panel-module-lyrics .room-lyrics-footer > span { display: none; }
 .panel-module-lyrics .follow-button { position: static; margin-left: auto; font-size: 12px; padding: 6px 8px; }
 .panel-module-lyrics .instrumental-state { min-height: 150px; }
 .panel-module-lyrics .instrumental-state h3 { font-size: 17px; }

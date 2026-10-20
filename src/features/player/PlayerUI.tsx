@@ -80,12 +80,12 @@ export function QueueContents({ embedded = false }: { embedded?: boolean }) {
     if (row && ref.current) ref.current.scrollTo({ top: Math.max(0, row.offsetTop - ref.current.offsetTop - 16), behavior: reduced ? 'instant' : 'smooth' });
   }, [state.currentId, reduced]);
   return <div className={`queue-content ${embedded ? 'embedded' : ''}`}>
-    <div className="queue-intro"><div><span className="eyebrow">UP NEXT</span><h3>接下来播放<span>{Math.max(0, state.entries.length - index - 1)} 首</span></h3></div>{state.undo && <button className="text-button" onClick={() => state.undo && player.restoreQueue(state.undo)}>撤销替换</button>}</div>
+    <div className="queue-intro"><div>{!embedded && <span className="eyebrow">UP NEXT</span>}<h3>接下来播放<span>{Math.max(0, state.entries.length - index - 1)} 首</span></h3></div>{state.undo && <button className="text-button" onClick={() => state.undo && player.restoreQueue(state.undo)}>撤销替换</button>}</div>
     {state.entries.length ? <div className="queue-list" ref={ref}>{state.entries.map((entry, i) => <div className={`queue-row ${entry.entryId === state.currentId ? 'current' : ''}`} aria-current={entry.entryId === state.currentId} key={entry.entryId}>
       <button className="queue-select" onClick={() => player.select(entry.entryId)} aria-label={`播放队列第 ${i + 1} 首：${entry.track.title}`}><span className="queue-number">{entry.entryId === state.currentId ? <Equalizer playing={state.status === 'playing'} /> : i + 1}</span><Cover id={entry.track.coverArt} size={120} className="track-cover" /><span><strong>{entry.track.title}</strong><small>{entry.track.artist}</small></span></button>
       <span className="queue-duration">{formatTime(entry.track.duration)}</span><div className="queue-item-actions"><IconButton label={`上移 ${entry.track.title}`} disabled={i === 0} onClick={() => player.move(i, i - 1)}><ChevronUp size={16} /></IconButton><IconButton label={`下移 ${entry.track.title}`} disabled={i === state.entries.length - 1} onClick={() => player.move(i, i + 1)}><ChevronDown size={16} /></IconButton><IconButton label={`移除 ${entry.track.title}`} onClick={() => player.remove(entry.entryId)}><X size={16} /></IconButton></div>
     </div>)}</div> : <Empty title="下一首，由你决定">从音乐库播放歌曲，或将歌曲添加到队列。</Empty>}
-    <p className="queue-footnote">按顺序播放 · 调序不会打断当前音乐</p>
+    {!embedded && <p className="queue-footnote">按顺序播放 · 调序不会打断当前音乐</p>}
   </div>;
 }
 export function Queue({ onClose }: { onClose: () => void }) {
@@ -95,18 +95,16 @@ export function Queue({ onClose }: { onClose: () => void }) {
 export function LyricsPlayer({ onClose }: { onClose: () => void }) {
   const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId); const preferences = usePreferences();
   const [panel, setPanel] = useState<'lyrics' | 'queue'>('lyrics'); const [options, setOptions] = useState(false);
-  const index = state.entries.findIndex((e) => e.entryId === state.currentId); const next = state.entries[index + 1];
   return <Modal title="正在播放" variant="player" onClose={onClose}>
     <div className="room-backdrop" aria-hidden="true"><Cover id={current?.track.coverArt} size={240} /></div>
-    <div className="room-topline"><div className="room-collection"><span className="room-brand">t.</span><span>{current?.track.album ?? '正在播放'}</span></div><div className="room-tabs" role="tablist" aria-label="播放器内容"><button role="tab" aria-selected={panel === 'lyrics'} aria-controls="room-lyrics" onClick={() => setPanel('lyrics')}><Mic2 size={16} />歌词</button><button role="tab" aria-selected={panel === 'queue'} aria-controls="room-queue" onClick={() => setPanel('queue')}><ListMusic size={17} />队列<span>{state.entries.length}</span></button></div></div>
+    <div className="room-topline"><div className="room-tabs" role="tablist" aria-label="播放器内容"><button role="tab" aria-selected={panel === 'lyrics'} aria-controls="room-lyrics" onClick={() => setPanel('lyrics')}><Mic2 size={16} />歌词</button><button role="tab" aria-selected={panel === 'queue'} aria-controls="room-queue" onClick={() => setPanel('queue')}><ListMusic size={17} />队列</button></div></div>
     <div className="room-body"><section className="room-record" aria-label="当前歌曲"><div key={current?.entryId} className={`room-artwork ${state.status === 'playing' ? 'is-playing' : ''}`}><Cover id={current?.track.coverArt} size={900} /><div className="artwork-sheen" /></div>
       <div className="room-song"><div key={current?.entryId} className="room-song-copy"><h1>{current?.track.title ?? '选择一首喜欢的歌'}</h1><p>{current?.track.artist ?? 'Tooku'}</p></div><Favorite track={current?.track} /></div>
-      <div className="room-signal"><Equalizer playing={state.status === 'playing'} /><span>{({ playing: '正在播放', paused: '已暂停', loading: '正在加载', buffering: '正在缓冲', blocked: '点击播放以继续', error: '播放遇到问题', idle: '等待播放' })[state.status]}</span>{current?.track.suffix && <span className="format-badge">{current.track.suffix.toUpperCase()}<span>源文件</span></span>}</div>
+      {state.status === 'blocked' && <div className="room-error" role="status">点击播放以继续</div>}
       <Progress context="room" /><Transport large />
       <div className="room-extras"><Volume room /><IconButton label="歌词显示设置" aria-expanded={options} className={`icon-button ${options ? 'selected' : ''}`} onClick={() => setOptions(!options)}><SlidersHorizontal size={18} /></IconButton></div>
       {options && <div className="room-options"><label>歌词字号<Select value={preferences.lyricSize} onChange={(value) => preferences.update({ lyricSize: Number(value) })}>{[24, 30, 36, 42].map((size) => <option key={size} value={size}>{size}</option>)}</Select></label><label>歌词延迟 · 毫秒<input type="number" step={100} min={-10000} max={10000} value={preferences.lyricDelay} onChange={(e) => preferences.update({ lyricDelay: Math.max(-10000, Math.min(10000, Number(e.target.value))) })} /></label></div>}
       {state.error && <div className="room-error" role="alert"><p>{state.error}</p><button className="text-button" onClick={() => player.mode('compatible')}>使用兼容模式重试</button></div>}
     </section><section className="room-content" id={panel === 'lyrics' ? 'room-lyrics' : 'room-queue'} role="tabpanel" aria-label={panel === 'lyrics' ? '歌词' : '队列'} key={panel}>{panel === 'lyrics' ? <Lyrics key={current?.track.id} track={current?.track} /> : <QueueContents embedded />}</section></div>
-    <div className="room-bottom"><span />{next ? <button className="room-next" aria-label={`下一首：${next.track.title}`} onClick={() => player.next()}><Cover id={next.track.coverArt} size={100} className="next-cover" /><span><small>下一首</small><strong>{next.track.title}</strong></span><SkipForward size={15} /></button> : <span className="room-last">{state.entries.length ? '队列末尾' : ''}</span>}</div>
   </Modal>;
 }

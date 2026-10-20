@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Music2, RotateCw } from 'lucide-react';
+import { Music2, RotateCw } from 'lucide-react';
 import { QueryState, useApi } from '../../components/Common';
 import { usePreferences } from '../../state/preferences';
 import { lyricIndex } from '../../domain/queue';
@@ -48,10 +48,10 @@ export function Lyrics({ track }: { track?: Track }) {
     return () => { observer?.disconnect(); cancelAnimationFrame(frame.current); };
   }, [lyrics, preferences.lyricSize, center]);
   useEffect(() => { if (follow) center(); }, [active, follow, center, lyrics]);
-  return <div className="room-lyrics-panel"><div className="room-panel-label"><span>歌词</span>{lyrics?.synced && <span className="synced-label"><Check size={12} />动态歌词</span>}</div>
+  return <div className="room-lyrics-panel">
     <QueryState pending={query.isPending && Boolean(track)} error={query.error} retry={() => query.refetch()} />
     <div ref={ref} className="room-lyrics-lines" data-synced={Boolean(lyrics?.synced && lyrics.lines.length)} style={{ '--lyric-size': `${preferences.lyricSize}px` } as CSSProperties} onWheel={pause} onTouchMove={pause} onPointerDown={() => { dragging.current = true; pause(); }} tabIndex={0} aria-label="歌词内容" onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) pause(); }}>
       {lyrics?.lines.length ? lyrics.lines.map((line, i) => <button className={`room-lyric ${lyrics.synced && i !== active ? 'inactive' : ''} ${i === active ? 'current' : ''}`} key={`${track?.id}-${i}`} aria-current={i === active} disabled={line.startMs === undefined} onClick={() => { if (line.startMs !== undefined) player.seek((line.startMs + delay) / 1000); resume(); }}>{line.text || '♪'}</button>) : !query.isPending && !query.error && <div className="instrumental-state"><span className="instrumental-notes"><Music2 size={35} /></span><h3>暂无歌词</h3></div>}
-    </div><div className="room-lyrics-footer"><span>{lyrics?.lines.length ? `来自音乐服务器${lyrics.synced ? '' : ' · 静态歌词'}` : ''}</span>{lyrics?.synced && <button className={`follow-button subtle-button ${follow ? 'is-synced' : ''}`} aria-pressed={follow} onClick={resume}><RotateCw size={14} />同步</button>}</div>
+    </div>{lyrics?.synced && !follow && <div className="room-lyrics-footer"><button className="follow-button subtle-button" aria-pressed={follow} onClick={resume}><RotateCw size={14} />同步</button></div>}
   </div>;
 }

@@ -62,7 +62,7 @@ it('switches lyrics and queue without changing the current song or playback posi
   surface(<LyricsPlayer onClose={() => {}} />);
   const dialog = within(screen.getByRole('dialog', { name: '正在播放' }));
   await dialog.findByRole('button', { name: '第一句测试歌词' });
-  fireEvent.click(dialog.getByRole('tab', { name: /队列\s*2/ }));
+  fireEvent.click(dialog.getByRole('tab', { name: '队列' }));
   expect(dialog.getByRole('button', { name: '播放队列第 2 首：接下来的歌' })).toBeInTheDocument();
   expect(usePlayer.getState().currentId).toBe('first'); expect(usePlayer.getState().position).toBe(11);
   fireEvent.click(dialog.getByRole('tab', { name: '歌词' }));
@@ -79,7 +79,7 @@ it('centers lyrics using viewport geometry and resumes sync after manual scrolli
   const viewport = screen.getByLabelText('歌词内容'); Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 300 }); viewport.scrollTop = 50;
   vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 300 } as DOMRect); vi.spyOn(line, 'getBoundingClientRect').mockReturnValue({ top: 500, height: 40 } as DOMRect);
   vi.useFakeTimers(); fireEvent.wheel(viewport); expect(screen.getByRole('button', { name: '同步' })).toHaveAttribute('aria-pressed', 'false');
-  act(() => vi.advanceTimersByTime(5000)); expect(screen.getByRole('button', { name: '同步' })).toHaveAttribute('aria-pressed', 'true');
+  act(() => vi.advanceTimersByTime(5000)); expect(screen.queryByRole('button', { name: '同步' })).not.toBeInTheDocument();
   expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 320, behavior: 'instant' });
 });
 it('restores the previous volume after unmuting', async () => {

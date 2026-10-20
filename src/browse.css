@@ -70,10 +70,6 @@
 .integrated-queue-row:hover .integrated-queue-actions, .integrated-queue-row:focus-within .integrated-queue-actions { opacity: 1; pointer-events: auto; }
 .integrated-queue-actions .icon-button { width: 26px; height: 25px; }
 .integrated-queue .panel-muted { margin-left: 4px; }
-.room-lyrics-panel .room-lyrics-lines { scroll-behavior: auto; }
-.room-lyrics-lines[data-synced=true]::before, .room-lyrics-lines[data-synced=true]::after { content: ''; display: block; height: var(--lyric-edge, 0px); }
-.room-lyrics-footer .follow-button { position: static; font-size: 12px; gap: 6px; margin-left: auto; }
-.room-lyrics-footer .follow-button.is-synced { color: var(--muted); background: transparent; }
 .workspace-shell .panel-module-lyrics .room-lyrics-lines { padding-left: 1px; padding-right: 1px; }
 .search-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 25px; }
 .search-filters > button { background: var(--surface); color: var(--text); border: 1px solid transparent; border-radius: 22px; padding: 9px 17px; font-size: 13px; }
