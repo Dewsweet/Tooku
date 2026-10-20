@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import type { MusicApi } from '../../api/client';
-import type { HistoryEntry, PlayerSnapshot, QueueEntry, Track } from '../../domain/models';
-import { entriesFor, moveEntry, nextEntry, shouldScrobble, shuffled } from '../../domain/queue';
+import type { HistoryEntry, PlaybackSource, PlayerSnapshot, QueueEntry, Track } from '../../domain/models';
+import { entriesFor, moveEntry, nextEntry, samePlaybackSource, shouldScrobble, shuffled } from '../../domain/queue';
+import { isPlaybackSource } from '../../domain/userData';
 import { readProfile, saveProfile } from '../../storage/local';
 import { useSession } from '../../state/session';
 
 type Status = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'blocked' | 'error';
+type QueueSnapshot = Pick<PlayerSnapshot, 'entries' | 'currentId' | 'position' | 'shuffle' | 'originalOrder'>;
 interface PlayerState {
   entries: QueueEntry[]; currentId: string | null; status: Status; position: number; duration: number;
   repeat: 'off' | 'all' | 'one'; shuffle: boolean; volume: number; error: string;
   mode: 'original' | 'compatible'; history: HistoryEntry[]; volumeSupported: boolean;
-  undo: { entries: QueueEntry[]; currentId: string | null; position: number } | null;
+  undo: QueueSnapshot | null;
 }
 const initial: PlayerState = { entries: [], currentId: null, status: 'idle', position: 0, duration: 0, repeat: 'off', shuffle: false, volume: 0.7, error: '', mode: 'original', history: [], volumeSupported: true, undo: null };
 export const usePlayer = create<PlayerState>(() => ({ ...initial }));
@@ -106,9 +108,10 @@ class PlayerEngine {
     const [saved, history] = await Promise.all([readProfile<PlayerSnapshot>(api.identity, 'queue'), readProfile<HistoryEntry[]>(api.identity, 'history')]);
     if (this.#api !== api || generation !== this.#generation) return;
     if (saved?.version === 1 && Array.isArray(saved.entries) && saved.entries.every((e) => typeof e.entryId === 'string' && typeof e.track?.id === 'string')) {
-      const entries = saved.entries.slice(0, 5000); const currentId = entries.some((e) => e.entryId === saved.currentId) ? saved.currentId : entries[0]?.entryId ?? null;
+      const entries = saved.entries.slice(0, 5000).map((e) => ({ entryId: e.entryId, track: e.track, ...(isPlaybackSource(e.source) ? { source: e.source } : {}) })); const currentId = entries.some((e) => e.entryId === saved.currentId) ? saved.currentId : entries[0]?.entryId ?? null;
+      this.#originalOrder = this.#restoreOrder(entries, saved.originalOrder);
       const position = Number.isFinite(saved.position) ? Math.max(0, saved.position) : 0;
-      update({ entries, currentId, position, duration: entries.find((e) => e.entryId === currentId)?.track.duration ?? 0, status: currentId ? 'paused' : 'idle', volume: Number.isFinite(saved.volume) ? Math.min(1, Math.max(0, saved.volume)) : 0.7, repeat: ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off' });
+      update({ entries, currentId, shuffle: saved.shuffle === true, position, duration: entries.find((e) => e.entryId === currentId)?.track.duration ?? 0, status: currentId ? 'paused' : 'idle', volume: Number.isFinite(saved.volume) ? Math.min(1, Math.max(0, saved.volume)) : 0.7, repeat: ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off' });
       this.#resume = position;
       if (this.#audio) this.#audio.volume = usePlayer.getState().volume;
     }
@@ -123,20 +126,45 @@ class PlayerEngine {
     update({ ...initial, entries: [], history: [] });
     if ('mediaSession' in navigator) { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; }
   }
-  replace(tracks: Track[], index = 0) {
+  #restoreOrder(entries: QueueEntry[], order?: string[]) {
+    const ids = new Set(entries.map((e) => e.entryId));
+    return Array.isArray(order) && order.length === ids.size && new Set(order).size === ids.size && order.every((id) => ids.has(id)) ? [...order] : entries.map((e) => e.entryId);
+  }
+  #orderedEntries(entries: QueueEntry[]) {
+    const order = new Map(this.#originalOrder.map((id, i) => [id, i]));
+    return [...entries].sort((a, b) => (order.get(a.entryId) ?? Infinity) - (order.get(b.entryId) ?? Infinity));
+  }
+  #snapshot(): QueueSnapshot {
+    const s = usePlayer.getState();
+    return { entries: s.entries, currentId: s.currentId, position: s.position, ...(s.shuffle ? { shuffle: true, originalOrder: this.#orderedEntries(s.entries).map((e) => e.entryId) } : {}) };
+  }
+  replace(tracks: Track[], index = 0, options: { source?: PlaybackSource; shuffle?: boolean } = {}) {
     if (!tracks.length) return;
-    const s = usePlayer.getState(); const snapshot = { entries: s.entries, currentId: s.currentId, position: s.position };
-    const entries = entriesFor(tracks); update({ entries, currentId: entries[index]?.entryId ?? entries[0].entryId, shuffle: false, undo: snapshot });
-    this.#back = []; this.#originalOrder = []; this.load(true);
+    const s = usePlayer.getState(); const snapshot = this.#snapshot();
+    const ordered = s.shuffle ? this.#orderedEntries(s.entries) : s.entries;
+    const sameTracks = tracks.length === ordered.length && tracks.every((track, i) => track.id === ordered[i].track.id);
+    const sameSource = options.source ? samePlaybackSource(options.source, currentEntry()?.source) : !currentEntry()?.source && sameTracks;
+    const shuffle = options.shuffle ?? (sameSource && s.shuffle);
+    if (sameSource && sameTracks && options.shuffle === undefined) {
+      // Reuse each occurrence, including duplicates, and retain the shuffled order.
+      const entry = ordered[index] ?? ordered[0];
+      this.select(entry.entryId);
+      return snapshot;
+    }
+    const entries = entriesFor(tracks, options.source); const currentId = entries[index]?.entryId ?? entries[0].entryId;
+    this.#originalOrder = shuffle ? entries.map((e) => e.entryId) : [];
+    update({ entries: shuffle ? shuffled(entries, currentId) : entries, currentId, shuffle, undo: snapshot });
+    this.#back = []; this.load(true);
     return snapshot;
   }
-  restoreQueue(snapshot: { entries: QueueEntry[]; currentId: string | null; position: number }) {
-    update({ ...snapshot, shuffle: false, undo: null }); this.#resume = snapshot.position; this.#back = [];
+  restoreQueue(snapshot: QueueSnapshot) {
+    this.#originalOrder = this.#restoreOrder(snapshot.entries, snapshot.originalOrder);
+    update({ entries: snapshot.entries, currentId: snapshot.currentId, position: snapshot.position, shuffle: snapshot.shuffle === true, undo: null }); this.#resume = snapshot.position; this.#back = [];
     if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); }
     this.persist();
   }
-  append(tracks: Track[], next = false) {
-    const s = usePlayer.getState(); const additions = entriesFor(tracks);
+  append(tracks: Track[], next = false, source?: PlaybackSource) {
+    const s = usePlayer.getState(); const additions = entriesFor(tracks, source);
     if (!additions.length) return;
     const after = next ? s.entries.findIndex((e) => e.entryId === (this.#insertCursor ?? s.currentId)) : -1;
     const entries = [...s.entries]; entries.splice(next ? Math.max(0, after + 1) : entries.length, 0, ...additions);
@@ -208,14 +236,14 @@ class PlayerEngine {
   shuffle() {
     const s = usePlayer.getState();
     if (!s.shuffle) { this.#originalOrder = s.entries.map((e) => e.entryId); update({ entries: shuffled(s.entries, s.currentId), shuffle: true }); }
-    else { const order = new Map(this.#originalOrder.map((id, i) => [id, i])); update({ entries: [...s.entries].sort((a, b) => (order.get(a.entryId) ?? Infinity) - (order.get(b.entryId) ?? Infinity)), shuffle: false }); }
+    else { update({ entries: this.#orderedEntries(s.entries), shuffle: false }); this.#originalOrder = []; }
     this.persist();
   }
   mode(mode: 'original' | 'compatible') { update({ mode }); if (currentEntry() && this.#source) this.load(this.#intent, usePlayer.getState().position); }
   persist() {
     if (!this.#api) return;
     const s = usePlayer.getState();
-    saveProfile(this.#api.identity, 'queue', { version: 1, entries: s.entries, currentId: s.currentId, position: s.position, repeat: s.repeat, volume: s.volume }).then((ok) => { if (!ok) useSession.getState().notify('浏览器存储不可用，本次队列无法保存在此设备。'); });
+    saveProfile(this.#api.identity, 'queue', { version: 1, ...this.#snapshot(), repeat: s.repeat, volume: s.volume }).then((ok) => { if (!ok) useSession.getState().notify('浏览器存储不可用，本次队列无法保存在此设备。'); });
   }
   #report(submission: boolean) {
     const api = this.#api; const entry = currentEntry(); if (!api || !entry) return;

@@ -16,7 +16,7 @@ it('plays a cover-button album without navigating away from browsing', async () 
   vi.spyOn(api, 'album').mockResolvedValue({ ...item, songs }); useSession.getState().setSession(api);
   render(<MemoryRouter initialEntries={['/albums']}><AlbumGrid albums={[item]} /><Location /></MemoryRouter>);
   fireEvent.click(screen.getByRole('button', { name: '播放专辑 雨夜' }));
-  await waitFor(() => expect(player.replace).toHaveBeenCalledWith(songs));
+  await waitFor(() => expect(player.replace).toHaveBeenCalledWith(songs, 0, { source: { kind: 'album', id: item.id } }));
   expect(screen.getByText('/albums')).toBeInTheDocument(); expect(screen.getByRole('link', { name: '查看专辑 雨夜' })).toHaveAttribute('href', '/albums/album-1');
   api.dispose();
 });

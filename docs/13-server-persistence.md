@@ -35,6 +35,8 @@ Tooku 随机会话令牌只在内存保存，12 小时过期；退出时销毁�
 
 同日为 v1 文档的 `organization` 增加可选 `collapsedFolders`，仅存折叠的文件夹 ID，沿用账号隔离与文件夹自身的曲库归属；默认全部展开，不新增空字段以免改变旧同步基线。白名单验证最多 2000 个唯一 ID，且必须引用当前文档已有文件夹。展开全部时省略字段，删除文件夹时清理其 ID。旧浏览器数据与旧备份无需清理或迁移，省略该字段代表全部展开；恢复旧备份仅重置当前账号的折叠状态，其他账号不受影响。该兼容扩展无需 SQLite 表迁移，前后端需一起更新，并复用既有 revision、浏览器缓存、离线回退、导出/恢复与冲突选择；同步不干预当前音频。
 
+同日为 v1 队列快照增加可选 `entries[].source`（`kind`、实体 `id`、可选 `libraryId`），以及 `shuffle` / `originalOrder`。来源仅为 album/playlist/artist/collection 和无认证信息的 ID；`originalOrder` 必须且仅能包含当前队列全部唯一 entryId，不以歌曲 ID 去重。它们跟随原有 IndexedDB、账号 SQLite 文档、导出/恢复与 revision 检查。旧数据省略字段时按无来源、顺序模式恢复，不推断旧歌单、不清理数据；新字段需前后端一起更新，无 SQLite 表迁移。恢复/同步仅保存快照，仍不加载或接管当前音频；下次登录保持暂停，手动关闭随机可恢复原顺序。
+
 ## API 与实现入口
 
 所有 API 都位于 `/api/tooku/`，不缓存。除 health 和创建 session 外，必须提供内存中的 `Authorization: Bearer …`；服务器由会话决定 owner，忽略客户端伪造 owner。

@@ -11,11 +11,13 @@ export interface Track {
 }
 export interface Playlist { id: string; name: string; owner?: string; songCount?: number; changed?: string; coverArt?: string; duration?: number; comment?: string; readonly?: boolean }
 export interface MusicLibrary { id: string; name: string }
-export interface QueueEntry { entryId: string; track: Track }
+export interface PlaybackSource { kind: 'album' | 'playlist' | 'artist' | 'collection'; id: string; libraryId?: string }
+export interface QueueEntry { entryId: string; track: Track; source?: PlaybackSource }
 export interface LyricLine { startMs?: number; text: string }
 export interface Lyrics { lines: LyricLine[]; offsetMs: number; synced: boolean; lang?: string }
 export interface HistoryEntry { occurrenceId: string; track: Track; listenedAt: number; submitted: boolean }
 export interface PlayerSnapshot {
   version: 1; entries: QueueEntry[]; currentId: string | null; position: number;
   repeat: 'off' | 'all' | 'one'; volume: number;
+  shuffle?: boolean; originalOrder?: string[];
 }

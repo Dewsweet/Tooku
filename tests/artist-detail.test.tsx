@@ -66,7 +66,7 @@ it('plays only the scoped albums and preserves repeated tracks across albums', a
   const track = { id: 'same-song', title: '同一首歌', artist: '测试歌手' };
   const album = vi.spyOn(api, 'album').mockResolvedValue({ id: 'album-1', name: '专辑', artist: '测试歌手', songs: [track] });
   fireEvent.click(await screen.findByRole('button', { name: '播放 测试歌手' }));
-  await waitFor(() => expect(player.replace).toHaveBeenCalledWith([track, track], 0));
+  await waitFor(() => expect(player.replace).toHaveBeenCalledWith([track, track], 0, { source: { kind: 'artist', id: 'a', libraryId: 'library-1' } }));
   expect(album).toHaveBeenNthCalledWith(1, 'album-1', expect.any(AbortSignal));
   expect(album).toHaveBeenNthCalledWith(2, 'album-2', expect.any(AbortSignal));
   unmount(); client.clear(); api.dispose();
@@ -104,7 +104,7 @@ it('starts artist shuffle through the existing player', async () => {
   vi.spyOn(api, 'album').mockResolvedValue({ id: 'album-1', name: '专辑', artist: '测试歌手', songs: [{ id: 'song', title: '歌曲', artist: '测试歌手' }] });
   await screen.findByRole('heading', { name: '测试歌手' });
   fireEvent.click(screen.getByRole('button', { name: '随机播放歌手歌曲' }));
-  await waitFor(() => expect(player.shuffle).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(player.replace).toHaveBeenCalledWith(expect.any(Array), expect.any(Number), expect.objectContaining({ shuffle: true })));
   expect(player.replace).toHaveBeenCalledTimes(1);
   unmount(); client.clear(); api.dispose();
 });

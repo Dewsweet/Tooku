@@ -103,11 +103,13 @@ export function LyricsPlayer({ onClose, addToPlaylist }: { onClose: () => void; 
     artists: detail.data.artists?.some((artist) => artist.id) ? detail.data.artists : track.artists,
   } : track;
   const artists = source?.artists?.some((artist) => artist.id) ? source.artists : [{ id: source?.artistId, name: source?.artist ?? '' }];
+  const playbackSource = state.entries.find((entry) => entry.entryId === state.currentId)?.source;
+  const playlistId = playbackSource?.kind === 'playlist' ? playbackSource.id : undefined;
   const showPage = (path: string) => { onClose(); navigate(path); };
   const items: MenuItem[] = [
     { label: '查看专辑', icon: <Disc3 size={16} />, disabled: !source?.albumId, action: () => { if (source?.albumId) showPage(`/albums/${encodeURIComponent(source.albumId)}`); } },
     ...artists.map((artist) => ({ label: artists.length > 1 ? `查看歌手 ${artist.name}` : '查看歌手', icon: <Mic2 size={16} />, disabled: !artist.id, action: () => { if (artist.id) showPage(`/artists/${encodeURIComponent(artist.id)}`); } })),
-    { label: '查看歌单', icon: <ListMusic size={16} />, action: () => showPage('/playlists') },
+    { label: '查看歌单', icon: <ListMusic size={16} />, disabled: !playlistId, action: () => { if (playlistId) showPage(`/playlists/${encodeURIComponent(playlistId)}`); } },
     { label: '添加到歌单', icon: <ListPlus size={16} />, divider: true, disabled: !track, action: () => { if (track) addToPlaylist(track); } },
   ];
   return <Modal title="正在播放" variant="player" onClose={onClose}>

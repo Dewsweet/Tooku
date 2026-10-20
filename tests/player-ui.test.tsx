@@ -33,7 +33,7 @@ beforeEach(() => {
   useSession.getState().setSession(api); usePreferences.setState({ reducedMotion: true });
   document.documentElement.dataset.motion = 'reduced';
   usePlayer.setState({ ...usePlayer.getInitialState(), status: 'paused', position: 11, duration: 90, volume: 0.65, currentId: 'first', entries: [
-    { entryId: 'first', track: { id: 'a', title: '当前曲目', artist: '测试歌手', albumId: 'album a', artistId: 'artist a', duration: 90 } },
+    { entryId: 'first', source: { kind: 'playlist', id: 'playlist a' }, track: { id: 'a', title: '当前曲目', artist: '测试歌手', albumId: 'album a', artistId: 'artist a', duration: 90 } },
     { entryId: 'second', track: { id: 'b', title: '接下来的歌', artist: '另一位歌手', duration: 120 } },
   ] });
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -76,7 +76,7 @@ it('keeps the expanded player focused on lyrics and closes without changing play
 it.each([
   ['查看专辑', '/albums/album%20a'],
   ['查看歌手', '/artists/artist%20a'],
-  ['查看歌单', '/playlists'],
+  ['查看歌单', '/playlists/playlist%20a'],
 ])('opens %s from the song menu without interrupting playback', async (label, path) => {
   const close = vi.fn();
   surface(<LyricsPlayer onClose={close} addToPlaylist={() => {}} />);
@@ -101,6 +101,7 @@ it('disables unavailable album and artist destinations and restores focus after 
   const more = screen.getByRole('button', { name: '当前歌曲更多选项' }); more.focus(); fireEvent.click(more);
   expect(screen.getByRole('menuitem', { name: '查看专辑' })).toBeDisabled();
   expect(screen.getByRole('menuitem', { name: '查看歌手' })).toBeDisabled();
+  expect(screen.getByRole('menuitem', { name: '查看歌单' })).toBeDisabled();
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
   expect(more).toHaveFocus();
 });

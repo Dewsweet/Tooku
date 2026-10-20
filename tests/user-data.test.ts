@@ -26,6 +26,22 @@ async function listening(server: Server) {
   return `http://127.0.0.1:${address.port}`;
 }
 describe('versioned user storage', () => {
+  it('round-trips optional playback sources and shuffle order while retaining legacy documents', () => {
+    const data = sampleData(); expect(isUserData(data)).toBe(true);
+    if (!data.queue) throw new Error('Missing fixture queue');
+    data.queue.shuffle = true; data.queue.originalOrder = ['b', 'a'];
+    data.queue.entries[0].source = { kind: 'playlist', id: 'playlist-a' };
+    data.queue.entries[1].source = { kind: 'album', id: 'album-b', libraryId: 'music' };
+    expect(isUserData(data)).toBe(true);
+    const store = new UserStore(':memory:'); cleanups.push(() => store.close());
+    store.write('alice', 0, data); expect(store.read('alice').data?.queue).toEqual(data.queue);
+    for (const originalOrder of [['a', 'a'], ['a'], ['a', 'missing']]) {
+      expect(isUserData({ ...data, queue: { ...data.queue, originalOrder } })).toBe(false);
+    }
+    for (const source of [{ kind: 'playlist', id: 'https://example.test/rest?u=fixture' }, { kind: 'unknown', id: 'a' }, { kind: 'playlist', id: 'a', token: 'invalid' }]) {
+      expect(isUserData({ ...data, queue: { ...data.queue, entries: [{ ...data.queue.entries[0], source }, data.queue.entries[1]] } })).toBe(false);
+    }
+  });
   it('accepts old documents and validates optional folder folding against existing unique IDs', () => {
     const data = sampleData();
     expect(isUserData(data)).toBe(true);

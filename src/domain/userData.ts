@@ -1,4 +1,4 @@
-import type { HistoryEntry, PlayerSnapshot, Track } from './models.ts';
+import type { HistoryEntry, PlaybackSource, PlayerSnapshot, Track } from './models.ts';
 
 export interface UserPreferences {
   theme: 'light' | 'dark'; accent: string; sidePanel: boolean; panelWidth: number; trackColumns: number[];
@@ -32,6 +32,9 @@ const optionalId = (v: unknown) => v === undefined || id(v);
 const finite = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 const map = (v: unknown, check: (item: unknown) => boolean) => record(v) && Object.keys(v).length <= 10000 && Object.entries(v).every(([k, item]) => k !== '__proto__' && k !== 'constructor' && k !== 'prototype' && text(k) && check(item));
 const image = (v: unknown) => typeof v === 'string' && v.length <= 2 * 1024 * 1024 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(v);
+export function isPlaybackSource(v: unknown): v is PlaybackSource {
+  return record(v) && keys(v, ['kind', 'id', 'libraryId']) && ['album', 'playlist', 'artist', 'collection'].includes(String(v.kind)) && id(v.id) && optionalId(v.libraryId);
+}
 function validTrack(v: unknown): v is Track {
   if (!record(v) || !keys(v, ['id', 'title', 'artist', 'album', 'albumId', 'artistId', 'artists', 'coverArt', 'duration', 'track', 'discNumber', 'suffix', 'bitRate', 'starred'])) return false;
   return id(v.id) && text(v.title) && text(v.artist) && ['album', 'suffix', 'starred'].every((k) => v[k] === undefined || text(v[k]))
@@ -71,10 +74,13 @@ export function isUserData(v: unknown): v is UserData {
     if (!record(p) || p.folderId !== null && (!text(p.folderId) || byId.get(p.folderId)?.libraryId !== p.libraryId)) return false;
   }
   if (q !== null) {
-    if (!record(q) || !keys(q, ['version', 'entries', 'currentId', 'position', 'repeat', 'volume']) || q.version !== 1
-      || !Array.isArray(q.entries) || q.entries.length > 5000 || !q.entries.every((e) => record(e) && keys(e, ['entryId', 'track']) && id(e.entryId) && validTrack(e.track))
+    if (!record(q) || !keys(q, ['version', 'entries', 'currentId', 'position', 'repeat', 'volume', 'shuffle', 'originalOrder']) || q.version !== 1
+      || !Array.isArray(q.entries) || q.entries.length > 5000 || !q.entries.every((e) => record(e) && keys(e, ['entryId', 'track', 'source']) && id(e.entryId) && validTrack(e.track) && (e.source === undefined || isPlaybackSource(e.source)))
       || new Set(q.entries.map((e) => e.entryId)).size !== q.entries.length || q.currentId !== null && !q.entries.some((e) => e.entryId === q.currentId)
       || !finite(q.position, 0, 1e9) || !finite(q.volume, 0, 1) || !['off', 'all', 'one'].includes(String(q.repeat))) return false;
+    const entryIds = new Set(q.entries.map((e) => e.entryId));
+    if (q.shuffle !== undefined && typeof q.shuffle !== 'boolean'
+      || q.originalOrder !== undefined && (!Array.isArray(q.originalOrder) || q.originalOrder.length !== entryIds.size || new Set(q.originalOrder).size !== entryIds.size || !q.originalOrder.every((entryId) => entryIds.has(entryId)))) return false;
   }
   return Array.isArray(v.history) && v.history.length <= 200 && v.history.every((h) => record(h) && keys(h, ['occurrenceId', 'track', 'listenedAt', 'submitted']) && id(h.occurrenceId) && validTrack(h.track) && finite(h.listenedAt, 0, 1e16) && typeof h.submitted === 'boolean');
 }

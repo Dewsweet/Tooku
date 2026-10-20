@@ -46,15 +46,15 @@ it('offers only editable playlists in the active library when adding a song', ()
 });
 it('plays a selected playlist entry with the remaining playlist order, including duplicates', () => {
   const replace=vi.spyOn(player,'replace').mockImplementation(()=>{});const tracks=[song,{...song,id:'second',title:'第二首'},song];
-  surface(<TrackList tracks={tracks} />);fireEvent.click(screen.getByRole('button',{name:'播放 第二首'}));expect(replace).toHaveBeenCalledWith(tracks,1);
+  surface(<TrackList tracks={tracks} source={{kind:'playlist',id:'p1'}} />);fireEvent.click(screen.getByRole('button',{name:'播放 第二首'}));expect(replace).toHaveBeenCalledWith(tracks,1,{source:{kind:'playlist',id:'p1'}});
 });
 it('plays a row on a blank-area double click and exposes queue actions in a custom context menu', async () => {
   const replace = vi.spyOn(player, 'replace').mockImplementation(() => {}); const append = vi.spyOn(player, 'append').mockImplementation(() => {});
   surface(<Interactions><TrackList tracks={[song]} addToPlaylist={() => {}} /></Interactions>);
-  const row = screen.getByRole('listitem'); fireEvent.doubleClick(within(row).getByText('0:00')); expect(replace).toHaveBeenCalledWith([song], 0);
+  const row = screen.getByRole('listitem'); fireEvent.doubleClick(within(row).getByText('0:00')); expect(replace).toHaveBeenCalledWith([song], 0, {source:undefined});
   expect(within(row).getAllByRole('button')).toHaveLength(3);
   fireEvent.contextMenu(row, { clientX: 150, clientY: 150 }); fireEvent.click(screen.getByRole('menuitem', { name: '下一首播放' }));
-  await waitFor(() => expect(append).toHaveBeenCalledWith([song], true)); expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  await waitFor(() => expect(append).toHaveBeenCalledWith([song], true, undefined)); expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });
 it('silently saves a dragged playlist order including duplicates without an undo button', async () => {
   const songs = [song, { ...song, id: 'second', title: '第二首' }, song]; const before = { id: 'p1', name: '华语', owner: 'fixture', changed: 'v1', songs }; const after = { ...before, changed: 'v2', songs: [songs[1], songs[2], songs[0]] };

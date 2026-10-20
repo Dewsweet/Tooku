@@ -17,7 +17,7 @@ export function Favorites({ addToPlaylist }: { addToPlaylist: (track: Track) => 
     <FilterPills label="收藏分类" options={favoriteFilters} value={tab} onChange={setTab} />
     <QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} />
     {data && <>
-      {tab === 'songs' && (data.songs.length ? <TrackList tracks={data.songs} addToPlaylist={addToPlaylist} /> : <Empty title="还没有收藏的歌曲" />)}
+      {tab === 'songs' && (data.songs.length ? <TrackList tracks={data.songs} source={{ kind: 'collection', id: 'favorites', libraryId }} addToPlaylist={addToPlaylist} /> : <Empty title="还没有收藏的歌曲" />)}
       {tab === 'albums' && (data.albums.length ? <AlbumGrid albums={data.albums} /> : <Empty title="还没有收藏的专辑" />)}
       {tab === 'artists' && (data.artists.length ? <ArtistGrid artists={data.artists} /> : <Empty title="还没有收藏的歌手" />)}
     </>}
@@ -25,5 +25,5 @@ export function Favorites({ addToPlaylist }: { addToPlaylist: (track: Track) => 
 }
 export function History({ addToPlaylist }: { addToPlaylist: (track: Track) => void }) {
   const history = usePlayer((s) => s.history);
-  return <><PageTitle title="最近听过" />{history.length ? <TrackList tracks={history.map((h) => h.track)} addToPlaylist={addToPlaylist} /> : <Empty title="让音乐留下足迹">开始听歌，达到收听阈值后会记录在这里。</Empty>}</>;
+  return <><PageTitle title="最近听过" />{history.length ? <TrackList tracks={history.map((h) => h.track)} source={{ kind: 'collection', id: 'history' }} addToPlaylist={addToPlaylist} /> : <Empty title="让音乐留下足迹">开始听歌，达到收听阈值后会记录在这里。</Empty>}</>;
 }

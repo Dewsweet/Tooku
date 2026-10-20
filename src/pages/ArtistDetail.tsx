@@ -104,8 +104,7 @@ function ArtistDetailContent({ api, libraryId, id }: { api: MusicApi; libraryId?
         tracks.push(...detail.songs);
       }
       if (!tracks.length) { useSession.getState().notify('这位歌手还没有可播放的歌曲。'); return; }
-      player.replace(tracks, shuffle ? Math.floor(Math.random() * tracks.length) : 0);
-      if (shuffle) player.shuffle();
+      player.replace(tracks, shuffle ? Math.floor(Math.random() * tracks.length) : 0, { source: { kind: 'artist', id, libraryId }, ...(shuffle ? { shuffle: true } : {}) });
     } catch (error) {
       if (!request.signal.aborted && useSession.getState().api === api) useSession.getState().notify(errorMessage(error));
     } finally {

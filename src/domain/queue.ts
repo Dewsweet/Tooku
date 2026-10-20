@@ -1,6 +1,7 @@
-import type { QueueEntry, Track } from './models';
+import type { PlaybackSource, QueueEntry, Track } from './models';
 
-export const entriesFor = (tracks: Track[]): QueueEntry[] => tracks.map((track) => ({ entryId: crypto.randomUUID(), track }));
+export const entriesFor = (tracks: Track[], source?: PlaybackSource): QueueEntry[] => tracks.map((track) => ({ entryId: crypto.randomUUID(), track, ...(source ? { source: { ...source } } : {}) }));
+export const samePlaybackSource = (a?: PlaybackSource, b?: PlaybackSource) => Boolean(a && b && a.kind === b.kind && a.id === b.id && a.libraryId === b.libraryId);
 export function moveEntry(entries: QueueEntry[], from: number, to: number) {
   if (from < 0 || to < 0 || from >= entries.length || to >= entries.length) return entries;
   const copy = [...entries]; const [item] = copy.splice(from, 1); copy.splice(to, 0, item); return copy;

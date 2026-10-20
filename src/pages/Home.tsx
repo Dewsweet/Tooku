@@ -25,7 +25,7 @@ export function Home() {
   const stats = [summary && `${summary.albums.toLocaleString()} 张专辑`, summary?.songs !== null && summary && `${summary.songs?.toLocaleString()} 首歌曲`, artists.data && `${artists.data.length.toLocaleString()} 位歌手`].filter(Boolean);
   async function playList(playlist: Playlist) {
     if (busy) return; setBusy(playlist.id);
-    try { const data = await api.playlist(playlist.id); if (data.songs.length) player.replace(data.songs); else useSession.getState().notify('这张歌单还没有歌曲。'); }
+    try { const data = await api.playlist(playlist.id); if (data.songs.length) player.replace(data.songs, 0, { source: { kind: 'playlist', id: playlist.id } }); else useSession.getState().notify('这张歌单还没有歌曲。'); }
     catch (error) { useSession.getState().notify(errorMessage(error)); } finally { setBusy(null); }
   }
   return <div className="home-page"><FilterPills label="主页内容" options={([['all', '全部'], ['playlists', '歌单'], ['albums', '专辑'], ['artists', '歌手']] as const)} value={filter} onChange={setFilter} />
