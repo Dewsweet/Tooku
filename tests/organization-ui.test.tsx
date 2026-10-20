@@ -70,8 +70,50 @@ it('saves a dragged playlist order including duplicates and can undo the saved c
 it('keeps another owner playlist read-only and creates folders at the current location without a location picker', () => {
   client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '他人的歌单', owner: 'other', changed: 'v1', songs: [song] });
   const rendered = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></MemoryRouter></QueryClientProvider>);
-  expect(screen.getByRole('listitem')).toHaveAttribute('draggable', 'false'); expect(screen.getByRole('button', { name: '歌单封面' })).toBeDisabled(); rendered.unmount();
+  expect(screen.getByRole('listitem')).toHaveAttribute('draggable', 'false'); expect(screen.getByRole('button', { name: '歌单封面（只读）' })).toBeDisabled(); rendered.unmount();
   surface(<FolderEditor parent="parent" onClose={() => {}} />); expect(screen.queryByRole('combobox', { name: '文件夹位置' })).not.toBeInTheDocument();
+});
+
+it('shows a lock and an explanation for an account without playlist editing permission', () => {
+  client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '共享歌单', owner: 'other', readonly: true, changed: 'v1', songs: [song] });
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
+  const badge = screen.getByText('只读歌单');
+  expect(badge.querySelector('svg')).not.toBeNull();
+  expect(badge).toHaveAttribute('data-tooltip', '当前账号没有编辑权限，仍可播放和浏览。');
+  expect(screen.getByRole('button', { name: '歌单封面（只读）' })).toBeDisabled();
+  expect(screen.getByRole('listitem')).toHaveAttribute('draggable', 'false');
+  fireEvent.click(screen.getByRole('button', { name: '歌单选项' }));
+  expect(screen.getByRole('menuitem', { name: '加入播放队列' })).toBeEnabled();
+  expect(screen.queryByRole('menuitem', { name: '歌单信息与封面' })).not.toBeInTheDocument();
+});
+
+it('keeps server-managed tracks read-only while the owner can still edit metadata', () => {
+  client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '同步歌单', owner: 'fixture', readonly: true, changed: 'v1', songs: [song] });
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
+  expect(screen.getByText('曲序只读')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '更换歌单封面' })).toBeEnabled();
+  expect(screen.getByRole('listitem')).toHaveAttribute('draggable', 'false');
+  fireEvent.click(screen.getByRole('button', { name: '歌单选项' }));
+  expect(screen.getByRole('menuitem', { name: '歌单信息与封面' })).toBeEnabled();
+});
+
+it('keeps card and tree folder actions in context menus and uses / for creation at root', () => {
+  const view = surface(<Interactions><Playlists /></Interactions>);
+  expect(screen.queryByRole('button', { name: '管理文件夹 语言' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '歌单选项 华语' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '新建歌单' }));
+  expect(screen.queryByText(/创建于/)).not.toBeInTheDocument();
+  view.unmount();
+  surface(<Interactions><PlaylistTree closeNavigation={() => {}} /></Interactions>);
+  expect(screen.queryByRole('button', { name: '管理文件夹 语言' })).not.toBeInTheDocument();
+  fireEvent.contextMenu(screen.getByRole('link', { name: '语言' }));
+  expect(screen.getByRole('menuitem', { name: '管理文件夹' })).toBeEnabled();
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: '新建歌单' }));
+  expect(screen.getByRole('combobox', { name: '新歌单文件夹' })).toHaveTextContent('/');
+  fireEvent.click(screen.getByRole('combobox', { name: '新歌单文件夹' }));
+  expect(screen.getByRole('option', { name: '/' })).toBeInTheDocument();
+  expect(screen.queryByText('根目录（留空）')).not.toBeInTheDocument();
 });
 it('links the dock title and artist separately and keeps only the full-player expansion control', () => {
   usePlayer.setState({entries:[{entryId:'e',track:song}],currentId:'e'});surface(<PlayerBar openQueue={()=>{}} openLyrics={()=>{}} />);

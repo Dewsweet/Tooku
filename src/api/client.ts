@@ -1,6 +1,7 @@
 import md5 from 'blueimp-md5';
 import { UserDataApi } from './userData';
 import type { Album, Artist, Lyrics, Playlist, Track, MusicLibrary } from '../domain/models';
+import { playlistPermissions } from '../domain/playlistPermissions';
 
 type DTO = Record<string, unknown>;
 export const object = (value: unknown): DTO => value && typeof value === 'object' && !Array.isArray(value) ? value as DTO : {};
@@ -24,7 +25,7 @@ export function album(dto: DTO): Album {
     songCount: num(dto.songCount), duration: num(dto.duration), starred: str(dto.starred) };
 }
 function playlist(dto: DTO): Playlist {
-  return { id: text(dto.id, ''), name: text(dto.name, '未命名歌单'), owner: str(dto.owner), songCount: num(dto.songCount), changed: str(dto.changed), coverArt: str(dto.coverArt), duration: num(dto.duration), comment: str(dto.comment) };
+  return { id: text(dto.id, ''), name: text(dto.name, '未命名歌单'), owner: str(dto.owner), songCount: num(dto.songCount), changed: str(dto.changed), coverArt: str(dto.coverArt), duration: num(dto.duration), comment: str(dto.comment), readonly: typeof dto.readonly === 'boolean' ? dto.readonly : undefined };
 }
 
 const errors: Record<number, string> = {
@@ -264,6 +265,7 @@ export class MusicApi {
   async createPlaylist(name: string, songs: string[] = []) { return playlist(object((await this.request('createPlaylist', { name, songId: songs }, undefined, true)).playlist)); }
   async savePlaylist(id: string, name: string, songs: string[], changed?: string) {
     const before = await this.playlist(id);
+    if (!playlistPermissions(before, this.username).canReorder) throw new ApiError('此歌单为只读，无法修改曲目。', 50);
     if (before.changed !== changed) throw new ApiError('歌单已被其他客户端修改。请保留草稿并重新读取。');
     await this.request('createPlaylist', { playlistId: id, songId: songs }, undefined, true);
     if (before.name !== name) await this.request('updatePlaylist', { playlistId: id, name }, undefined, true);

@@ -19,7 +19,7 @@ export function PlaylistCoverPicker({ playlist, editable, disabled, fallback }: 
     }
   }
   return <>
-    <button type="button" className="playlist-hero-cover" disabled={!editable || disabled} aria-label={editable ? '更换歌单封面' : '歌单封面'} data-tooltip={editable ? '更换歌单封面' : undefined} onDragStart={(event) => event.preventDefault()} onClick={() => input.current?.click()}>
+    <button type="button" className="playlist-hero-cover" disabled={!editable || disabled} aria-label={editable ? '更换歌单封面' : '歌单封面（只读）'} data-tooltip={editable ? '更换歌单封面' : '当前账号没有编辑权限，无法更换封面'} onDragStart={(event) => event.preventDefault()} onClick={() => input.current?.click()}>
       <EntityArtwork id={playlist.id} name={playlist.name} kind="playlist" coverArt={playlist.coverArt} fallback={fallback} className="entity-detail-cover" />
       {editable && <span><Pencil size={30} />选择照片</span>}
     </button>

@@ -25,7 +25,8 @@
 .workspace-shell .track-row { padding: 7px 8px; min-height: 62px; position: relative; transition: background .15s; }
 .workspace-shell .track-row:nth-child(even) { background: transparent; }
 .workspace-shell .track-row:hover, .workspace-shell .track-row:focus-within { background: var(--surface); }
-.workspace-shell .track-row[draggable=true] { cursor: grab; }
+.workspace-shell .track-row[draggable=true] { cursor: grab; user-select: none; -webkit-user-select: none; }
+.workspace-shell .track-row[draggable=true] a, .workspace-shell .track-row[draggable=true] img { -webkit-user-drag: none; }
 .workspace-shell .track-row[draggable=true]:active { cursor: grabbing; }
 .track-row.track-drop-before::before, .track-drop-end { content: ''; position: absolute; left: 8px; right: 8px; height: 2px; top: -2px; background: var(--accent); z-index: 2; }
 .track-drop-end { top: auto; bottom: 0; }
@@ -43,6 +44,8 @@
 .playlist-detail-hero .playlist-summary { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .playlist-summary p { margin: -5px 0 11px; max-width: 650px; overflow-wrap: anywhere; }
 .playlist-controls .icon-button { width: 42px; height: 42px; border-radius: 50%; }
+.playlist-readonly { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--muted); font-size: 13px; }
+.playlist-readonly:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .playlist-order-status { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 15px; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
 .playlist-order-status .text-button { display: flex; gap: 6px; align-items: center; font-size: 12px; }
 .playlist-details-editor { display: grid; grid-template-columns: 140px 1fr; gap: 22px; }
