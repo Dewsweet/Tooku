@@ -1,0 +1,189 @@
+# Tooku 开发接入指南
+
+更新日期：2026-10-20。面向首次接入本仓库的 Agent 和开发者，描述当前实现与查找入口。
+
+根目录 [AGENTS.md](../AGENTS.md) 是开发约定入口；本指南提供模块地图、数据说明和常见改动路径。[01–11 号文档](../README.md#文档入口) 保留调研、设计演进及历史验证，其中的示意目录、旧交互和排期不等于当前实现。
+
+## 1. 五分钟接入
+
+1. 阅读 [AGENTS.md](../AGENTS.md)，检查 `git status --short`，确认任务边界和已有改动。
+2. 从下方模块表找到对应源码；读取相关测试，不必从头阅读所有历史文档。
+3. 使用 `npm.cmd run dev` 或 `start-tooku.cmd` 启动，读取 `.local/server-url.txt` 获取实际地址；默认 18733，Navidrome 默认 44533。
+4. 有写入验证需求时优先使用隔离测试服务或授权的专用测试歌单；真实账号凭据只通过登录页输入。
+5. 完成实现与必要的基础检查，按功能保存 Git 提交；人工功能和观感检查在回复中简列。
+
+没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。若 Node 低于 22.12，应先解决运行时兼容问题。
+
+## 2. 当前架构
+
+Tooku 0.1.0 是独立 SPA，技术栈以 [package.json](../package.json) 为准：React、TypeScript、Vite、React Router、TanStack Query、Zustand、idb、Lucide React、Vitest 与 Testing Library。未引入 Tailwind、Radix、CSS Modules 或独立播放 SDK。
+
+```text
+React 页面 / 通用控件
+  ├─ TanStack Query → MusicApi → /nd/rest → Navidrome
+  ├─ player 命令 → 常驻 PlayerEngine → HTMLAudioElement
+  └─ Zustand / IndexedDB → 此浏览器中的偏好、组织信息、快照
+```
+
+开发环境由 Vite 固定上游代理转发 `/nd/rest`。现有 Docker 模板是静态产物加 Nginx，同样转发固定上游；这不是 Tooku 业务后端，也没有提供服务端用户数据持久化。直接填写完整 Navidrome 地址的访问方式也仍存在。
+
+## 3. 源码与修改入口
+
+| 职责 | 文件 / 目录 | 开发注意点 |
+| --- | --- | --- |
+| Provider 与 CSS 入口 | `src/main.tsx` | Router 内有 `Interactions`，QueryClient 由 Provider 注入；保持 StrictMode 下的清理 |
+| 路由、常驻布局、快捷键 | `src/App.tsx` | 切页不能重建音频；弹窗、输入和分隔条操作不应触发播放快捷键 |
+| 头部、搜索、头像菜单 | `src/components/WorkspaceHeader.tsx` | 唯一账户设置入口、快速切库、搜索输入法组合与防抖 |
+| 通用歌曲表格 | `src/components/Common.tsx` 的 `TrackList` | 收藏、右键动作、空白处双击、顺序与权限回调；不要另建一套表格交互 |
+| 列宽 | `src/components/TrackColumns.tsx` | 指针与键盘操作；预览宽度与提交偏好分离 |
+| 右键菜单、图标提示 | `src/components/Interactions.tsx` | `useContextMenu()`、`data-tooltip`；弹窗内浮层、定位翻转和焦点恢复 |
+| 基础弹窗和选择器 | `src/components/Modal.tsx`、`Select.tsx` | 原生 dialog 与 popover；不要退回未统一样式的控件 |
+| 封面与头像 | `EntityArtwork.tsx`、`ProfileAvatar.tsx`、`AvatarEditor.tsx` | 歌单本地封面覆盖、加载失败回退；头像圆形预览，歌单方形预览 |
+| 歌曲/歌手独立链接 | `src/components/TrackLinks.tsx` | 歌曲在底栏跳专辑，歌手跳歌手；不要把整组信息包成同一个链接 |
+| 首页和搜索 | `src/pages/Home.tsx`、`Search.tsx` | 数据按当前曲库筛选，保留综合搜索分类和真实统计 |
+| 专辑与歌手页 | `src/pages/Library.tsx` | 专辑曲序、多碟、时长、歌手页与专辑区的过渡 |
+| 歌单管理与详情 | `src/features/library/PlaylistViews.tsx` | 直接排序、随机播放、撤销、只读判断；详情通过 key 隔离每张歌单的编辑状态 |
+| 歌单信息弹窗 | `src/features/library/PlaylistDetailsEditor.tsx` | 名称/简介写 Navidrome，封面写 Tooku 本地配置 |
+| 新建歌单 | `src/features/library/CreatePlaylist.tsx` | 左栏可选位置；管理页使用当前目录 |
+| 左栏树和移动弹窗 | `src/features/library/Organization.tsx` | 与管理页共用组织数据；`pages/Playlists.tsx` 保留导出和添加歌曲入口 |
+| 文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 混排、嵌套、移到根目录；纯函数校验边界 |
+| API 与统一模型 | `src/api/client.ts`、`src/domain/models.ts` | HTTP/业务错误分开，DTO 转换集中；不要照抄旧文档示意字段名 |
+| 播放引擎与算法 | `src/features/player/engine.ts`、`src/domain/queue.ts` | 单实例媒体、异步竞争、队列条目身份与有效收听 |
+| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx` | UI 发命令，不创建音频；完整播放器中的队列视图可保留 |
+| 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`PanelResizeHandle.tsx` | 正在播放/队列共用右栏；分栏拖动条由 App 放在面板间隙 |
+| 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、几何居中、空闲恢复和偏移换算 |
+| 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
+| 启动与部署 | `scripts/dev-server.mjs`、`scripts/port-selection.mjs`、`start-tooku.cmd`、`deploy/` | 有界端口回退、健康检查与复用现有服务 |
+
+新增功能优先扩展这些边界，不要求为了符合早期“目录建议”搬动整个仓库。已有文件包含较长 JSX，新代码优先写清晰的组件和函数；拆分只服务当前任务。
+
+## 4. 当前 UI 契约
+
+### 布局与入口
+
+头部是全局导航；主体为左侧导航/歌单树、中部浏览区、右侧播放内容，底部为常驻控制栏。窄屏使用覆盖侧栏，避免把主体压成不可用宽度。
+
+- 主页图标只在当前主页显示选中效果，搜索栏尾部不显示回车图标。
+- 设置通过头像菜单进入，菜单可快速切换真实曲库；右侧版块配置按钮不属于新增账户设置入口。
+- 独立歌曲页已取消，旧 `/songs` 兼容地址转到 `/search?type=songs`。首页中的歌曲筛选和综合搜索的歌曲分类仍保留。
+- 底栏可显示当前歌曲的小封面；左栏底部不再放独立的大封面或额外暂停按钮。
+- 右栏队列不是第二份播放状态；其“当前播放 / 接下来”应反映引擎真实队列。
+
+### 列表、歌单与目录
+
+- 歌曲标题及播放按钮有明确入口；双击行空白是补充操作，不拦截歌手、专辑等链接的自身语义。
+- 表格使用同一底色，仅悬停/选中反馈；列宽可调。加入队列、下一首、添加歌单、移动等操作进统一右键菜单，行尾只留收藏。
+- 普通歌单详情采用播放、随机、更多选项的操作组；点击封面进入信息编辑，不使用单独曲目编辑页。
+- 有权限的歌单可在列表直接拖动保存，重复歌曲保留；失败后可重读核实，支持撤销上次已保存修改。
+- 左栏歌单区的新建图标创建歌单，可选择文件夹，留空为根目录；管理页在根目录或文件夹内就地创建歌单/文件夹。
+- 文件夹和歌单混排。不能把文件夹移入自身或子级；删除文件夹将内容归位上一级，不删除 Navidrome 歌单。
+
+### 表面、文案与动效
+
+沿用现有系统字体栈、圆角面板、克制阴影和短过渡。颜色来自 token，图标来自 Lucide；封面、歌曲和歌单是视觉主角。不要增加营销横幅、冗余小字、伪造推荐或随意使用品牌绿覆盖 Tooku 主题色。
+
+复用 `IconButton` 的中文名称和应用 tooltip。使用 `data-tooltip` 提供其他提示，默认上方浮现、边缘翻转。统一菜单须在深浅主题中可读、可用 Esc 关闭、可通过键盘访问；弹窗内浮层不应被遮挡或变成不可点击。
+
+歌词按钮文案为“同步”。手动滚动后停止自动追踪，闲置 5 秒后恢复；第一句、最后一句和换行长句都应能居中。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
+
+## 5. 数据归属与当前限制
+
+| 数据 | 当前保存位置 | 作用域 / 事实 |
+| --- | --- | --- |
+| 音乐文件、专辑、歌手、服务器收藏 | Navidrome | 以服务器授权和返回值为准 |
+| 歌单名称、简介、曲目和曲序 | Navidrome | Tooku 通过协议读写并核实 |
+| 头像、自定义歌单封面 | localStorage：`tooku-profiles` | 按 `api.identity` 分组；图片为本地处理后的 data URL，不上传 Navidrome |
+| 文件夹、歌单位置/混排、曲库视图与选中库 | localStorage：`tooku-library-organization` | 按身份分组，内部按真实 `libraryId` 组织；不是服务器目录 |
+| 明暗、主题色、布局、列宽、歌词和快捷键偏好 | localStorage：`tooku-preferences` | 当前设备级；尚未全部按账号区分 |
+| 队列、暂停位置、此设备历史 | IndexedDB | key 由 `identity` 与种类组成；恢复后暂停，不自动播放 |
+| 查询结果 | TanStack Query 内存 | 按身份与相关库隔离，不等于持久化服务端数据 |
+| 登录密码、token/salt | 会话内存 | 刷新/热更新整页重载后需重新登录；不写入上述存储 |
+
+当前 `MusicApi.identity` 使用 `${base}|${username}`。更换访问 origin、代理基址、账号写法或身份规则，可能让旧数据不可见；不能通过简单更名身份来解决串号问题。
+
+Navidrome 的 `getPlaylists` 返回账号可见的歌单。每库归属是 Tooku 的 `placements`，不能把它误当成协议天然返回的每库独立歌单集合。`getArtist` 可能聚合多个曲库，当前有专辑边界过滤，不能为了少发请求直接删除。
+
+清理站点数据、更换浏览器/设备、访问 origin 变化会影响本机数据；IndexedDB 也受此限制。当前没有导出/迁移流程、Tooku 服务端备份或跨设备同步，文案与交付不得承诺这些能力。
+
+### 下一阶段持久化的设计约束
+
+已讨论的优先方向是 Tooku 轻量后端、SQLite 元数据与服务端图片目录，后续再完善部署。实际实现应在对应任务中决定，并遵守：
+
+1. 先定义哪些数据继续归 Navidrome、哪些归 Tooku；不复制一套可独立修改的服务器歌单真相。
+2. 保留现有本地数据，提供迁移预览/导入、冲突处理、失败重试及备份恢复，不静默覆盖或清空。
+3. 服务端身份必须经过验证，不能只相信客户端传入的用户名；禁止把裸密码搬到数据库。
+4. 数据结构带版本，变更有迁移；图片有限制与清理策略，避免浏览器容量问题直接平移到无限服务端上传。
+5. Docker 需要持久化数据卷、权限与恢复验证；创建 SQLite 文件不等于完成备份和跨设备同步。
+
+## 6. API、播放与异步修改范式
+
+### 服务数据
+
+在 React 内通过当前 Provider 的 `useQueryClient()` 更新缓存。既有模块使用过共享实例，新代码不要引入第二个 QueryClient，也不要绕开测试 Provider 更新另一份缓存。
+
+查询 key 的形式沿用 `[api.identity, resource, ...scope]`，依赖库的资源带上 `libraryId`。传递 Query 提供的 `AbortSignal`；保留取消、能力降级、空数据与错误的区别。HTTP 200 不代表 Subsonic 业务成功。
+
+接口字段在 `MusicApi` 中转换到 `Track`、`Album`、`Playlist` 等真实类型；秒值和毫秒值不能混用。OpenSubsonic 正 offset 在现有实现中转换为内部负延迟，展示与点击定位都要用同一套换算。
+
+### 写入与编辑
+
+歌单曲序使用 `savePlaylist`，基本信息使用 `updatePlaylistDetails`，不要为修改简介重写所有歌曲。先检查 `changed`，写后重读验证；失败/超时不能盲目自动重试。保留已知的非原子并发限制。
+
+异步操作期间防重复提交；拖放发生后如果列表已变化，应取消旧拖放。歌单详情按 ID 隔离状态，避免旧歌单的异步结果或撤销操作进入新歌单。只读按钮和拖放都应禁用，但权限仍由服务器执行。
+
+### 播放
+
+UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命令；状态从 `usePlayer` 读取。不要给页面加第二个 `<audio>`、以 React key 重建播放器，或在切库时 `attach/logout` 现有引擎。
+
+队列中每次出现都有独立 `entryId`，收听记录有 `occurrenceId`。同曲不同次的播放、随机、循环和撤销必须保留这些语义。异步播放 promise、恢复快照和晚到 API 响应都要处理过期结果；拖动进度不能计为有效收听。
+
+## 7. 样式定位与变更方式
+
+入口 CSS 当前按 `styles.css → features/player/player.css → workspace.css → browse.css → interactions.css` 导入，组件还会导入 `panel.css`、`pages/home.css` 等文件。不要只凭文件名称推断最终覆盖关系，必要时检查浏览器计算样式。
+
+| 文件 | 当前重点 |
+| --- | --- |
+| `src/styles.css` | 基础元素、早期页面与通用结构 |
+| `src/workspace.css` | 当前主题 token、全局头部、三栏及响应式工作区 |
+| `src/browse.css` | 统一选择器、头像裁剪、实体封面、搜索、队列等浏览表面 |
+| `src/interactions.css` | 菜单/tooltip、分栏与列宽手柄、当前歌单/目录及歌手过渡样式 |
+| `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
+| `src/pages/home.css` | 独立主页 |
+
+这是一份现状地图，不要求继续把所有业务样式堆进通用文件。按任务逐步收敛组件的样式责任，避免重复规则、不断追加覆盖和大范围 `!important`。修改表格断点时结合主体容器宽度，不能只看整个 viewport。
+
+## 8. 验证与交付尺度
+
+普通业务改动执行适用的 Lint、类型/构建和相关测试。`npm.cmd run build` 已包含 `tsc -b`，无需为相同代码重复做多轮相同检查。没有配置 `test:e2e` 脚本，不能把浏览器工具检查描述成已通过完整自动化 E2E。
+
+| 修改范围 | 优先参考的测试 |
+| --- | --- |
+| 协议、认证、元信息写入 | `tests/api.test.ts` |
+| 队列算法和有效收听 | `tests/queue.test.ts` |
+| 音频生命周期、过期播放结果 | `tests/player.test.ts` |
+| 歌词、进度、弹窗和播放器 UI | `tests/player-ui.test.tsx` |
+| 多库、目录边界、混排 | `tests/library.test.ts` |
+| 歌单拖放/撤销、只读、列表、链接 | `tests/organization-ui.test.tsx` |
+| 搜索输入法 | `tests/search.test.tsx` |
+| 菜单、提示、焦点 | `tests/interactions.test.tsx` |
+| 专辑播放入口 | `tests/albums.test.tsx` |
+| Windows 端口回退 | `tests/startup.test.mjs` |
+
+隔离测试服务：`node tests/fixtures/server.mjs`，仅本机 44534；登录地址填 `http://127.0.0.1:44534`，用户名 `fixture`，密码任意非空测试文本。它是简化的内存 fixture，不代理真实 Navidrome，也不保证覆盖后续增加的全部接口字段；测试新能力时先检查 fixture 是否支持。
+
+最近已记录基线：2026-10-19 构建、Lint、59 项测试 / 10 个文件通过；有真实登录、界面与播放的部分检查，但没有完整移动实机、音频格式、长期播放或 Docker 验收。最新执行结果应在当前任务重新说明，不能引用旧记录充当新结果。
+
+用户目前偏好少量基础错误验证，详细效果留给人工。最终回复直接列出本次需要看的几项，不新建手工验收文档。纯文档改动检查链接、事实和 diff 即可。
+
+## 9. 常见任务的最短路径
+
+- **改全局布局**：`App.tsx` / `WorkspaceHeader.tsx` → `workspace.css` → 核对紧凑侧栏和底栏；避免重建音频。
+- **改歌曲操作**：`Common.tsx` 的 `TrackList` → `useContextMenu` / 列宽组件 → 必要的列表交互测试。
+- **改歌单或目录**：`PlaylistViews` / `Organization` → `state/library.ts` 或 `MusicApi` → 判断本地修改还是服务器写入 → 验证重复项、权限、并发与库边界。
+- **改歌词**：`Lyrics.tsx` → 对应播放器样式 → 几何与时间换算测试；保留“同步”和 5 秒空闲恢复。
+- **修启动**：先看 `.local/server-url.txt`、健康端点和启动日志 → 启动器/代理；不要先改系统网络或停止 Navidrome。
+- **加持久化**：先梳理本指南的数据表与当前 namespace → 设计迁移和身份验证 → 再实现存储/接口，不把 IndexedDB 改名成“服务端数据库”。
+
+## 10. 维护规范本身
+
+入口、数据归属、Provider、缓存身份、启动命令或主要交互改变时，同步更新 [AGENTS.md](../AGENTS.md)、本指南和 README 中受影响的段落。测试数量与版本记录需要日期；未测试的能力明确标注。维护历史文档时添加版本提示，不把已经发生的验证记录改写成不存在的结果。

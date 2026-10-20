@@ -1,5 +1,7 @@
 # 技术架构
 
+> 历史方案说明：本文保留最初的技术选择、目录与模型示意，部分候选库、Worker 和模块拆分尚未采用。真实类型以 `src/domain/models.ts` 为准，当前模块与存储边界见 [开发接入指南](12-agent-development-guide.md)，开发约定见 [AGENTS.md](../AGENTS.md)。不要按示意字段或目录重建现有工程。
+
 状态：已创建第一版工程并固定依赖，实际实现与验证边界见 [开发记录](09-development-status.md)。React / Vite / Query / Zustand / IndexedDB 基线已采用；Radix 与 CSS Modules 暂未引入，当前用原生 dialog 管理弹窗焦点，使用统一 CSS token 和样式文件；后续复杂组件再按需要拆分。
 
 ## 技术选择与理由

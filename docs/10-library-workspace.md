@@ -1,6 +1,6 @@
 # 歌单优先的主界面
 
-历史记录：2026-10-14。2026-10-19 的头部/侧栏布局已调整，当前说明与人工验收见 [主页改版清单](11-home-refresh-and-checklist.md)。
+历史记录：2026-10-14。以下操作说明保留当时版本；后续已调整设置入口、歌曲导航、队列、歌单编辑及新建/拖放方式。当前以 [AGENTS.md](../AGENTS.md) 和 [开发接入指南](12-agent-development-guide.md) 为准。
 
 日期：2026-10-14。白色视觉延续 Apple Music，布局参考用户的 MusicBee 截图。开发分支为 `codex/library-workspace`。
 

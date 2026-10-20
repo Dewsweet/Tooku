@@ -4,6 +4,8 @@
 
 当前状态：**可运行的开发工程，真实曲库已进行基础联调，尚未完成发布验收**。保留 Apple Music 的简洁视觉，主界面现采用 Spotify 式全局头部与三栏布局，明暗模式与主题色可选。本地 Git 已提交基线，本轮功能在 codex/library-workspace 分支；没有远程推送。
 
+**Agent / 开发者接入：先读 [AGENTS.md](AGENTS.md)，再按任务查阅 [开发接入指南](docs/12-agent-development-guide.md)。** 两者说明当前模块入口、产品交互、数据边界与验证方式；早期设计文档包含已被替代的方案。
+
 ## 本地运行
 
 需要 Node.js 22.12+，本次使用 Node 24.15.0。**无需安装全局 pnpm**：已有依赖时可双击根目录 [start-tooku.cmd](start-tooku.cmd)，或通过 npm 启动。
@@ -30,7 +32,9 @@ npm.cmd run build
 
 实际验证和待办见 [开发记录](docs/09-development-status.md)。PWA、拼音搜索、双语/逐词歌词、在线歌词、服务端队列同步和高级音频实验尚未实现。
 
-新版主页展示曲库概览、歌单和专辑。Logo/主页/搜索位于头部，右上角为头像和设置；真实曲库在设置中切换。播放侧栏可选择版块与顺序，歌单文件夹继续独立管理。头像、布局和分类仅保存于当前浏览器，歌单内容仍在 Navidrome；本轮改动和待人工确认项见 [主页改版与人工清单](docs/11-home-refresh-and-checklist.md)。
+新版主页展示曲库概览、歌单和专辑。Logo/主页/搜索位于头部，账户设置只从头像菜单进入，菜单也可快速切换真实曲库。右栏整合正在播放与队列，支持调整宽度、版块与顺序；左栏歌单树独立管理。歌曲表格支持列宽调整、空白区域双击播放和统一右键操作；歌单支持直接拖动排序、撤销，以及点击封面修改名称、简介和本地封面。
+
+**Tooku 目前没有自有业务后端或 SQLite。** 头像、自定义封面、文件夹分类和布局仍保存在当前浏览器；名称、简介、曲目顺序等服务器歌单数据保存在 Navidrome。当前数据归属和开发约定见 [开发接入指南](docs/12-agent-development-guide.md)，历史改版记录见 [主页改版](docs/11-home-refresh-and-checklist.md)。
 
 ## 可选 Docker 部署
 
@@ -69,7 +73,7 @@ node tests/fixtures/server.mjs
 
 ## 推荐路线
 
-独立开发 React + TypeScript + Vite 网页应用，以 Subsonic / OpenSubsonic 为主要数据协议，使用常驻 HTMLAudioElement 播放。先完成登录、浏览、搜索、队列、收藏、歌单、逐行歌词与响应式界面，再加入拼音搜索、双语/逐词歌词、PWA 和高级音频实验。
+当前为 React + TypeScript + Vite 网页应用，以 Subsonic / OpenSubsonic 为主要数据协议，使用常驻 HTMLAudioElement 播放。接下来讨论的优先方向是 Tooku 服务端持久化、现有浏览器数据迁移与备份恢复，再继续完善歌单权限、界面反馈、播放稳定性和部署。拼音搜索、双语/逐词歌词、PWA 和高级音频实验保留为后续功能；这些规划尚不代表已经实现。
 
 核心差异化：中文输入与检索体验、精致且可降级的歌词页、明确可控的播放队列、稳定的连续听歌流程。首页内容来自用户自己的音乐库。
 
@@ -77,6 +81,8 @@ node tests/fixtures/server.mjs
 
 | 文档 | 用途 |
 | --- | --- |
+| [Agent 开发规范](AGENTS.md) | 所有 Agent 的接入入口、必须延续的产品与工程约定 |
+| [开发接入指南](docs/12-agent-development-guide.md) | 当前模块地图、数据归属、组件复用、任务路径与验证尺度 |
 | [项目调研](docs/01-research.md) | 参考项目、来源、复用取舍、许可证事实 |
 | [产品需求](docs/02-product-requirements.md) | 用户场景、功能优先级、首版范围 |
 | [交互与视觉](docs/03-design.md) | 信息架构、页面布局、播放器与中文规范 |
@@ -85,8 +91,8 @@ node tests/fixtures/server.mjs
 | [播放器设计](docs/06-player.md) | 状态机、队列、歌词时钟、兼容性限制 |
 | [开发计划](docs/07-roadmap.md) | 里程碑、任务依赖、工期估算与验收门槛 |
 | [开发与验收](docs/08-development-and-testing.md) | 本地联调、部署方案、测试矩阵、发布标准 |
-| [主页改版与人工清单](docs/11-home-refresh-and-checklist.md) | 当前布局、头像、侧栏配置及人工验收 |
-| [主界面说明](docs/10-library-workspace.md) | 曲库切换、文件夹、设置和存储边界 |
+| [主页改版与人工清单](docs/11-home-refresh-and-checklist.md) | 2026-10-19 早期主页改版的阶段性记录与历史清单 |
+| [主界面说明](docs/10-library-workspace.md) | 早期曲库切换、文件夹、设置与存储边界记录 |
 | [开发记录](docs/09-development-status.md) | 实现进度、真实/模拟验证边界与下一步 |
 
-下一步继续完成 M0 代表性格式、转码、真实歌词、权限和写入验收，并迭代播放器细节。依赖许可证已记录于 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，可用 `node scripts/license-notices.mjs` 重新生成；Tooku 原创代码的开源许可尚未指定。
+真实音频格式、转码、权限、长期播放和容器部署的发布前验证仍待完善，不因界面或模拟测试完成而视为全部通过。依赖许可证已记录于 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，可用 `node scripts/license-notices.mjs` 重新生成；Tooku 原创代码的开源许可尚未指定。
