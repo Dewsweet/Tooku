@@ -1,6 +1,6 @@
 import { useContext, useId, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Minus, Plus, RefreshCw, Search } from 'lucide-react';
+import { Check, Minus, Plus, RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { formatTime, IconButton, QueryState, useApi } from '../../components/Common';
@@ -33,7 +33,7 @@ export function LyricsSettingsDialog({ track, data, onSave, onSelect, onRecommen
     </div>
     {tab === 'display' && data.document && <form id={`${id}-display`} role="tabpanel" aria-labelledby={`${id}-display-tab`} className="lyric-display-settings" onSubmit={(event) => { event.preventDefault(); onSave({ ...draft, hash: data.hash }); }}>
       <div className="lyric-settings-row"><label htmlFor={`${id}-layout`}>双语格式</label><Select id={`${id}-layout`} aria-label="双语格式" value={draft.layout} onChange={(layout) => setDraft({ ...draft, layout: layout as LyricLayout })}>
-        <option value="auto">识别双语</option><option value="original">保留原文</option><option value="inline">原文与译文同行</option><option value="alternating">原文与译文交替</option><option value="halves">原文在前，译文在后</option>
+        <option value="auto">自动识别</option><option value="original">保留原文</option><option value="inline">原文与译文同行</option><option value="alternating">原文与译文交替</option><option value="halves">原文在前，译文在后</option>
       </Select></div>
       {draft.layout === 'inline' && <div className="lyric-settings-row"><label htmlFor={`${id}-separator`}>分隔符</label><input id={`${id}-separator`} aria-label="歌词分隔符" maxLength={16} value={draft.separator ?? ''} placeholder="空格或 /" onChange={(event) => setDraft({ ...draft, separator: event.target.value || undefined })} /></div>}
       {draft.layout === 'halves' && <div className="lyric-settings-row"><label htmlFor={`${id}-split`}>原文行数</label><input id={`${id}-split`} type="number" min={1} max={10000} value={draft.splitAt ?? ''} placeholder="对半分段" onChange={(event) => setDraft({ ...draft, splitAt: event.target.value ? Math.max(1, Math.min(10000, Math.round(Number(event.target.value)))) : undefined })} /></div>}
@@ -44,12 +44,17 @@ export function LyricsSettingsDialog({ track, data, onSave, onSelect, onRecommen
         <input id={`${id}-offset`} aria-label="歌词偏移秒数" type="number" min={-600} max={600} step={.1} value={Number(((draft.delayMs ?? 0) / 1000).toFixed(1))} onChange={(event) => { const seconds = Number(event.target.value); if (Number.isFinite(seconds)) setDraft({ ...draft, delayMs: Math.round(Math.max(-600, Math.min(600, seconds)) * 1000) }); }} /><span>秒</span>
         <IconButton label="歌词延后 0.1 秒" onClick={() => offset(100)}><Plus size={16} /></IconButton>
       </div></div>
-      <footer className="lyric-dialog-footer"><button type="button" className="text-button" onClick={() => onSave()}>重置显示</button><button className="primary-button">保存</button></footer>
+      <footer className="lyric-display-footer">
+        <div className="lyric-display-actions" role="group" aria-label="歌词显示操作">
+          <button type="button" className="text-button" onClick={() => onSave()}><RotateCcw size={15} />重置显示</button>
+          <button type="button" className="text-button" disabled={data.loading} onClick={onReload}><RefreshCw size={15} />刷新歌词</button>
+        </div>
+        <button className="primary-button">保存</button>
+      </footer>
     </form>}
     {tab === 'versions' && <div id={`${id}-versions`} role="tabpanel" aria-labelledby={`${id}-versions-tab`}>
       <LyricVersions track={track} data={data} onSelect={onSelect} onRecommend={onRecommend} />
     </div>}
-    <div className="lyric-reload-row"><button type="button" className="text-button" disabled={data.loading} onClick={onReload}><RefreshCw size={15} />刷新歌词</button></div>
     </div>
   </Modal>;
 }
@@ -65,12 +70,12 @@ function LyricVersions({ track, data, onSelect, onRecommend }: { track: Track; d
   });
   return <>
     <form className="lyric-search" onSubmit={(event) => { event.preventDefault(); if (title.trim()) { setSubmitted({ title: title.trim(), artist: artist.trim() }); setAttempt((n) => n + 1); } }} onKeyDown={(event) => { if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault(); }}>
-      <div className="lyric-search-tools"><Select aria-label="歌词平台" value={provider} onChange={(value) => { if (value === 'netease' || value === 'qq') setProvider(value); }}>{data.settings.order.map((item) => <option key={item} value={item}>{providerNames[item]}</option>)}</Select>
-        <button className="subtle-button" disabled={!title.trim() || query.isFetching}><Search size={16} />搜索</button>
-      </div>
       <div className="lyric-search-fields">
         <label>歌曲标题<input aria-label="歌词歌曲标题" value={title} maxLength={256} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>歌手<input aria-label="歌词歌手" value={artist} maxLength={240} onChange={(event) => setArtist(event.target.value)} /></label>
+      </div>
+      <div className="lyric-search-tools"><Select aria-label="歌词平台" value={provider} onChange={(value) => { if (value === 'netease' || value === 'qq') setProvider(value); }}>{data.settings.order.map((item) => <option key={item} value={item}>{providerNames[item]}</option>)}</Select>
+        <button className="subtle-button" disabled={!title.trim() || query.isFetching}><Search size={16} />搜索</button>
       </div>
     </form>
     <QueryState pending={query.isPending && data.settings.enabled} error={null} pendingText="正在搜索歌词…" />

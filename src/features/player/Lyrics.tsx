@@ -17,8 +17,8 @@ import { QqIcon } from '../lyrics/QqIcon';
 import '../lyrics/lyrics.css';
 
 export const LYRIC_IDLE_MS = 5000;
-export function centeredLyricTop(view: { top: number; height: number; scrollTop: number }, line: { top: number; height: number }) {
-  return Math.max(0, view.scrollTop + line.top - view.top - (view.height - line.height) / 2);
+export function centeredLyricTop(view: { top: number; height: number; scrollTop: number }, line: { top: number; height: number }, anchor = .5) {
+  return Math.max(0, view.scrollTop + line.top - view.top + line.height / 2 - view.height * anchor);
 }
 export function Lyrics({ track, toolbarHost }: { track?: Track; toolbarHost?: HTMLElement | null }) {
   const api = useApi();
@@ -29,6 +29,7 @@ function LyricsView({ track, toolbarHost }: { track?: Track; toolbarHost?: HTMLE
   const data = useLyrics(track); const menu = useContextMenu(); const [settingsOpen, setSettingsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null); const [follow, setFollow] = useState(true); const following = useRef(true); const dragging = useRef(false);
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined); const frame = useRef(0);
+  const anchor = useRef(.5);
   const lyrics = data.lyrics; const delay = (lyrics?.offsetMs ?? 0) + preferences.lyricDelay + (data.edit?.delayMs ?? 0);
   const saveEdit = (edit?: LyricEdit) => {
     if (!track || !data.document) return;
@@ -40,7 +41,7 @@ function LyricsView({ track, toolbarHost }: { track?: Track; toolbarHost?: HTMLE
     const container = ref.current; const line = container?.querySelector<HTMLElement>('[aria-current="true"]');
     if (!container || !line || !following.current) return;
     const box = container.getBoundingClientRect(); const lineBox = line.getBoundingClientRect();
-    container.scrollTo({ top: centeredLyricTop({ top: box.top, height: container.clientHeight, scrollTop: container.scrollTop }, lineBox), behavior: reduced || instant ? 'instant' : 'smooth' });
+    container.scrollTo({ top: centeredLyricTop({ top: box.top, height: container.clientHeight, scrollTop: container.scrollTop }, lineBox, anchor.current), behavior: reduced || instant ? 'instant' : 'smooth' });
   }, [reduced]);
   const resume = useCallback(() => { clearTimeout(idle.current); following.current = true; setFollow(true); center(); }, [center]);
   const pause = useCallback(() => {
@@ -55,8 +56,12 @@ function LyricsView({ track, toolbarHost }: { track?: Track; toolbarHost?: HTMLE
   useLayoutEffect(() => {
     const container = ref.current; if (!container) return;
     const update = () => {
-      const edge = lyrics?.synced && lyrics.lines.length ? `${container.clientHeight / 2}px` : '0px';
-      container.style.setProperty('--lyric-edge', edge); container.style.paddingTop = '0px'; container.style.paddingBottom = '0px';
+      const configured = Number.parseFloat(getComputedStyle(container).getPropertyValue('--lyric-anchor'));
+      anchor.current = Number.isFinite(configured) ? Math.max(.3, Math.min(.7, configured)) : .5;
+      const height = lyrics?.synced && lyrics.lines.length ? container.clientHeight : 0;
+      container.style.setProperty('--lyric-before', `${height * anchor.current}px`);
+      container.style.setProperty('--lyric-after', `${height * (1 - anchor.current)}px`);
+      container.style.paddingTop = '0px'; container.style.paddingBottom = '0px';
       cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(() => center(true));
     };
     update();

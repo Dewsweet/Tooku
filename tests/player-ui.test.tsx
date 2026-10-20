@@ -137,6 +137,10 @@ it('edits translation and offset together, retains playback and closes only the 
   const dialog = within(screen.getByRole('dialog', { name: '歌词设置' }));
   expect(dialog.getByRole('heading', { name: '歌词设置' })).toBeInTheDocument();
   expect(dialog.queryByLabelText('歌词显示预览')).not.toBeInTheDocument();
+  expect(dialog.getByRole('combobox', { name: '双语格式' })).toHaveTextContent('自动识别');
+  const actions = dialog.getByRole('group', { name: '歌词显示操作' });
+  expect(within(actions).getAllByRole('button').map((button) => button.textContent)).toEqual(['重置显示', '刷新歌词']);
+  expect(dialog.getByRole('button', { name: '保存' }).parentElement).toBe(actions.parentElement);
   expect(dialog.getByRole('button', { name: '关闭' }).closest('header')?.parentElement).toBe(screen.getByRole('dialog', { name: '歌词设置' }));
   fireEvent.change(dialog.getByRole('spinbutton', { name: '歌词偏移秒数' }), { target: { value: '0.4' } });
   fireEvent.click(dialog.getByRole('checkbox', { name: '显示译文' }));
@@ -166,6 +170,9 @@ it('searches with separate edited title and artist fields only after submitting'
   await dialog.findByText('没有找到歌词版本');
   expect(dialog.getByRole('textbox', { name: '歌词歌曲标题' })).toHaveValue('当前曲目');
   expect(dialog.getByRole('textbox', { name: '歌词歌手' })).toHaveValue('测试歌手');
+  expect(dialog.queryByRole('button', { name: '刷新歌词' })).not.toBeInTheDocument();
+  const fields = dialog.getByRole('textbox', { name: '歌词歌曲标题' }).closest('.lyric-search-fields');
+  expect(fields?.nextElementSibling).toContainElement(dialog.getByRole('button', { name: '搜索' }));
   vi.mocked(lyricsApi.search).mockClear();
   fireEvent.change(dialog.getByRole('textbox', { name: '歌词歌曲标题' }), { target: { value: ' 新标题 ' } });
   fireEvent.change(dialog.getByRole('textbox', { name: '歌词歌手' }), { target: { value: '新歌手' } });
@@ -249,6 +256,36 @@ it('centers lyrics using viewport geometry and resumes sync after manual scrolli
   vi.useFakeTimers(); fireEvent.wheel(viewport); expect(screen.getByRole('button', { name: '同步' })).toHaveAttribute('aria-pressed', 'false');
   act(() => vi.advanceTimersByTime(5000)); expect(screen.queryByRole('button', { name: '同步' })).not.toBeInTheDocument();
   expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 320, behavior: 'instant' });
+});
+it('remeasures the reading anchor and first/last line space when the lyric viewport resizes', async () => {
+  let resize = () => {};
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { resize = callback; }
+    observe() {}
+    disconnect() {}
+  });
+  try {
+    surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+    const line = await screen.findByRole('button', { name: '第二句测试歌词' });
+    const viewport = screen.getByLabelText('歌词内容');
+    viewport.style.setProperty('--lyric-anchor', '.42'); viewport.scrollTop = 200;
+    let height = 0; let lineHeight = 0;
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, get: () => height });
+    vi.spyOn(viewport, 'getBoundingClientRect').mockImplementation(() => ({ top: 120, height }) as DOMRect);
+    vi.spyOn(line, 'getBoundingClientRect').mockImplementation(() => ({ top: 800, height: lineHeight }) as DOMRect);
+    vi.useFakeTimers();
+    for (const [nextHeight, nextLineHeight] of [[690, 96], [920, 144], [1160, 200]]) {
+      height = nextHeight; lineHeight = nextLineHeight;
+      act(() => { resize(); vi.advanceTimersByTime(32); });
+      const top = vi.mocked(viewport.scrollTo).mock.lastCall?.[0] as ScrollToOptions;
+      const resultingLineCenter = 800 + lineHeight / 2 - (top.top! - viewport.scrollTop);
+      expect(resultingLineCenter).toBeCloseTo(120 + height * .42);
+      // Both ends need enough space for a short first/last line to reach this anchor.
+      expect(Number.parseFloat(viewport.style.getPropertyValue('--lyric-before'))).toBeCloseTo(height * .42);
+      expect(Number.parseFloat(viewport.style.getPropertyValue('--lyric-after'))).toBeCloseTo(height * .58);
+    }
+    expect(usePlayer.getState().position).toBe(11);
+  } finally { vi.unstubAllGlobals(); }
 });
 it('restores the previous volume after unmuting', async () => {
   const volume = vi.spyOn(player, 'volume').mockImplementation((value) => usePlayer.setState({ volume: value }));

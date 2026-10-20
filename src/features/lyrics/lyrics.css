@@ -7,7 +7,7 @@
 .lyric-romanization { font-size: .56em; font-weight: 500; margin-top: 5px; letter-spacing: 0; }
 .modal.lyrics-settings-modal { width: 580px; padding: 22px; border-radius: 12px; overflow: hidden; }
 .modal.lyrics-settings-modal[open] { display: flex; flex-direction: column; }
-.lyric-settings-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 8px; margin-right: -6px; }
+.lyric-settings-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 10px 6px 4px; margin: -4px -6px -6px -4px; }
 .lyrics-settings-modal > .modal-heading { border: 0; padding-bottom: 0; margin-bottom: 20px; flex-shrink: 0; }
 .lyrics-settings-modal > .modal-heading .icon-button { flex-shrink: 0; border-radius: 50%; }
 .lyric-settings-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); margin-bottom: 16px; }
@@ -16,21 +16,29 @@
 .lyrics-settings-modal .lyric-settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr); flex-direction: row; gap: 20px; align-items: center; min-height: 62px; padding: 12px 0; margin: 0; border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 500; }
 .lyric-settings-row > label { margin: 0; font: inherit; }
 .lyric-settings-row .styled-select, .lyric-settings-row > input:not([type=checkbox]) { width: 100%; min-width: 0; }
+.lyrics-settings-modal .lyric-settings-body :is(input:not([type=checkbox]), .styled-select) { min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; box-sizing: border-box; }
+.lyrics-settings-modal .lyric-settings-body :is(input:not([type=checkbox]), .styled-select):hover { border-color: color-mix(in srgb, var(--muted) 60%, var(--line)); }
+.lyrics-settings-modal .lyric-settings-body :is(input:not([type=checkbox]), .styled-select):focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 .lyric-settings-row .lyric-toggle { appearance: none; position: relative; justify-self: end; width: 38px; height: 23px; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--shell); cursor: pointer; }
 .lyric-toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; background: var(--bg); border-radius: 50%; box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 20%, transparent); }
 .lyric-settings-row .lyric-toggle:checked { background: var(--accent); border-color: var(--accent); }
 .lyric-toggle:checked::after { left: 18px; background: var(--accent-contrast); }
 .lyric-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.lyric-offset-control { display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
-.lyric-offset-control input { width: 72px; min-width: 0; text-align: center; padding: 8px 2px; border-color: transparent; background: transparent; font-variant-numeric: tabular-nums; appearance: textfield; }
+.lyric-offset-control { display: flex; align-items: center; min-width: 0; height: 44px; padding: 4px 6px; gap: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.lyric-offset-control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.lyrics-settings-modal .lyric-offset-control input:not([type=checkbox]) { flex: 1; width: 0; min-width: 0; min-height: 32px; text-align: center; padding: 4px 0; border: 0; border-radius: 0; background: transparent; font-variant-numeric: tabular-nums; appearance: textfield; }
+.lyrics-settings-modal .lyric-offset-control input:not([type=checkbox]):focus { border: 0; box-shadow: none; outline: 0; }
 .lyric-offset-control input::-webkit-inner-spin-button { appearance: none; }
 .lyric-offset-control > span { color: var(--muted); font-size: 13px; margin-right: 4px; }
-.lyric-offset-control .icon-button { width: 30px; height: 30px; border-radius: 50%; background: var(--surface); flex-shrink: 0; }
+.lyric-offset-control .icon-button { width: 30px; height: 30px; border-radius: 6px; background: transparent; flex-shrink: 0; }
+.lyric-offset-control .icon-button:hover { background: var(--soft); }
 .lyric-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
 .lyric-dialog-footer > :only-child { margin-right: auto; }
 .lyric-dialog-footer .primary-button { min-width: 86px; }
-.lyric-reload-row { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; display: flex; justify-content: center; }
-.lyric-reload-row .text-button { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.lyric-display-footer { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
+.lyric-display-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lyric-display-actions .text-button { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); min-height: 36px; }
+.lyric-display-footer > .primary-button { width: 100%; min-height: 44px; justify-content: center; }
 .lyric-search { display: flex; flex-direction: column; gap: 16px; margin: 20px 0 14px; }
 .lyric-search-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .lyric-search-tools > .styled-select { width: 130px; min-width: 0; }
@@ -56,4 +64,7 @@
   .modal.lyrics-settings-modal { padding: 20px; }
   .lyrics-settings-modal .lyric-settings-row { grid-template-columns: minmax(0, .8fr) minmax(160px, 1fr); gap: 10px; }
   .lyric-search-fields { grid-template-columns: 1fr; }
+}
+@media (forced-colors: active) {
+  .lyrics-settings-modal .lyric-settings-body :is(input:not([type=checkbox]), .styled-select):focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
 }
