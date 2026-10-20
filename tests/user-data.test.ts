@@ -26,6 +26,19 @@ async function listening(server: Server) {
   return `http://127.0.0.1:${address.port}`;
 }
 describe('versioned user storage', () => {
+  it('accepts legacy profiles and persists validated artist pictures in the account document', () => {
+    const data = sampleData();
+    expect(isUserData(data)).toBe(true);
+    const withArt = { ...data, profile: { ...data.profile, artistCovers: { 'artist-one': 'data:image/jpeg;base64,AA==' } } };
+    expect(isUserData(withArt)).toBe(true);
+    const store = new UserStore(':memory:'); cleanups.push(() => store.close());
+    store.write('alice', 0, withArt);
+    expect(store.read('alice').data?.profile.artistCovers).toEqual(withArt.profile.artistCovers);
+    expect(store.read('bob').data).toBeNull();
+    expect(isUserData({ ...withArt, profile: { ...data.profile, artistCovers: { 'artist-one': 'https://example.test/image' } } })).toBe(false);
+    expect(isUserData({ ...withArt, profile: { ...data.profile, artistCovers: { 'https://example.test/private?key=value': 'data:image/jpeg;base64,AA==' } } })).toBe(false);
+  });
+
   it('creates a consistent native online backup while WAL data is live and restores it without credentials', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tooku-backup-')); cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
     const store = new UserStore(join(dir, 'tooku.sqlite')); cleanups.push(() => store.close());

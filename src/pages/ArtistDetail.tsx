@@ -1,28 +1,54 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import { Heart, LoaderCircle, Play, Shuffle } from 'lucide-react';
+import { Heart, LoaderCircle, Pencil, Play, Shuffle } from 'lucide-react';
 import type { MusicApi } from '../api/client';
 import { AlbumGrid, Empty, IconButton, QueryState, useApi } from '../components/Common';
 import type { Album, Track } from '../domain/models';
 import { artistArtworkCandidates } from '../domain/artistArtwork';
+import { AvatarEditor } from '../components/AvatarEditor';
+import { useContextMenu } from '../components/Interactions';
 import { player } from '../features/player/engine';
 import { useMusicLibrary } from '../state/library';
 import { errorMessage, useSession } from '../state/session';
+import { useProfiles } from '../state/profile';
 import './artist-detail.css';
 
 function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; coverArt?: string; albums: Album[] }) {
   const api = useApi();
+  const custom = useProfiles((state) => state.artistCovers?.[api.identity]?.[id]);
+  const menu = useContextMenu();
+  const input = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [loaded, setLoaded] = useState<string>();
   const [failed, setFailed] = useState<string[]>([]);
-  const candidate = artistArtworkCandidates(id, coverArt, albums).find((image) => !failed.includes(image.coverArt));
-  const src = api.coverUrl(candidate?.coverArt, candidate?.kind === 'artist' ? 1200 : 600);
-  const hasArt = Boolean(src && candidate && loaded === candidate.coverArt);
-  return <header className="artist-hero" data-has-art={hasArt} data-artwork={hasArt ? candidate?.kind : 'none'}>
-    {src && candidate && <img key={candidate.coverArt} className="artist-hero-image" src={src} alt="" referrerPolicy="no-referrer" onLoad={() => setLoaded(candidate.coverArt)} onError={() => setFailed((previous) => [...previous, candidate.coverArt])} />}
-    {hasArt && candidate?.kind === 'album' && <div className="artist-hero-album"><img src={src} alt="专辑封面" referrerPolicy="no-referrer" /></div>}
+  const candidates = [
+    ...(custom ? [{ kind: 'custom', src: custom }] : []),
+    ...artistArtworkCandidates(id, coverArt, albums).map((image) => ({ kind: image.kind, src: api.coverUrl(image.coverArt, 600) })),
+  ];
+  const candidate = candidates.find((image) => image.src && !failed.includes(image.src));
+  const src = candidate?.src;
+  const hasArt = Boolean(src && loaded === src);
+  function saveImage(image?: string) {
+    const previous = useProfiles.getState().artistCovers?.[api.identity]?.[id];
+    try { useProfiles.getState().setArtistCover(api.identity, id, image); }
+    catch {
+      try { useProfiles.getState().setArtistCover(api.identity, id, previous); } catch { /* Restore visible state even if storage is unavailable. */ }
+      throw new Error('图片未能保存，请检查浏览器存储空间。');
+    }
+  }
+  return <><header className="artist-hero" data-has-art={hasArt} data-artwork={hasArt ? candidate?.kind : 'none'}>
+    {src && <img key={src} className="artist-hero-image" src={src} alt="" referrerPolicy="no-referrer" onLoad={() => setLoaded(src)} onError={() => setFailed((previous) => [...previous, src])} />}
+    <button type="button" className="artist-portrait" aria-label="更换歌手图片" data-tooltip="更换歌手图片" onClick={() => input.current?.click()} onContextMenu={(event) => menu(event, [
+      { label: '选择照片', icon: <Pencil size={16} />, action: () => input.current?.click() },
+      { label: '恢复默认图片', disabled: !custom, action: () => saveImage() },
+    ])}>
+      {hasArt ? <img src={src} alt={candidate?.kind === 'album' ? '专辑封面' : `${name}的图片`} referrerPolicy="no-referrer" /> : <span className="artist-portrait-initials" aria-hidden="true">{name.trim().slice(0, 2)}</span>}
+      <span className="artist-portrait-edit"><Pencil size={34} /><span>选择照片</span></span>
+    </button>
     <div className="artist-hero-copy"><h1>{name}</h1><p>{albums.length} 张专辑</p></div>
-  </header>;
+    <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="上传歌手图片" onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ''; if (selected) setFile(selected); }} />
+  </header>{file && <AvatarEditor kind="artist" file={file} onSave={(image) => saveImage(image)} onClose={() => setFile(null)} />}</>;
 }
 
 export function ArtistDetail() {

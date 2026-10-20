@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -7,9 +7,11 @@ import { ArtistDetail } from '../src/pages/ArtistDetail';
 import { useLibrary } from '../src/state/library';
 import { useSession } from '../src/state/session';
 import { player } from '../src/features/player/engine';
+import { useProfiles } from '../src/state/profile';
+import { Interactions } from '../src/components/Interactions';
 
 vi.mock('../src/features/player/engine', () => ({ player: { replace: vi.fn(), shuffle: vi.fn() } }));
-afterEach(() => { cleanup(); useSession.getState().setSession(null); useSession.getState().notify(''); useLibrary.setState({ profiles: {} }); vi.restoreAllMocks(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); useSession.getState().setSession(null); useSession.getState().notify(''); useLibrary.setState({ profiles: {} }); useProfiles.setState(useProfiles.getInitialState(), true); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal'); Reflect.deleteProperty(HTMLDialogElement.prototype, 'close'); });
 
 function setup(coverArt?: string) {
   const api = new MusicApi('https://example.test', 'fixture', 'not-real');
@@ -18,7 +20,7 @@ function setup(coverArt?: string) {
   vi.spyOn(api, 'favorites').mockResolvedValue({ songs: [], artists: [], albums: [] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   useSession.getState().setSession(api);
-  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/artists/a']}><Link to="/artists/b">另一位歌手</Link><Routes><Route path="/artists/:id" element={<ArtistDetail />} /></Routes></MemoryRouter></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/artists/a']}><Interactions><Link to="/artists/b">另一位歌手</Link><Routes><Route path="/artists/:id" element={<ArtistDetail />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
   return { api, client, ...view };
 }
 
@@ -101,5 +103,54 @@ it('starts artist shuffle through the existing player', async () => {
   fireEvent.click(screen.getByRole('button', { name: '随机播放歌手歌曲' }));
   await waitFor(() => expect(player.shuffle).toHaveBeenCalledTimes(1));
   expect(player.replace).toHaveBeenCalledTimes(1);
+  unmount(); client.clear(); api.dispose();
+});
+
+it('shows a server artist photo in the same foreground layout and respects account-specific overrides', async () => {
+  const { api, client, container, unmount } = setup('artist-cover');
+  await screen.findByRole('heading', { name: '测试歌手' });
+  const background = container.querySelector('.artist-hero-image');
+  if (!background) throw new Error('缺少背景图');
+  fireEvent.load(background);
+  expect(screen.getByRole('button', { name: '更换歌手图片' })).toContainElement(screen.getByAltText('测试歌手的图片'));
+  const custom = 'data:image/jpeg;base64,AA==';
+  act(() => useProfiles.getState().setArtistCover('another-account', 'a', custom));
+  expect(background).not.toHaveAttribute('src', custom);
+  act(() => useProfiles.getState().setArtistCover(api.identity, 'a', custom));
+  expect(container.querySelector('.artist-hero-image')).toHaveAttribute('src', custom);
+  fireEvent.contextMenu(screen.getByRole('button', { name: '更换歌手图片' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '恢复默认图片' }));
+  await waitFor(() => expect(container.querySelector('.artist-hero-image')).not.toHaveAttribute('src', custom));
+  unmount(); client.clear(); api.dispose();
+});
+
+it('crops and saves an uploaded artist image, then restores focus to the picture button', async () => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
+  vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 640, height: 640, close: vi.fn() }));
+  const context = { clearRect: vi.fn(), save: vi.fn(), translate: vi.fn(), rotate: vi.fn(), drawImage: vi.fn(), restore: vi.fn() };
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+  const image = 'data:image/jpeg;base64,AA==';
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(image);
+  const { api, client, container, unmount } = setup();
+  const picture = await screen.findByRole('button', { name: '更换歌手图片' });
+  picture.focus();
+  fireEvent.change(screen.getByLabelText('上传歌手图片'), { target: { files: [new File(['image'], 'portrait.png', { type: 'image/png' })] } });
+  expect(await screen.findByRole('dialog', { name: '编辑歌手图片' })).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: '使用图片' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '使用图片' }));
+  expect(useProfiles.getState().artistCovers[api.identity]?.a).toBe(image);
+  expect(container.querySelector('.artist-hero-image')).toHaveAttribute('src', image);
+  expect(picture).toHaveFocus();
+  expect(HTMLCanvasElement.prototype.toDataURL).toHaveBeenCalledWith('image/jpeg', .9);
+  expect(player.replace).not.toHaveBeenCalled();
+  vi.mocked(HTMLCanvasElement.prototype.toDataURL).mockReturnValue('data:image/jpeg;base64,AQ==');
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+  fireEvent.change(screen.getByLabelText('上传歌手图片'), { target: { files: [new File(['replacement'], 'replacement.png', { type: 'image/png' })] } });
+  await waitFor(() => expect(screen.getByRole('button', { name: '使用图片' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '使用图片' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('图片未能保存');
+  expect(useProfiles.getState().artistCovers[api.identity]?.a).toBe(image);
+  expect(container.querySelector('.artist-hero-image')).toHaveAttribute('src', image);
   unmount(); client.clear(); api.dispose();
 });

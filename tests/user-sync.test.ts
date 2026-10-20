@@ -4,7 +4,7 @@ import { UserDataApi, UserDataError } from '../src/api/userData';
 import { usePreferences } from '../src/state/preferences';
 import { orderKey, libraryItems, useLibrary } from '../src/state/library';
 import { useProfiles } from '../src/state/profile';
-import { chooseUserData, connectUserSync, disconnectUserSync, localUserData, refreshUserSync, useUserSync } from '../src/storage/userSync';
+import { chooseUserData, connectUserSync, disconnectUserSync, exportUserBackup, localUserData, refreshUserSync, useUserSync } from '../src/storage/userSync';
 import type { UserDocument } from '../src/domain/userData';
 
 const memory = vi.hoisted(() => new Map<string, unknown>());
@@ -33,6 +33,44 @@ beforeEach(() => {
 });
 afterEach(() => { disconnectUserSync(); api.dispose(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('user data migration and sync', () => {
+  it('syncs artist pictures across browsers, includes them in backups, and preserves explicit removal', async () => {
+    const image = 'data:image/jpeg;base64,AA==';
+    useProfiles.getState().setArtistCover(api.identity, 'artist-one', image);
+    await connectUserSync(api);
+    expect(remote.data?.profile.artistCovers).toEqual({ 'artist-one': image });
+    const backup = await exportUserBackup();
+    expect(backup.data.profile.artistCovers).toEqual({ 'artist-one': image });
+    disconnectUserSync(); memory.clear();
+    useProfiles.setState(useProfiles.getInitialState(), true);
+    useLibrary.setState(useLibrary.getInitialState(), true);
+    await connectUserSync(api);
+    expect(useProfiles.getState().artistCovers[api.identity]).toEqual({ 'artist-one': image });
+    const revision = remote.revision;
+    useProfiles.getState().setArtistCover('another-account', 'artist-one', 'data:image/jpeg;base64,AQ==');
+    await vi.advanceTimersByTimeAsync(900);
+    expect(remote.revision).toBe(revision);
+    useProfiles.getState().setArtistCover(api.identity, 'artist-one');
+    await vi.advanceTimersByTimeAsync(900);
+    expect(remote.data?.profile.artistCovers).toBeUndefined();
+    disconnectUserSync(); await connectUserSync(api);
+    expect(useProfiles.getState().artistCovers[api.identity]?.['artist-one']).toBeUndefined();
+    await chooseUserData('local', backup.data);
+    expect(useProfiles.getState().artistCovers[api.identity]?.['artist-one']).toBe(image);
+  });
+
+  it('restores a legacy backup without artist pictures while retaining other accounts', async () => {
+    await connectUserSync(api);
+    const legacy = structuredClone(localUserData()!);
+    expect(legacy.profile.artistCovers).toBeUndefined();
+    useProfiles.getState().setArtistCover(api.identity, 'one', 'data:image/jpeg;base64,AA==');
+    useProfiles.getState().setArtistCover('other-account', 'one', 'data:image/jpeg;base64,AQ==');
+    await vi.advanceTimersByTimeAsync(900);
+    await chooseUserData('local', legacy);
+    expect(useProfiles.getState().artistCovers[api.identity]).toEqual({});
+    expect(useProfiles.getState().artistCovers['other-account'].one).toBe('data:image/jpeg;base64,AQ==');
+    expect(remote.data?.profile.artistCovers).toBeUndefined();
+  });
+
   it('automatically uploads the original browser and restores avatar and playlist order in a fresh browser', async () => {
     const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBz8AAAAASUVORK5CYII=';
     const order = { [orderKey('music', null)]: ['playlist:second', 'playlist:first'] };

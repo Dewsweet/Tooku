@@ -14,7 +14,7 @@ export interface UserOrganization {
 export interface UserData {
   version: 1;
   preferences: UserPreferences;
-  profile: { avatar?: string; playlistCovers: Record<string, string> };
+  profile: { avatar?: string; playlistCovers: Record<string, string>; artistCovers?: Record<string, string> };
   organization: UserOrganization;
   queue: PlayerSnapshot | null;
   history: HistoryEntry[];
@@ -48,7 +48,8 @@ export function isUserData(v: unknown): v is UserData {
     || !Array.isArray(p.trackColumns) || p.trackColumns.length !== 4 || !p.trackColumns.every((x) => finite(x, .25, 10))
     || !Array.isArray(p.panelSections) || p.panelSections.length !== 4 || new Set(p.panelSections.map((s) => record(s) ? s.id : null)).size !== 4
     || !p.panelSections.every((s) => record(s) && keys(s, ['id', 'enabled']) && ['cover', 'lyrics', 'details', 'queue'].includes(String(s.id)) && typeof s.enabled === 'boolean')) return false;
-  if (!record(art) || !keys(art, ['avatar', 'playlistCovers']) || art.avatar !== undefined && !image(art.avatar) || !map(art.playlistCovers, image)) return false;
+  if (!record(art) || !keys(art, ['avatar', 'playlistCovers', 'artistCovers']) || art.avatar !== undefined && !image(art.avatar) || !map(art.playlistCovers, image)
+    || art.artistCovers !== undefined && (!record(art.artistCovers) || !map(art.artistCovers, image) || !Object.keys(art.artistCovers).every(id))) return false;
   if (!record(o) || !keys(o, ['activeId', 'defaultId', 'folders', 'placements', 'views', 'order']) || !optionalId(o.activeId) || !optionalId(o.defaultId)
     || !Array.isArray(o.folders) || o.folders.length > 2000 || !o.folders.every((f) => record(f) && keys(f, ['id', 'name', 'libraryId', 'parentId']) && id(f.id) && text(f.name) && f.name.trim().length && id(f.libraryId) && (f.parentId === null || id(f.parentId)))
     || !map(o.placements, (p) => record(p) && keys(p, ['libraryId', 'folderId']) && id(p.libraryId) && (p.folderId === null || id(p.folderId)))

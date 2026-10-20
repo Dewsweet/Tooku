@@ -5,7 +5,7 @@ import { chooseUserData, displacedLocalData, exportUserBackup, localUserData, pr
 
 function Summary({ data }: { data: UserData | null }) {
   if (!data) return <p>暂无数据</p>;
-  return <p>{data.profile.avatar ? '有头像 · ' : ''}{Object.keys(data.profile.playlistCovers).length} 张封面 · {data.organization.folders.length} 个文件夹 · {data.queue?.entries.length ?? 0} 首队列 · {data.history.length} 条历史</p>;
+  return <p>{data.profile.avatar ? '有头像 · ' : ''}{Object.keys(data.profile.playlistCovers).length} 张歌单封面 · {Object.keys(data.profile.artistCovers ?? {}).length} 张歌手图片 · {data.organization.folders.length} 个文件夹 · {data.queue?.entries.length ?? 0} 首队列 · {data.history.length} 条历史</p>;
 }
 export function UserDataSettings() {
   const state = useUserSync(); const input = useRef<HTMLInputElement>(null);
