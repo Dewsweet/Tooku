@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { MusicApi } from '../src/api/client';
 import { useSession } from '../src/state/session';
-import { emptyLibraryProfile, useLibrary } from '../src/state/library';
-import { FolderEditor, PlaylistLocation } from '../src/features/library/Organization';
+import { emptyLibraryProfile, orderKey, useLibrary } from '../src/state/library';
+import { FolderEditor, PlaylistLocation, PlaylistTree } from '../src/features/library/Organization';
+import { PlaylistCoverPicker } from '../src/features/library/PlaylistCoverPicker';
+import { useProfiles } from '../src/state/profile';
 import { Playlists, PlaylistDetail, AddToPlaylist } from '../src/pages/Playlists';
 import { TrackList } from '../src/components/Common';
 import { PlayerBar } from '../src/features/player/PlayerUI';
@@ -15,6 +17,7 @@ import { Interactions } from '../src/components/Interactions';
 let api: MusicApi; let client: QueryClient;
 const song = { id:'s',title:'测试歌曲',artist:'测试歌手',artistId:'artist',album:'测试专辑',albumId:'album' };
 beforeEach(() => {
+  vi.stubGlobal('DragEvent', MouseEvent);
   Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(this: HTMLDialogElement){this.open=true;}});
   Object.defineProperty(HTMLDialogElement.prototype,'close',{configurable:true,value:function(this: HTMLDialogElement){this.open=false;}});
   api=new MusicApi('https://example.test','fixture','test'); useSession.getState().setSession(api);
@@ -24,7 +27,7 @@ beforeEach(() => {
   client.setQueryData([api.identity,'favorites'],{songs:[],albums:[],artists:[]});
   useLibrary.setState({profiles:{[api.identity]:{...emptyLibraryProfile,activeId:'1',folders:[{id:'parent',name:'语言',libraryId:'1',parentId:null}],placements:{p2:{libraryId:'2',folderId:null}}}}});
 });
-afterEach(() => { cleanup();client.clear();api.dispose();useSession.getState().setSession(null);useLibrary.setState({profiles:{}});usePlayer.setState(usePlayer.getInitialState());vi.restoreAllMocks();Reflect.deleteProperty(HTMLDialogElement.prototype,'showModal');Reflect.deleteProperty(HTMLDialogElement.prototype,'close'); });
+afterEach(() => { cleanup();client.clear();api.dispose();useSession.getState().setSession(null);useLibrary.setState({profiles:{}});useProfiles.setState(useProfiles.getInitialState(), true);usePlayer.setState(usePlayer.getInitialState());vi.restoreAllMocks();vi.unstubAllGlobals();Reflect.deleteProperty(HTMLDialogElement.prototype,'showModal');Reflect.deleteProperty(HTMLDialogElement.prototype,'close'); });
 const surface=(child:React.ReactNode)=>render(<QueryClientProvider client={client}><MemoryRouter>{child}</MemoryRouter></QueryClientProvider>);
 it('creates a nested folder and moves a playlist into that folder without server writes', () => {
   const request=vi.spyOn(api,'request'); const close=vi.fn(); const editor=surface(<FolderEditor parent="parent" onClose={close} />);
@@ -34,9 +37,9 @@ it('creates a nested folder and moves a playlist into that folder without server
   expect(useLibrary.getState().profiles[api.identity].placements.p1).toEqual({libraryId:'1',folderId:folder.id});expect(request).not.toHaveBeenCalled();
 });
 it('keeps the visible playlists independent when changing the active real library', () => {
-  surface(<Playlists />);expect(screen.getByRole('link',{name:'华语 1 首'})).toBeInTheDocument();expect(screen.queryByRole('link',{name:'日语 1 首'})).not.toBeInTheDocument();
+  surface(<Playlists />);expect(screen.getByRole('link',{name:'华语'})).toBeInTheDocument();expect(screen.queryByRole('link',{name:'日语'})).not.toBeInTheDocument();
   act(()=>useLibrary.getState().change(api.identity,(p)=>({...p,activeId:'2'})));
-  expect(screen.getByRole('link',{name:'日语 1 首'})).toBeInTheDocument();expect(screen.queryByRole('link',{name:'华语 1 首'})).not.toBeInTheDocument();
+  expect(screen.getByRole('link',{name:'日语'})).toBeInTheDocument();expect(screen.queryByRole('link',{name:'华语'})).not.toBeInTheDocument();
 });
 it('offers only editable playlists in the active library when adding a song', () => {
   surface(<AddToPlaylist track={song} onClose={()=>{}} />);expect(screen.getByRole('button',{name:'华语'})).toBeInTheDocument();expect(screen.queryByRole('button',{name:'日语'})).not.toBeInTheDocument();
@@ -74,4 +77,95 @@ it('links the dock title and artist separately and keeps only the full-player ex
   usePlayer.setState({entries:[{entryId:'e',track:song}],currentId:'e'});surface(<PlayerBar openQueue={()=>{}} openLyrics={()=>{}} />);
   expect(screen.getByRole('link',{name:'测试歌曲'})).toHaveAttribute('href','/albums/album');expect(screen.getByRole('link',{name:'测试歌手'})).toHaveAttribute('href','/artists/artist');
   expect(screen.queryByRole('button',{name:'展开歌词播放器'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'展开完整播放器'})).toBeInTheDocument();
+});
+
+it('disables management-grid dragging and keeps its content free of guidance text', () => {
+  const { container } = surface(<Playlists />);
+  expect(container.querySelector('[draggable=true]')).toBeNull();
+  expect(container.querySelector('.organization-grid p')).toBeNull();
+  expect(screen.queryByText(/拖动排序|移入文件夹|可拖到这里/)).not.toBeInTheDocument();
+  expect(fireEvent.dragStart(screen.getByRole('link', { name: '华语' }))).toBe(false);
+});
+
+it('uses compact internal-only drags for the tree, with folder and root drops', () => {
+  const { container } = surface(<PlaylistTree closeNavigation={() => {}} />);
+  const source = screen.getByRole('link', { name: '华语' });
+  const folder = container.querySelector('.tree-folder-heading');
+  if (!folder) throw new Error('缺少文件夹');
+  vi.spyOn(folder, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, right: 200, top: 0, bottom: 40, width: 200, height: 40, toJSON: () => ({}) });
+  const store = new Map<string, string>([['text/uri-list', 'https://example.test/playlists/p1']]);
+  const transfer = { get types() { return [...store.keys()]; }, clearData: vi.fn(() => store.clear()), setData: (key: string, value: string) => store.set(key, value), getData: (key: string) => store.get(key), setDragImage: vi.fn() };
+  fireEvent.dragStart(source, { dataTransfer: transfer });
+  expect([...store.keys()]).toEqual(['application/x-tooku-library-item']);
+  const preview = transfer.setDragImage.mock.calls[0]?.[0];
+  expect(preview).toHaveTextContent('华语');
+  fireEvent.dragOver(folder, { dataTransfer: transfer, clientY: 20 });
+  expect(folder).toHaveAttribute('data-drop', 'inside');
+  fireEvent.drop(folder, { dataTransfer: transfer });
+  expect(useLibrary.getState().profiles[api.identity].placements.p1.folderId).toBe('parent');
+  expect(preview).not.toBeInTheDocument();
+  const nested = screen.getByRole('link', { name: '华语' });
+  fireEvent.dragStart(nested, { dataTransfer: transfer });
+  const root = container.querySelector('.tree-root-drop');
+  if (!root) throw new Error('缺少根目录落点');
+  fireEvent.dragOver(root, { dataTransfer: transfer });
+  expect(root).toHaveAttribute('data-drop', 'after');
+  fireEvent.drop(root, { dataTransfer: transfer });
+  expect(useLibrary.getState().profiles[api.identity].placements.p1.folderId).toBeNull();
+});
+
+it('sorts sidebar playlists using an insertion line without changing their folder', () => {
+  useLibrary.getState().place(api.identity, 'p2', '1', null);
+  surface(<PlaylistTree closeNavigation={() => {}} />);
+  const first = screen.getByRole('link', { name: '华语' });
+  const second = screen.getByRole('link', { name: '日语' });
+  vi.spyOn(first, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, right: 200, top: 0, bottom: 40, width: 200, height: 40, toJSON: () => ({}) });
+  const store = new Map<string, string>();
+  const transfer = { types: ['application/x-tooku-library-item'], setData: (key: string, value: string) => store.set(key, value), getData: (key: string) => store.get(key) };
+  fireEvent.dragStart(second, { dataTransfer: transfer });
+  fireEvent.dragOver(first, { dataTransfer: transfer, clientY: 2 });
+  expect(first).toHaveAttribute('data-drop', 'before');
+  fireEvent.drop(first, { dataTransfer: transfer });
+  const profile = useLibrary.getState().profiles[api.identity];
+  expect(profile.order?.[orderKey('1', null)]).toEqual(['folder:parent', 'playlist:p2', 'playlist:p1']);
+  expect(profile.placements.p2.folderId).toBeNull();
+});
+
+it('opens the direct cover cropper, saves only this account cover and restores focus', async () => {
+  vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 640, height: 640, close: vi.fn() }));
+  const context = { clearRect: vi.fn(), save: vi.fn(), translate: vi.fn(), rotate: vi.fn(), drawImage: vi.fn(), restore: vi.fn() };
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+  const image = 'data:image/png;base64,AA==';
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(image);
+  const metadata = vi.spyOn(api, 'updatePlaylistDetails');
+  surface(<PlaylistCoverPicker playlist={{ id: 'p1', name: '华语' }} editable disabled={false} />);
+  const picture = screen.getByRole('button', { name: '更换歌单封面' }); picture.focus();
+  fireEvent.change(screen.getByLabelText('上传歌单封面'), { target: { files: [new File(['fixture'], 'cover.png', { type: 'image/png' })] } });
+  await screen.findByRole('dialog', { name: '编辑封面' });
+  await waitFor(() => expect(screen.getByRole('button', { name: '使用封面' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '使用封面' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(useProfiles.getState().playlistCovers[api.identity]?.p1).toBe(image);
+  expect(picture).toHaveFocus(); expect(metadata).not.toHaveBeenCalled();
+  vi.mocked(HTMLCanvasElement.prototype.toDataURL).mockReturnValue('data:image/png;base64,AQ==');
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+  fireEvent.change(screen.getByLabelText('上传歌单封面'), { target: { files: [new File(['replacement'], 'replacement.png', { type: 'image/png' })] } });
+  await waitFor(() => expect(screen.getByRole('button', { name: '使用封面' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '使用封面' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('封面未能保存');
+  expect(useProfiles.getState().playlistCovers[api.identity]?.p1).toBe(image);
+  expect(picture.querySelector('img')).toHaveAttribute('src', image);
+});
+
+it('retains the detail editor in the playlist menu without persistent reorder hints', async () => {
+  client.setQueryData([api.identity, 'playlist', 'p1'], { id: 'p1', name: '华语', owner: 'fixture', duration: 4980, changed: 'v1', songs: [song] });
+  const { container } = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/playlists/p1']}><Interactions><Routes><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={() => {}} />} /></Routes></Interactions></MemoryRouter></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: '更换歌单封面' })).toBeEnabled();
+  expect(container.querySelector('.playlist-summary')).toHaveTextContent('约 1 小时');
+  expect(container.querySelector('.playlist-summary')).not.toHaveTextContent('分钟');
+  expect(screen.queryByText('拖动歌曲调整顺序')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '歌单选项' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '歌单信息与封面' }));
+  expect(await screen.findByRole('dialog', { name: '歌单信息' })).toBeInTheDocument();
+  expect(screen.getByLabelText('名称')).toHaveValue('华语');
 });

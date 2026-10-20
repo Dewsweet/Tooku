@@ -47,10 +47,10 @@ React 页面 / 通用控件
 | 全站滚动条 | `src/components/ContentScrollbar.tsx`、`ScrollArea.tsx` | 中部、左栏和播放侧栏叠加贴边 8 px 滑块；监听滚动和内容尺寸，支持拖动、键盘及清理；弹窗/菜单使用 `src/scrollbars.css` 原生回退 |
 | 自动加载 | `src/components/AutoLoadMore.tsx` | 监听中部 `.content` 滚动容器；接近底部预读，失败时停止，卸载清理监听 |
 | 歌单管理与详情 | `src/features/library/PlaylistViews.tsx` | 直接排序、随机播放、撤销、只读判断；详情通过 key 隔离每张歌单的编辑状态 |
-| 歌单信息弹窗 | `src/features/library/PlaylistDetailsEditor.tsx` | 名称/简介写 Navidrome，封面写 Tooku 本地配置 |
+| 歌单信息与选图 | `src/features/library/PlaylistDetailsEditor.tsx`、`PlaylistCoverPicker.tsx` | 详情封面直达选图/裁剪，三点菜单编辑名称/简介；名称/简介写 Navidrome，封面沿用 Tooku 账号同步 |
 | 新建歌单 | `src/features/library/CreatePlaylist.tsx` | 左栏可选位置；管理页使用当前目录 |
 | 左栏树和移动弹窗 | `src/features/library/Organization.tsx` | 与管理页共用组织数据；`pages/Playlists.tsx` 保留导出和添加歌曲入口 |
-| 文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 混排、嵌套、移到根目录；纯函数校验边界 |
+| 左栏文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 横线排序、变色移入文件夹、末尾横线移到根目录；主体管理页不参与拖放 |
 | API 与统一模型 | `src/api/client.ts`、`src/domain/models.ts` | HTTP/业务错误分开，DTO 转换集中；不要照抄旧文档示意字段名 |
 | 播放引擎与算法 | `src/features/player/engine.ts`、`src/domain/queue.ts` | 单实例媒体、异步竞争、队列条目身份与有效收听 |
 | 底栏与完整播放器 | `src/features/player/PlayerUI.tsx` | UI 发命令，不创建音频；完整播放器中的队列视图可保留 |
@@ -82,8 +82,9 @@ React 页面 / 通用控件
 - 歌曲标题及播放按钮有明确入口；双击行空白是补充操作，不拦截歌手、专辑等链接的自身语义。
 - 表格使用同一底色，仅悬停/选中反馈；列宽可调。加入队列、下一首、添加歌单、移动等操作进统一右键菜单，行尾只留收藏。
 - 收藏页的歌曲、专辑、歌手筛选与主页共用 `FilterPills`，保留键盘焦点与按下状态，支持窄屏换行。三类内容分别复用歌曲表格、专辑网格、圆形图片加姓名的歌手网格；空状态仅显示“还没有收藏的歌曲/专辑/歌手”，不加引导小字。收藏歌手保留接口返回的 `coverArt`，复用已有自定义图片与加载失败回退。
-- 普通歌单详情采用播放、随机、更多选项的操作组；点击封面进入信息编辑，不使用单独曲目编辑页。
+- 普通歌单详情采用播放、随机、更多选项的操作组；封面悬停/聚焦显示“选择照片”，点击直接选择图片并裁剪，保存后仅更新 Tooku 账号封面；三点菜单进入名称、简介和封面编辑。不使用单独曲目编辑页。长歌单时长约到整小时，短于一小时保留分钟，专辑仍保留原分钟精度。
 - 有权限的歌单可在列表直接拖动保存，重复歌曲保留；失败后可重读核实，支持撤销上次已保存修改。
+- 歌单管理主体仅浏览，卡片保留图片与名称，不提供拖放或引导小字；左栏保留歌单/文件夹拖动，歌单位置用横线提示，文件夹内部只变色，根目录末尾保持固定落点以免拖动时布局闪烁。`components/dragPreview.ts` 为左栏和歌曲拖动清除默认链接数据，仅携带 Tooku 自定义 MIME，使用名称或“歌曲 · 歌手”的精简预览；预览在下一帧、拖动结束或卸载时清理。Chrome 自身是否仍显示系统拖放功能需人工确认。歌曲上移/下移菜单、权限和重复项不变，列表已更新时拒绝过期拖放。
 - 左栏歌单区的新建图标创建歌单，可选择文件夹，留空为根目录；管理页在根目录或文件夹内就地创建歌单/文件夹。
 - 文件夹和歌单混排。不能把文件夹移入自身或子级；删除文件夹将内容归位上一级，不删除 Navidrome 歌单。
 
