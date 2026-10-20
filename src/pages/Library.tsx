@@ -1,7 +1,7 @@
-import { EntityArtwork } from '../components/EntityArtwork';
 import { ArtistGrid } from '../components/ArtistGrid';
+import { AutoLoadMore } from '../components/AutoLoadMore';
 import { Select } from '../components/Select';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Play, Heart, Shuffle } from 'lucide-react';
@@ -11,12 +11,32 @@ import { player } from '../features/player/engine';
 import { queryClient, useSession, errorMessage } from '../state/session';
 import type { Track } from '../domain/models';
 import { approximateDuration } from '../domain/duration';
+import './album-browse.css';
+
+export { ArtistDetail } from './ArtistDetail';
 
 export function Albums() {
   const api = useApi(); const { libraryId } = useMusicLibrary(); const [params] = useSearchParams(); const [type, setType] = useState(params.get('sort') === 'frequent' ? 'frequent' : 'newest');
   const query = useInfiniteQuery({ queryKey: [api.identity, 'albums', libraryId, type], enabled: Boolean(libraryId), initialPageParam: 0,
-    queryFn: ({ pageParam, signal }) => api.albums(type, pageParam, signal, libraryId), getNextPageParam: (last, pages) => last.length === 30 ? pages.length * 30 : undefined });
-  return <><PageTitle title="专辑"><Select aria-label="专辑排序" value={type} onChange={(value) => setType(value)}><option value="newest">最近添加</option><option value="alphabeticalByName">专辑名称</option><option value="alphabeticalByArtist">歌手名称</option><option value="frequent">经常播放</option><option value="random">随机发现</option></Select></PageTitle><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} />{query.data && <AlbumGrid albums={query.data.pages.flat()} />}{query.data && !query.data.pages[0].length && <Empty title="还没有专辑" />}{query.hasNextPage && <button className="load-more subtle-button" disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>{query.isFetchingNextPage ? '正在加载…' : '加载更多专辑'}</button>}</>;
+    queryFn: ({ pageParam, signal }) => api.albums(type, pageParam, signal, libraryId), getNextPageParam: (last, pages, offset) => {
+      if (last.length < 30) return undefined;
+      const seen = new Set(pages.slice(0, -1).flatMap((page) => page.map((album) => album.id)));
+      return last.some((album) => !seen.has(album.id)) ? offset + last.length : undefined;
+    } });
+  const { fetchNextPage, hasNextPage, isFetching, isError } = query;
+  const loadNext = useCallback(() => { if (hasNextPage && !isFetching && !isError) void fetchNextPage({ cancelRefetch: false }); }, [fetchNextPage, hasNextPage, isFetching, isError]);
+  const albums = [...new Map(query.data?.pages.flat().map((album) => [album.id, album])).values()];
+  return <div className="album-browse">
+    <PageTitle title="专辑"><Select aria-label="专辑排序" value={type} onChange={setType}>
+      <option value="newest">最近添加</option><option value="alphabeticalByName">专辑名称</option>
+      <option value="alphabeticalByArtist">歌手名称</option><option value="frequent">经常播放</option><option value="random">随机发现</option>
+    </Select></PageTitle>
+    <QueryState pending={query.isLoading} error={!query.data ? query.error : null} retry={() => query.refetch()} />
+    {query.data && <AlbumGrid albums={albums} />}
+    {query.data && !albums.length && <Empty title="还没有专辑" />}
+    <AutoLoadMore enabled={Boolean(query.hasNextPage && !query.isFetching && !query.isError)} load={loadNext} />
+    <QueryState pending={query.isFetchingNextPage} error={query.data ? query.error : null} retry={() => query.isFetchNextPageError ? query.fetchNextPage() : query.refetch()} />
+  </div>;
 }
 export function AlbumDetail({ addToPlaylist }: { addToPlaylist: (track: Track) => void }) {
   const api = useApi(); const { id = '' } = useParams(); const [busy, setBusy] = useState(false);
@@ -27,9 +47,4 @@ export function AlbumDetail({ addToPlaylist }: { addToPlaylist: (track: Track) =
 export function Artists() {
   const api = useApi(); const { libraryId } = useMusicLibrary(); const query = useQuery({ queryKey: [api.identity, 'artists', libraryId], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.artists(signal, libraryId) });
   return <><PageTitle title="歌手" /><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} /><ArtistGrid artists={query.data ?? []} />{query.data && !query.data.length && <Empty title="还没有歌手" />}</>;
-}
-export function ArtistDetail() {
-  const api = useApi(); const { libraryId } = useMusicLibrary(); const { id = '' } = useParams(); const query = useQuery({ queryKey: [api.identity, 'artist', id, libraryId], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.artist(id, signal, libraryId) }); const [busy, setBusy] = useState(false);
-  const favorites = useQuery({ queryKey: [api.identity, 'favorites'], queryFn: ({ signal }) => api.favorites(signal) }); const starred = Boolean(favorites.data?.artists.some((a) => a.id === id));
-  return <><div className="entity-detail-hero artist-detail-hero">{query.data && <EntityArtwork id={id} name={query.data.name} kind="artist" coverArt={query.data.coverArt} fallback={query.data.albums[0]?.coverArt} className="entity-detail-cover" />}<PageTitle title={query.data?.name ?? '歌手'}><button className="subtle-button" disabled={busy} aria-pressed={starred} onClick={async () => { setBusy(true); try { await api.star(id, starred, 'artist'); await queryClient.invalidateQueries({ queryKey: [api.identity] }); } catch (e) { useSession.getState().notify(errorMessage(e)); } finally { setBusy(false); } }}><Heart size={17} fill={starred ? 'currentColor' : 'none'} />{starred ? '已收藏' : '收藏歌手'}</button></PageTitle></div><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} />{query.data && <section className="artist-discography"><div className="artist-discography-heading"><h2>专辑</h2><span>{query.data.albums.length} 张</span></div><AlbumGrid albums={query.data.albums} /></section>}</>;
 }

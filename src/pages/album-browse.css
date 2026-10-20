@@ -1,0 +1,3 @@
+.album-browse .auto-load-marker { height: 1px; }
+.album-browse .album-card { content-visibility: auto; contain-intrinsic-size: auto 230px; }
+.album-browse > .loading, .album-browse > .error-panel { margin-top: 24px; }

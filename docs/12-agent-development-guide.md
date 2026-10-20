@@ -42,7 +42,8 @@ React 页面 / 通用控件
 | 封面与头像 | `EntityArtwork.tsx`、`ProfileAvatar.tsx`、`AvatarEditor.tsx` | 歌单本地封面覆盖、加载失败回退；头像圆形预览，歌单方形预览 |
 | 歌曲/歌手独立链接 | `src/components/TrackLinks.tsx` | 歌曲在底栏跳专辑，歌手跳歌手；不要把整组信息包成同一个链接 |
 | 首页和搜索 | `src/pages/Home.tsx`、`Search.tsx` | 数据按当前曲库筛选，保留综合搜索分类和真实统计 |
-| 专辑与歌手页 | `src/pages/Library.tsx` | 专辑曲序、多碟、时长、歌手页与专辑区的过渡 |
+| 专辑与歌手页 | `src/pages/Library.tsx`、`ArtistDetail.tsx` | 专辑自动分批浏览；歌手横幅、播放与专辑区，保留当前库边界 |
+| 自动加载 | `src/components/AutoLoadMore.tsx` | 监听中部 `.content` 滚动容器；接近底部预读，失败时停止，卸载清理监听 |
 | 歌单管理与详情 | `src/features/library/PlaylistViews.tsx` | 直接排序、随机播放、撤销、只读判断；详情通过 key 隔离每张歌单的编辑状态 |
 | 歌单信息弹窗 | `src/features/library/PlaylistDetailsEditor.tsx` | 名称/简介写 Navidrome，封面写 Tooku 本地配置 |
 | 新建歌单 | `src/features/library/CreatePlaylist.tsx` | 左栏可选位置；管理页使用当前目录 |
@@ -69,6 +70,8 @@ React 页面 / 通用控件
 - 主页图标左侧提供后退/前进，只遍历本次登录工作区已访问的页面；无可用历史时禁用，搜索替换不新增历史。主页图标只在当前主页显示选中效果，搜索栏尾部不显示回车图标。窄屏头部分为两行以保留搜索宽度。
 - 设置通过头像菜单进入，菜单可快速切换真实曲库；右侧版块配置按钮不属于新增账户设置入口。
 - 独立歌曲页已取消，旧 `/songs` 兼容地址转到 `/search?type=songs`。主页筛选为全部、歌单、专辑、歌手；歌手卡片复用 `components/ArtistGrid.tsx` 并进入现有歌手详情页。主页不显示底部曲库名与“浏览所有歌曲”小字。综合搜索保留歌曲分类，已有歌曲默认视图配置在主页回退到全部，不改写存储数据。
+- 专辑页沿用每批 30 张的接口，在距中部滚动区底部 600px 时自动读取下一批，不显示“加载更多”按钮；小曲库自然读完，大曲库随滚动继续读取。延迟加载封面、跳过屏外卡片绘制，重复整页停止追加；后续批次失败保留已有内容，只由用户重试。
+- 歌手列表保持圆形卡片；详情采用横幅、大号歌手名、播放/随机/收藏和专辑区。仅使用 `getArtist` 明确返回的 `coverArt` 经 `MusicApi.coverUrl` 生成图片地址；不把专辑封面代替歌手照，缺图/图片失败使用主题渐变。Navidrome 的图片源取决于服务端本地图与外部元数据设置，Tooku 不直连第三方取图，也不存图片认证 URL。播放仅在主动点击后读取本库歌手专辑，全部成功后统一交给 `player`，切页/切库取消未完成操作。
 - 底栏可显示当前歌曲的小封面；左栏底部不再放独立的大封面或额外暂停按钮。
 - 右栏队列不是第二份播放状态；其“当前播放 / 接下来”应反映引擎真实队列。
 
@@ -153,6 +156,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/interactions.css` | 菜单/tooltip、分栏与列宽手柄、当前歌单/目录及歌手过渡样式 |
 | `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
 | `src/pages/home.css` | 独立主页 |
+| `src/pages/album-browse.css`、`artist-detail.css` | 专辑自动加载表面、歌手横幅及详情布局 |
 
 这是一份现状地图，不要求继续把所有业务样式堆进通用文件。按任务逐步收敛组件的样式责任，避免重复规则、不断追加覆盖和大范围 `!important`。修改表格断点时结合主体容器宽度，不能只看整个 viewport。
 
@@ -171,6 +175,8 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 搜索输入法 | `tests/search.test.tsx` |
 | 菜单、提示、焦点 | `tests/interactions.test.tsx` |
 | 专辑播放入口 | `tests/albums.test.tsx` |
+| 专辑自动分页、失败重试、重复页 | `tests/album-browse.test.tsx` |
+| 歌手横幅、缺图、播放及切页取消 | `tests/artist-detail.test.tsx` |
 | Windows 端口回退 | `tests/startup.test.mjs` |
 | 服务端身份、SQLite、限额、备份、重启 | `tests/user-data.test.ts` |
 | 迁移确认、离线、冲突、账号偏好隔离 | `tests/user-sync.test.ts` |

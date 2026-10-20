@@ -72,14 +72,7 @@
 .organization-hint { color: var(--muted); font-size: 11px; margin-left: auto; }
 .tree-root-drop { display: none; color: var(--muted); font-size: 11px; padding: 13px; border-radius: 8px; text-align: center; border: 1px dashed var(--line); margin: 14px 0 3px; }
 .playlist-tree:has([data-drop]) > .tree-root-drop, .tree-root-drop[data-drop=inside] { display: block; }
-.artist-detail-hero { position: relative; padding: 26px 22px 37px; margin: -10px -22px 0; border-radius: 14px 14px 0 0; background: linear-gradient(135deg,var(--soft),var(--surface)); animation: surface-enter .35s ease both; }
-.artist-discography { position: relative; padding-top: 31px; animation: discography-enter .45s ease both; }
-.artist-discography::before { content: ''; position: absolute; top: 0; left: -22px; right: -22px; height: 45px; background: linear-gradient(var(--surface),transparent); pointer-events: none; }
-.artist-discography-heading { position: relative; display: flex; align-items: baseline; gap: 12px; margin-bottom: 23px; }
-.artist-discography-heading h2 { font-size: 21px; font-weight: 700; margin: 0; }
-.artist-discography-heading > span { color: var(--muted); font-size: 12px; }
-@keyframes discography-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-:root[data-motion=reduced] .context-menu, :root[data-motion=reduced] .app-tooltip, :root[data-motion=reduced] .artist-discography, :root[data-motion=reduced] .artist-detail-hero { animation: none; }
+:root[data-motion=reduced] .context-menu, :root[data-motion=reduced] .app-tooltip { animation: none; }
 @media(min-width:768px) { .workspace-shell .track-table-heading > span { display: block; } .workspace-shell .track-artist, .workspace-shell .track-album { display: block; } }
 @container (max-width: 650px) {
   .workspace-shell .track-table-heading, .workspace-shell .track-row { grid-template-columns: 24px minmax(100px,var(--track-title-width,2.8fr)) minmax(80px,var(--track-artist-width,1.5fr)) minmax(48px,var(--track-time-width,.6fr)) 34px; gap: 9px; }
