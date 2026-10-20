@@ -23,6 +23,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .header-logo { gap: 11px; font-weight: 760; font-size: 24px; letter-spacing: -.9px; }
 .header-logo .brand-icon { width: 38px; height: 38px; border-radius: 12px; box-shadow: inset 0 1px 0 #ffffff30, 0 4px 10px color-mix(in srgb, var(--accent) 17%, transparent); }
 .header-discovery { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.header-history { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.header-history .icon-button { width: 32px; height: 36px; border-radius: 50%; }
 .header-home { width: 46px; height: 46px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; background: var(--bg); color: var(--muted); box-shadow: 0 1px 4px #22252d05; }
 .header-home.active { color: var(--text); }
 .header-home:hover { transform: translateY(-1px); background: var(--hover); }
@@ -169,14 +171,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .folder-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 767px) {
-  .workspace-shell { --header-height: 65px; --dock-height: 128px; --gutter: 7px; }
-  .workspace-header { display: flex; gap: 8px; padding: 0 10px; }
-  .header-brand { gap: 3px; }
+  .workspace-shell { --header-height: 104px; --dock-height: 128px; --gutter: 7px; }
+  .workspace-header { display: flex; flex-wrap: wrap; align-content: center; gap: 6px 8px; padding: 6px 10px; }
+  .header-brand { gap: 3px; flex: 1; }
   .header-brand .menu-toggle { display: flex; width: 33px; min-width: 33px; }
   .header-logo > span:last-child, .header-search-key, .header-settings, .profile-trigger > svg { display: none; }
   .header-logo .brand-icon { width: 31px; height: 31px; border-radius: 10px; }
   .header-logo .brand-icon > svg { width: 20px; }
-  .header-discovery { flex: 1; gap: 6px; }
+  .header-discovery { flex: 1 0 100%; order: 1; gap: 6px; }
   .header-home { width: 36px; height: 36px; }
   .header-home svg { width: 19px; }
   .header-search { height: 38px; padding: 0 10px; gap: 6px; }

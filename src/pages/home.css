@@ -44,8 +44,6 @@
 .home-playlist:hover > button, .home-playlist:focus-within > button { opacity: 1; transform: translateX(0); }
 .home-empty-list { display: flex; gap: 14px; align-items: center; padding: 24px 20px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 14px; }
 .home-empty-list > a { display: flex; align-items: center; gap: 5px; color: var(--accent); margin-left: auto; font-size: 13px; white-space: nowrap; }
-.home-footer { display: flex; gap: 9px; align-items: center; padding: 27px 0 0; border-top: 1px solid var(--line); margin-top: 40px; color: var(--muted); font-size: 12px; }
-.home-footer > a { display: flex; gap: 4px; align-items: center; margin-left: auto; }
 .overview-retry { padding: 0; margin: 0 0 18px; color: var(--muted); }
 @media (min-width: 1650px) { .home-playlist-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media (max-width: 950px) { .home-shortcuts { gap: 8px; } .shortcut-art { width: 42px; } .home-shortcuts > a { gap: 8px; } .home-shortcuts > a > svg { display: none; } .home-shortcuts strong { font-size: 12px; } }

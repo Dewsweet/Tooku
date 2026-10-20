@@ -1,4 +1,5 @@
 import { EntityArtwork } from '../components/EntityArtwork';
+import { ArtistGrid } from '../components/ArtistGrid';
 import { Select } from '../components/Select';
 import { useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -25,7 +26,7 @@ export function AlbumDetail({ addToPlaylist }: { addToPlaylist: (track: Track) =
 }
 export function Artists() {
   const api = useApi(); const { libraryId } = useMusicLibrary(); const query = useQuery({ queryKey: [api.identity, 'artists', libraryId], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.artists(signal, libraryId) });
-  return <><PageTitle title="歌手" /><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} /><div className="artist-grid">{query.data?.map((artist) => <Link to={`/artists/${encodeURIComponent(artist.id)}`} className="artist-card" key={artist.id}><EntityArtwork id={artist.id} name={artist.name} kind="artist" coverArt={artist.coverArt} /><h3>{artist.name}</h3><p className="muted">{artist.albumCount ?? '—'} 张专辑</p></Link>)}</div>{query.data && !query.data.length && <Empty title="还没有歌手" />}</>;
+  return <><PageTitle title="歌手" /><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} /><ArtistGrid artists={query.data ?? []} />{query.data && !query.data.length && <Empty title="还没有歌手" />}</>;
 }
 export function ArtistDetail() {
   const api = useApi(); const { libraryId } = useMusicLibrary(); const { id = '' } = useParams(); const query = useQuery({ queryKey: [api.identity, 'artist', id, libraryId], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.artist(id, signal, libraryId) }); const [busy, setBusy] = useState(false);
