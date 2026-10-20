@@ -22,7 +22,7 @@ function setup(coverArt?: string) {
   return { api, client, ...view };
 }
 
-it('uses the artist image for the banner and falls back to a gradient when it fails', async () => {
+it('uses the artist banner first and falls back to a square album cover when it fails', async () => {
   const { api, client, container, unmount } = setup('artist-cover');
   await screen.findByRole('heading', { name: '测试歌手' });
   const image = container.querySelector('.artist-hero-image');
@@ -32,16 +32,26 @@ it('uses the artist image for the banner and falls back to a gradient when it fa
   expect(container.querySelector('.artist-hero')).toHaveAttribute('data-has-art', 'true');
   fireEvent.error(image);
   expect(container.querySelector('.artist-hero')).toHaveAttribute('data-has-art', 'false');
-  expect(container.querySelector('.artist-hero-image')).toBeNull();
+  const fallback = container.querySelector('.artist-hero-image');
+  if (!fallback) throw new Error('缺少专辑兜底');
+  fireEvent.load(fallback);
+  expect(container.querySelector('.artist-hero')).toHaveAttribute('data-artwork', 'album');
+  expect(screen.getByAltText('专辑封面')).toBeInTheDocument();
   expect(screen.getByText('2 张专辑')).toBeInTheDocument();
   unmount(); client.clear(); api.dispose();
 });
 
-it('does not substitute an album cover when the server has no artist image', async () => {
+it('uses an album cover when the server has no artist image, then a gradient if every image fails', async () => {
   const { api, client, container, unmount } = setup();
   await screen.findByRole('heading', { name: '测试歌手' });
-  expect(container.querySelector('.artist-hero-image')).toBeNull();
+  const fallback = container.querySelector('.artist-hero-image');
+  if (!fallback) throw new Error('缺少专辑兜底');
+  fireEvent.load(fallback);
+  expect(container.querySelector('.artist-hero')).toHaveAttribute('data-artwork', 'album');
+  fireEvent.error(fallback);
   expect(container.querySelector('.artist-hero')).toHaveAttribute('data-has-art', 'false');
+  expect(container.querySelector('.artist-hero-image')).toBeNull();
+  expect(screen.queryByAltText('专辑封面')).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: '查看专辑 第一张' })).toBeInTheDocument();
   unmount(); client.clear(); api.dispose();
 });

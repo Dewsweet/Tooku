@@ -4,22 +4,24 @@ import { useParams } from 'react-router-dom';
 import { Heart, LoaderCircle, Play, Shuffle } from 'lucide-react';
 import type { MusicApi } from '../api/client';
 import { AlbumGrid, Empty, IconButton, QueryState, useApi } from '../components/Common';
-import type { Track } from '../domain/models';
+import type { Album, Track } from '../domain/models';
+import { artistArtworkCandidates } from '../domain/artistArtwork';
 import { player } from '../features/player/engine';
 import { useMusicLibrary } from '../state/library';
 import { errorMessage, useSession } from '../state/session';
 import './artist-detail.css';
 
-function ArtistHero({ name, coverArt, albumCount }: { name: string; coverArt?: string; albumCount: number }) {
+function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; coverArt?: string; albums: Album[] }) {
   const api = useApi();
   const [loaded, setLoaded] = useState<string>();
-  const [failed, setFailed] = useState<string>();
-  // Use the server's explicit artist artwork. An album cover is not an artist portrait.
-  const src = api.coverUrl(coverArt, 1200);
-  const hasArt = Boolean(src && loaded === src && failed !== src);
-  return <header className="artist-hero" data-has-art={hasArt}>
-    {src && failed !== src && <img className="artist-hero-image" src={src} alt="" referrerPolicy="no-referrer" onLoad={() => setLoaded(src)} onError={() => setFailed(src)} />}
-    <div className="artist-hero-copy"><h1>{name}</h1><p>{albumCount} 张专辑</p></div>
+  const [failed, setFailed] = useState<string[]>([]);
+  const candidate = artistArtworkCandidates(id, coverArt, albums).find((image) => !failed.includes(image.coverArt));
+  const src = api.coverUrl(candidate?.coverArt, candidate?.kind === 'artist' ? 1200 : 600);
+  const hasArt = Boolean(src && candidate && loaded === candidate.coverArt);
+  return <header className="artist-hero" data-has-art={hasArt} data-artwork={hasArt ? candidate?.kind : 'none'}>
+    {src && candidate && <img key={candidate.coverArt} className="artist-hero-image" src={src} alt="" referrerPolicy="no-referrer" onLoad={() => setLoaded(candidate.coverArt)} onError={() => setFailed((previous) => [...previous, candidate.coverArt])} />}
+    {hasArt && candidate?.kind === 'album' && <div className="artist-hero-album"><img src={src} alt="专辑封面" referrerPolicy="no-referrer" /></div>}
+    <div className="artist-hero-copy"><h1>{name}</h1><p>{albums.length} 张专辑</p></div>
   </header>;
 }
 
@@ -74,7 +76,7 @@ function ArtistDetailContent({ api, libraryId, id }: { api: MusicApi; libraryId?
   return <div className="artist-detail-page">
     <QueryState pending={query.isLoading} error={query.error} retry={() => query.refetch()} />
     {query.data && <>
-      <ArtistHero name={query.data.name} coverArt={query.data.coverArt} albumCount={query.data.albums.length} />
+      <ArtistHero id={id} name={query.data.name} coverArt={query.data.coverArt} albums={query.data.albums} />
       <div className="artist-detail-body">
         <div className="artist-actions">
           <button type="button" className="artist-play" aria-label={preparing ? '正在准备播放' : `播放 ${query.data.name}`} disabled={preparing || !query.data.albums.length} onClick={() => void play()} data-tooltip={preparing ? '正在准备播放' : '播放'}>{preparing ? <LoaderCircle size={25} className="spin" /> : <Play size={25} fill="currentColor" />}</button>
