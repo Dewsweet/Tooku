@@ -6,6 +6,8 @@ import type { HistoryEntry, PlayerSnapshot } from '../domain/models';
 import { usePreferences } from '../state/preferences';
 import { emptyLibraryProfile, useLibrary } from '../state/library';
 import { useProfiles } from '../state/profile';
+import { useLyricsProfiles } from '../state/lyrics';
+import { defaultLyricsSettings } from '../domain/lyrics/types';
 import { onProfileSave, readProfile, writeLocalData } from './local';
 
 type SyncStatus = 'local' | 'review' | 'ready' | 'saving' | 'conflict' | 'offline';
@@ -30,13 +32,14 @@ function hasAccountData(data: UserData, device: UserPreferences): boolean {
   return Boolean(data.profile.avatar || Object.keys(data.profile.playlistCovers).length || Object.keys(data.profile.artistCovers ?? {}).length
     || organization.folders.length || Object.keys(organization.placements).length || organization.activeId
     || Object.keys(organization.views).length || Object.values(organization.order ?? {}).some((items) => items.length)
-    || data.queue?.entries.length || data.history.length || !sameData(data.preferences, device));
+    || data.queue?.entries.length || data.history.length || data.lyrics && !sameData(data.lyrics, defaultLyricsSettings) || !sameData(data.preferences, device));
 }
 function capture(c: Connection): UserData {
   const profile = useProfiles.getState();
   const artistCovers = profile.artistCovers?.[c.api.identity] ?? {};
   return { version: 1, preferences: preferences(), profile: { ...(profile.avatars[c.api.identity] ? { avatar: profile.avatars[c.api.identity] } : {}), playlistCovers: profile.playlistCovers[c.api.identity] ?? {}, ...(Object.keys(artistCovers).length ? { artistCovers } : {}) },
-    organization: useLibrary.getState().profiles[c.api.identity] ?? emptyLibraryProfile, queue: c.queue, history: c.history };
+    organization: useLibrary.getState().profiles[c.api.identity] ?? emptyLibraryProfile, queue: c.queue, history: c.history,
+    ...(useLyricsProfiles.getState().profiles[c.api.identity] ? { lyrics: useLyricsProfiles.getState().profiles[c.api.identity] } : {}) };
 }
 async function cache(c: Connection) {
   const saved = await writeLocalData(c.api.identity, 'sync', { version: 1, owner: c.client?.owner || c.owner, base: c.base, local: capture(c), accepted: c.accepted, requiresReview: c.requiresReview } satisfies Cache);
@@ -49,6 +52,7 @@ async function apply(c: Connection, data: UserData) {
     usePreferences.getState().update(data.preferences);
     useProfiles.setState((s) => { const avatars = { ...s.avatars }; if (data.profile.avatar) avatars[c.api.identity] = data.profile.avatar; else delete avatars[c.api.identity]; return { avatars, playlistCovers: { ...s.playlistCovers, [c.api.identity]: data.profile.playlistCovers }, artistCovers: { ...s.artistCovers, [c.api.identity]: data.profile.artistCovers ?? {} } }; });
     useLibrary.getState().change(c.api.identity, () => data.organization);
+    useLyricsProfiles.getState().apply(c.api.identity, data.lyrics);
     c.queue = data.queue; c.history = data.history;
     await Promise.all([writeLocalData(c.api.identity, 'queue', data.queue), writeLocalData(c.api.identity, 'history', data.history)]);
   } finally { c.applying = false; }
@@ -80,7 +84,7 @@ async function flush(c: Connection) {
   }
 }
 function subscribe(c: Connection) {
-  c.stops.push(usePreferences.subscribe(() => changed(c)), useProfiles.subscribe((s, prev) => { if (s.avatars[c.api.identity] !== prev.avatars[c.api.identity] || s.playlistCovers[c.api.identity] !== prev.playlistCovers[c.api.identity] || s.artistCovers?.[c.api.identity] !== prev.artistCovers?.[c.api.identity]) changed(c); }),
+  c.stops.push(useLyricsProfiles.subscribe((s, previous) => { if (s.profiles[c.api.identity] !== previous.profiles[c.api.identity]) changed(c); }), usePreferences.subscribe(() => changed(c)), useProfiles.subscribe((s, prev) => { if (s.avatars[c.api.identity] !== prev.avatars[c.api.identity] || s.playlistCovers[c.api.identity] !== prev.playlistCovers[c.api.identity] || s.artistCovers?.[c.api.identity] !== prev.artistCovers?.[c.api.identity]) changed(c); }),
     useLibrary.subscribe((s, prev) => { if (s.profiles[c.api.identity] !== prev.profiles[c.api.identity]) changed(c); }),
     onProfileSave((identity, kind, data) => {
       if (identity !== c.api.identity) return;

@@ -39,7 +39,11 @@ Tooku 随机会话令牌只在内存保存，12 小时过期；退出时销毁�
 
 ## API 与实现入口
 
-所有 API 都位于 `/api/tooku/`，不缓存。除 health 和创建 session 外，必须提供内存中的 `Authorization: Bearer …`；服务器由会话决定 owner，忽略客户端伪造 owner。
+v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来源/绑定/排版/hash/延迟/显示选项，最多 2000 首；不保存歌词全文或凭据。字段缺省为默认策略，首次使用前不新增空字段改变同步基线。其校验、原子 revision、离线 sync 缓存和备份沿用现有通路；恢复旧备份会清除当前账号新增的歌词选择，其他账号保留，不接管音频。旧文档仍有效，无用户 SQLite 表迁移，新字段需前后端一起更新。
+
+公开歌词保存在独立 `.local/data/lyrics-cache.sqlite`（也遵循 `TOOKU_DATA_DIR`），缓存上限约 100 MB / 5000 条，故障降级内存；不与 `tooku.sqlite` 共用表，也不推进账号 revision。账号 JSON / 用户库备份包含个人选择，不包含可重建平台缓存；恢复时无须复制或清除缓存。详见 [歌词组件](15-lyrics-service-design.md)。
+
+用户数据 API 位于 `/api/tooku/`，不缓存。除 health 和创建 session 外，必须提供内存中的 `Authorization: Bearer …`；服务器由会话决定 owner，忽略客户端伪造 owner。独立公开歌词 API 位于 `/api/lyrics/`，不使用该账号认证，详见 [歌词组件](15-lyrics-service-design.md)。
 
 | 路径 | 方法 | 用途 |
 | --- | --- | --- |

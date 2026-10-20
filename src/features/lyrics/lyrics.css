@@ -1,0 +1,22 @@
+.lyric-toolbar { display: flex; justify-content: flex-end; gap: 4px; align-items: center; flex-shrink: 0; padding: 0 4px 8px; }
+.lyric-toolbar .styled-select { width: auto; min-width: 100px; border: 0; background: transparent; font-size: 13px; }
+.lyric-toolbar .icon-button { width: 36px; height: 36px; }
+.lyric-original, .lyric-translation, .lyric-romanization { display: block; }
+.lyric-translation { font-size: .64em; font-weight: 500; line-height: 1.6; margin-top: 8px; letter-spacing: 0; }
+.lyric-romanization { font-size: .56em; font-weight: 500; margin-top: 5px; letter-spacing: 0; }
+.lyric-search { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.lyric-search input { flex: 1; min-width: 160px; width: auto; }
+.lyric-candidates { display: flex; flex-direction: column; max-height: 50dvh; overflow: auto; }
+.lyric-candidates button { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px 10px; color: var(--text); background: transparent; border-radius: 8px; }
+.lyric-candidates button:hover, .lyric-candidates button:focus-visible { background: var(--surface); }
+.lyric-candidates span { font-size: 13px; color: var(--muted); }
+.lyric-check { display: flex; align-items: center; gap: 10px; flex-direction: row; }
+.lyric-check input { width: auto; }
+.lyric-preview { background: var(--surface); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; max-height: 180px; overflow: auto; }
+.lyric-preview p { margin: 10px 0; }
+.lyric-preview span { display: block; margin-top: 4px; color: var(--muted); }
+.lyrics-service-row { gap: 12px; flex-wrap: wrap; }
+.lyrics-service-row > div { display: flex; align-items: center; gap: 12px; }
+.lyrics-service-row details { width: 100%; color: var(--muted); font-size: 13px; }
+.panel-module-lyrics .lyric-toolbar { padding-bottom: 0; }
+.panel-module-lyrics .lyric-translation { font-size: .72em; }

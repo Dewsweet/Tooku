@@ -4,6 +4,7 @@ import { UserDataApi, UserDataError } from '../src/api/userData';
 import { usePreferences } from '../src/state/preferences';
 import { orderKey, libraryItems, useLibrary } from '../src/state/library';
 import { useProfiles } from '../src/state/profile';
+import { useLyricsProfiles, updateLyricChoice } from '../src/state/lyrics';
 import { chooseUserData, connectUserSync, disconnectUserSync, exportUserBackup, localUserData, refreshUserSync, useUserSync } from '../src/storage/userSync';
 import type { UserDocument } from '../src/domain/userData';
 
@@ -20,6 +21,7 @@ beforeEach(() => {
   vi.useFakeTimers(); memory.clear(); localStorage.clear();
   usePreferences.setState(usePreferences.getInitialState(), true);
   useLibrary.setState(useLibrary.getInitialState(), true); useProfiles.setState(useProfiles.getInitialState(), true);
+  useLyricsProfiles.setState({ profiles: {}, refreshes: {} });
   remote = { revision: 0, updatedAt: 0, data: null };
   api = new MusicApi(`${window.location.origin}/nd`, 'sample-user', crypto.randomUUID());
   client = new UserDataApi(); client.owner = 'verified-sample-owner';
@@ -33,6 +35,20 @@ beforeEach(() => {
 });
 afterEach(() => { disconnectUserSync(); api.dispose(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('user data migration and sync', () => {
+  it('syncs lyric bindings and corrections, restores old backups and isolates other accounts', async () => {
+    await connectUserSync(api); const legacy = structuredClone(localUserData()!);
+    updateLyricChoice(api.identity, 'song', { mode: 'qq', bindings: { qq: 'abc123' }, edits: { local: { layout: 'halves', hash: 'a', delayMs: 100 } } });
+    await vi.advanceTimersByTimeAsync(900);
+    expect(remote.data?.lyrics?.tracks.song.bindings).toEqual({ qq: 'abc123' });
+    const backup = await exportUserBackup(); expect(backup.data.lyrics?.tracks.song.edits?.local?.layout).toBe('halves');
+    disconnectUserSync(); memory.clear(); useLyricsProfiles.setState({ profiles: {} });
+    await connectUserSync(api); expect(useLyricsProfiles.getState().profiles[api.identity].tracks.song.mode).toBe('qq');
+    updateLyricChoice('other-account', 'song', { mode: 'local' });
+    await chooseUserData('local', legacy);
+    expect(useLyricsProfiles.getState().profiles[api.identity]).toBeUndefined();
+    expect(useLyricsProfiles.getState().profiles['other-account'].tracks.song.mode).toBe('local');
+    expect(remote.data?.lyrics).toBeUndefined();
+  });
   it('syncs artist pictures across browsers, includes them in backups, and preserves explicit removal', async () => {
     const image = 'data:image/jpeg;base64,AA==';
     useProfiles.getState().setArtistCover(api.identity, 'artist-one', image);

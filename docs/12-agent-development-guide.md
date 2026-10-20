@@ -21,6 +21,7 @@ Tooku 0.1.0 是 SPA 与 Node.js / SQLite 用户数据服务，技术栈以 [pack
 ```text
 React 页面 / 通用控件
   ├─ TanStack Query → MusicApi → /nd/rest → Navidrome
+  ├─ useLyrics → TookuLyricsApi → /api/lyrics → 网易云 / QQ → 独立缓存
   ├─ player 命令 → 常驻 PlayerEngine → HTMLAudioElement
   ├─ Zustand / IndexedDB → 浏览器缓存、未上传修改与设备回退
   └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
@@ -56,6 +57,8 @@ React 页面 / 通用控件
 | 底栏与完整播放器 | `src/features/player/PlayerUI.tsx` | UI 发命令，不创建音频；展开界面只显示歌词，三点菜单集中歌曲操作 |
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`PanelResizeHandle.tsx` | 正在播放/队列共用右栏；分栏拖动条由 App 放在面板间隙 |
 | 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、几何居中、空闲恢复和偏移换算 |
+| 歌词来源与双语整理 | `src/features/lyrics/`、`src/domain/lyrics/`、`src/api/lyrics.ts` | 本地优先；来源/绑定/按歌修正共用，滚动状态独立；本地错误不触发自动补齐 |
+| 网络歌词服务 | `server/lyrics/`、`NetworkLyricsSettings.tsx` | 同端口独立查询/检测、固定平台协议、受限缓存和真实观测；不依赖 Navidrome 会话 |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
 | 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 空端自动迁移/恢复、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
 | 后端与共享格式 | `server/api.ts`、`store.ts`、`index.ts`、`src/domain/userData.ts` | 固定上游认证、SQLite 原子 revision、限额与白名单 |
@@ -97,7 +100,7 @@ React 页面 / 通用控件
 
 复用 `IconButton` 的中文名称和应用 tooltip。使用 `data-tooltip` 提供其他提示，默认上方浮现、边缘翻转。统一菜单须在深浅主题中可读、可用 Esc 关闭、可通过键盘访问；弹窗内浮层不应被遮挡或变成不可点击。
 
-展开播放器采用柔化封面铺底，左侧大封面、歌曲信息与播放控制，右侧大字歌词；不显示品牌、歌词来源、动态歌词标签、音频格式、普通播放状态和底部下一首预告等小字。左侧封面与控制区固定，按剩余空间缩放封面，任何窗口尺寸下均不依靠左侧或整个播放器滚动；窄屏改为固定上下分区。进度时间分别左、右对齐。仅右侧歌词容器滚动，右上角收起；不放歌词/队列切换、音量或歌词显示设置。收藏右侧三点按钮复用统一菜单，可查看专辑、歌手、歌单，以及打开已有添加歌单弹窗；页面跳转时收起播放器，不改变音频。缺少专辑/歌手 ID 时尝试已有 song 查询补全，仍缺失则禁用对应入口；查看歌单只打开当前队列出现项的 `source.kind=playlist` 所指歌单；无来源时禁用，不跳总管理页，也不通过歌曲成员关系猜测播放来源。异常状态仍提供必要反馈。共用歌词仅在手动浏览时显示“同步”，闲置 5 秒后恢复自动跟随并收起按钮；第一句、最后一句和换行长句都应能居中。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
+展开播放器采用柔化封面铺底，左侧大封面、歌曲信息与播放控制，右侧大字歌词；不显示品牌、动态歌词标签、音频格式、普通播放状态和底部下一首预告等小字。左侧封面与控制区固定，按剩余空间缩放封面，任何窗口尺寸下均不依靠左侧或整个播放器滚动；窄屏改为固定上下分区。进度时间分别左、右对齐。歌词区保留简洁的来源选择及三点选项；仅右侧歌词容器滚动，右上角收起；不放歌词/队列切换、音量或歌词显示设置。收藏右侧三点按钮复用统一菜单，可查看专辑、歌手、歌单，以及打开已有添加歌单弹窗；页面跳转时收起播放器，不改变音频。缺少专辑/歌手 ID 时尝试已有 song 查询补全，仍缺失则禁用对应入口；查看歌单只打开当前队列出现项的 `source.kind=playlist` 所指歌单；无来源时禁用，不跳总管理页，也不通过歌曲成员关系猜测播放来源。异常状态仍提供必要反馈。共用歌词仅在手动浏览时显示“同步”，闲置 5 秒后恢复自动跟随并收起按钮；第一句、最后一句和换行长句都应能居中。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
 
 歌手图片写回入口集中在 `src/api/client.ts`：登录时仅对 Navidrome 尝试 `/auth/login`，原生 JWT 与角色只留会话内存，退出清除；密码只传给登录请求。`POST /api/artist/:id/image` 使用 `image` multipart 字段，`DELETE` 恢复默认，写前/后均读取 `/api/artist/:id`。HTTP 权限错误由 Navidrome 最终裁决，不自动重放上传；确认后的预览仅留查询内存，等待上游构建图片。`server/navidromeProxy.ts` 为开发/生产共用路径及方法白名单，仅新增登录与歌手图片所需路由；不开放其余原生管理接口。原生认证失败不阻断 Subsonic 登录，旧版服务器或直连 CORS 配置不支持时无法编辑。协议参照 [Navidrome v0.64.1 上传实现](https://github.com/navidrome/navidrome/blob/v0.64.1/server/nativeapi/artists.go)。
 
@@ -220,8 +223,14 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 
 入口、数据归属、Provider、缓存身份、启动命令或主要交互改变时，同步更新 [AGENTS.md](../AGENTS.md)、本指南和 README 中受影响的段落。测试数量与版本记录需要日期；未测试的能力明确标注。维护历史文档时添加版本提示，不把已经发生的验证记录改写成不存在的结果。
 
-## 11. 网络与双语歌词规划（尚未实现）
+## 11. 网络与双语歌词
 
-[独立歌词组件方案](15-lyrics-service-design.md) 记录了 2026-10-20 的讨论：Tooku 自己维护网络检索、匹配、缓存、状态与共用双语整理；Navidrome 仅为现有本地输入渠道。默认本地优先、明确缺失时自动联网，允许手动切换；当前方案默认本地只有外语原文时仍保留本地，不自动替换成网络版本。
+[独立歌词组件方案与实现](15-lyrics-service-design.md) 描述当前接口与维护边界。Tooku 自己维护网络检索、匹配、缓存、状态与共用双语整理；Navidrome 仅为现有本地输入渠道。默认本地优先、明确缺失时自动联网，允许手动切换；本地只有外语原文时仍保留本地，不自动替换成网络版本。
 
-该文区分已确定边界、建议参数和需要实测的事项，并给出模块/API/缓存与个人数据的计划。当前 `MusicApi.lyrics`、`Lyrics.tsx` 和设置页仍为本指南前文描述的单语/单份歌词实现；没有新增歌词 HTTP 路由、服务状态、来源菜单或账号字段。若开始实现，应按该方案各阶段核对实际平台响应及许可，逐步更新本指南的现状表，不把设计稿当现成功能。
+`MusicApi.lyrics` 保留结构化多轨与普通 LRC 原文；`normalizeLyrics` 负责毫秒时间轴、四类双语格式、保守配对。`useLyrics` 复用 Provider / QueryClient，按账号、曲目、元数据、来源、绑定和刷新代次隔离查询；歌词正文共享，两个视口独立滚动。切源与切歌取消过期前端请求，迟到结果不覆盖新曲目，不操作音频。
+
+网络客户端只访问同源 `/api/lyrics/{health,status,search,fetch,check}`，开发/生产使用同一 handler。服务无需 Navidrome 登录；同源检查不等于身份认证，不返回个人绑定。平台域名、ID、大小和速率受限，部署总开关为 `TOOKU_LYRICS_ENABLED=false`。设置开关是当前账号的策略，服务状态不在后台频繁探测。
+
+账号文档新增可选 `lyrics`；`src/state/lyrics.ts` 提供本机按 identity 隔离回退，接入现有 revision、IndexedDB sync 与导出/恢复。旧备份缺少字段时重置当前账号歌词选择，保留其他账号。平台缓存为数据目录独立 `lyrics-cache.sqlite`，不进入账号备份；缓存故障退回内存，不清用户数据库。
+
+基础测试：`lyrics-normalize.test.ts`（四类格式/歧义/时间配对）、`lyrics-service.test.ts`（适配器/缓存/HTTP/状态）、`lyrics-source.test.tsx`（选择/回退/迟到/双视图）、现有 API/播放器与用户同步测试。`node scripts/probe-lyrics.ts` 仅请求公开样本，摘要写入被忽略的 `.local/lyrics-probe.json`，不输出歌词正文或凭据。

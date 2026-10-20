@@ -1,23 +1,39 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Music2, RotateCw } from 'lucide-react';
+import { Music2, RotateCw, Ellipsis } from 'lucide-react';
 import { QueryState, useApi } from '../../components/Common';
 import { usePreferences } from '../../state/preferences';
 import { lyricIndex } from '../../domain/queue';
 import type { Track } from '../../domain/models';
 import { player, usePlayer } from './engine';
 import { useReducedMotion } from './playback-hooks';
+import { useLyrics } from '../lyrics/useLyrics';
+import { Select } from '../../components/Select';
+import { IconButton } from '../../components/Common';
+import { useContextMenu } from '../../components/Interactions';
+import { providerNames, type LyricEdit, type LyricMode } from '../../domain/lyrics/types';
+import { updateLyricChoice } from '../../state/lyrics';
+import { MatchLyrics, EditLyrics } from '../lyrics/LyricsDialogs';
+import '../lyrics/lyrics.css';
 
 export const LYRIC_IDLE_MS = 5000;
 export function centeredLyricTop(view: { top: number; height: number; scrollTop: number }, line: { top: number; height: number }) {
   return Math.max(0, view.scrollTop + line.top - view.top - (view.height - line.height) / 2);
 }
 export function Lyrics({ track }: { track?: Track }) {
+  const api = useApi();
+  return <LyricsView key={`${api.identity}-${track?.id}`} track={track} />;
+}
+function LyricsView({ track }: { track?: Track }) {
   const api = useApi(); const preferences = usePreferences(); const reduced = useReducedMotion(); const position = usePlayer((s) => s.position);
+  const data = useLyrics(track); const menu = useContextMenu(); const [dialog, setDialog] = useState<'match' | 'edit' | null>(null);
   const ref = useRef<HTMLDivElement>(null); const [follow, setFollow] = useState(true); const following = useRef(true); const dragging = useRef(false);
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined); const frame = useRef(0);
-  const query = useQuery({ queryKey: [api.identity, 'lyrics', track?.id], enabled: Boolean(track), queryFn: ({ signal }) => api.lyrics(track!.id, track!.artist, track!.title, signal) });
-  const lyrics = query.data; const delay = (lyrics?.offsetMs ?? 0) + preferences.lyricDelay;
+  const lyrics = data.lyrics; const delay = (lyrics?.offsetMs ?? 0) + preferences.lyricDelay + (data.edit?.delayMs ?? 0);
+  const saveEdit = (edit?: LyricEdit) => {
+    if (!track || !data.document) return;
+    const edits = { ...data.choice?.edits }; if (edit) edits[data.document.source] = edit; else delete edits[data.document.source];
+    updateLyricChoice(api.identity, track.id, { edits }); setDialog(null);
+  };
   const active = lyrics?.synced ? lyricIndex(lyrics.lines.map((l) => l.startMs), position * 1000 - delay) : -1;
   const center = useCallback((instant = false) => {
     const container = ref.current; const line = container?.querySelector<HTMLElement>('[aria-current="true"]');
@@ -49,9 +65,18 @@ export function Lyrics({ track }: { track?: Track }) {
   }, [lyrics, preferences.lyricSize, center]);
   useEffect(() => { if (follow) center(); }, [active, follow, center, lyrics]);
   return <div className="room-lyrics-panel">
-    <QueryState pending={query.isPending && Boolean(track)} error={query.error} retry={() => query.refetch()} />
+    <div className="lyric-toolbar"><Select aria-label="歌词来源" value={data.mode} disabled={!track} onChange={(mode) => track && updateLyricChoice(api.identity, track.id, { mode: mode as LyricMode })}><option value="auto">自动 · {providerNames[data.source]}</option><option value="local">本地</option><option value="network" disabled={!data.settings.enabled}>网络 · 自动</option><option value="netease" disabled={!data.settings.enabled || !data.settings.order.includes('netease')}>网易云</option><option value="qq" disabled={!data.settings.enabled || !data.settings.order.includes('qq')}>QQ 音乐</option></Select>
+      <IconButton label="歌词选项" disabled={!track} aria-haspopup="menu" onClick={(event) => menu(event, [
+        { label: '更换网络匹配', disabled: !data.settings.enabled, action: () => setDialog('match') },
+        { label: '歌词排版与延迟', disabled: !data.document, action: () => setDialog('edit') },
+        { label: '重新读取歌词', action: async () => { await data.retry(); } },
+        { label: '解除当前网络匹配', disabled: data.source === 'local' || !data.choice?.bindings?.[data.source], action: () => { if (!track || data.source === 'local') return; const bindings = { ...data.choice?.bindings }; delete bindings[data.source]; updateLyricChoice(api.identity, track.id, { mode: 'network', bindings }); } },
+      ])}><Ellipsis size={19} /></IconButton></div>
+    <QueryState pending={data.loading && Boolean(track)} error={data.error} retry={() => data.retry()} pendingText="正在读取歌词…" />
     <div ref={ref} className="room-lyrics-lines" data-synced={Boolean(lyrics?.synced && lyrics.lines.length)} style={{ '--lyric-size': `${preferences.lyricSize}px` } as CSSProperties} onWheel={pause} onTouchMove={pause} onPointerDown={() => { dragging.current = true; pause(); }} tabIndex={0} aria-label="歌词内容" onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) pause(); }}>
-      {lyrics?.lines.length ? lyrics.lines.map((line, i) => <button className={`room-lyric ${lyrics.synced && i !== active ? 'inactive' : ''} ${i === active ? 'current' : ''}`} key={`${track?.id}-${i}`} aria-current={i === active} disabled={line.startMs === undefined} onClick={() => { if (line.startMs !== undefined) player.seek((line.startMs + delay) / 1000); resume(); }}>{line.text || '♪'}</button>) : !query.isPending && !query.error && <div className="instrumental-state"><span className="instrumental-notes"><Music2 size={35} /></span><h3>暂无歌词</h3></div>}
+      {lyrics?.lines.length ? lyrics.lines.map((line, i) => <button className={`room-lyric ${lyrics.synced && i !== active ? 'inactive' : ''} ${i === active ? 'current' : ''}`} key={`${track?.id}-${i}`} aria-current={i === active} disabled={line.startMs === undefined} onClick={() => { if (line.startMs !== undefined) player.seek((line.startMs + delay) / 1000); resume(); }}><span className="lyric-original">{line.text || '♪'}</span>{data.edit?.showTranslation !== false && line.translation?.map((text, j) => <span className="lyric-translation" key={j}>{text}</span>)}{data.edit?.showRomanization && line.romanization?.map((text, j) => <span className="lyric-romanization" key={j}>{text}</span>)}</button>) : !data.loading && !data.error && <div className="instrumental-state"><span className="instrumental-notes"><Music2 size={35} /></span><h3>{lyrics?.instrumental ? '纯音乐' : data.candidates.length ? '请选择歌词版本' : '暂无歌词'}</h3>{data.candidates.length > 0 && <button className="text-button" onClick={() => setDialog('match')}>选择版本</button>}</div>}
     </div>{lyrics?.synced && !follow && <div className="room-lyrics-footer"><button className="follow-button subtle-button" aria-pressed={follow} onClick={resume}><RotateCw size={14} />同步</button></div>}
+    {track && dialog === 'match' && <MatchLyrics track={track} providers={data.settings.order} onClose={() => setDialog(null)} onSelect={(candidate) => { updateLyricChoice(api.identity, track.id, { mode: candidate.provider, bindings: { ...data.choice?.bindings, [candidate.provider]: candidate.id } }); setDialog(null); }} />}
+    {dialog === 'edit' && data.document && <EditLyrics document={data.document} hash={data.hash} current={data.edit} onSave={saveEdit} onReset={() => saveEdit()} onClose={() => setDialog(null)} />}
   </div>;
 }

@@ -23,8 +23,8 @@ export function Cover({ id, className = '', size = 400 }: { id?: string; classNa
 }
 export function formatTime(seconds?: number) { if (!seconds || !Number.isFinite(seconds)) return '0:00'; const value = Math.max(0, Math.floor(seconds)); return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`; }
 export function Empty({ title, children }: { title: string; children?: ReactNode }) { return <div className="empty"><Music2 size={36} /><h3>{title}</h3>{children && <p>{children}</p>}</div>; }
-export function QueryState({ pending, error, retry }: { pending: boolean; error: unknown; retry?: () => void }) {
-  if (pending) return <div className="loading" role="status"><LoaderCircle className="spin" size={22} /> 正在加载音乐…</div>;
+export function QueryState({ pending, error, retry, pendingText = '正在加载音乐…' }: { pending: boolean; error: unknown; retry?: () => void; pendingText?: string }) {
+  if (pending) return <div className="loading" role="status"><LoaderCircle className="spin" size={22} /> {pendingText}</div>;
   if (error) return <div className="error-panel" role="alert"><p>{errorMessage(error)}</p>{retry && <button className="subtle-button" onClick={retry}><RefreshCw size={16} />重试</button>}</div>;
   return null;
 }

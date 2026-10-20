@@ -26,6 +26,15 @@ async function listening(server: Server) {
   return `http://127.0.0.1:${address.port}`;
 }
 describe('versioned user storage', () => {
+  it('round-trips optional lyrics settings while accepting old data and rejecting credential fields', () => {
+    const legacy = sampleData(); expect(isUserData(legacy)).toBe(true);
+    const lyrics = { enabled: true, order: ['netease', 'qq'], tracks: { song: { mode: 'qq', bindings: { qq: 'abc123' }, edits: { local: { layout: 'alternating', hash: 'a', delayMs: 100 } } } } };
+    const data = { ...legacy, lyrics }; expect(isUserData(data)).toBe(true);
+    if (!isUserData(data)) throw new Error('Invalid fixture');
+    const store = new UserStore(':memory:'); cleanups.push(() => store.close()); store.write('alice', 0, data);
+    expect(store.read('alice').data?.lyrics).toEqual(lyrics); expect(store.read('bob').data).toBeNull();
+    expect(isUserData({ ...data, lyrics: { ...lyrics, password: 'invalid' } })).toBe(false);
+  });
   it('round-trips optional playback sources and shuffle order while retaining legacy documents', () => {
     const data = sampleData(); expect(isUserData(data)).toBe(true);
     if (!data.queue) throw new Error('Missing fixture queue');

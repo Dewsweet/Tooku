@@ -286,13 +286,21 @@ export class MusicApi {
       try {
         const data = await this.request('getLyricsBySongId', { id }, signal);
         const choices = list(object(data.lyricsList).structuredLyrics);
-        const chosen = choices.find((l) => l.synced === true) ?? choices[0];
+        const chinese = (lang: unknown) => typeof lang === 'string' && /^(?:zho|chi|cmn|zh)(?:$|[-_])/i.test(lang);
+        const romanized = (lang: unknown) => typeof lang === 'string' && /(?:latn|roma)/i.test(lang);
+        const chosen = choices.find((l) => l.synced === true && !chinese(l.lang) && !romanized(l.lang) && typeof l.lang === 'string') ?? choices.find((l) => l.synced === true && !romanized(l.lang)) ?? choices[0];
         // OpenSubsonic positive offset means earlier; our internal positive delay means later.
-        if (chosen) return { synced: chosen.synced === true, offsetMs: -(num(chosen.offset) ?? 0), lang: str(chosen.lang), lines: list(chosen.line).map((l) => ({ startMs: num(l.start), text: text(l.value, '') })) };
-      } catch (e) { if (signal?.aborted || (e instanceof ApiError && e.code === 40)) throw e; }
+        if (chosen) return { synced: chosen.synced === true, offsetMs: -(num(chosen.offset) ?? 0), lang: str(chosen.lang), lines: list(chosen.line).map((l) => ({ startMs: num(l.start), text: text(l.value, '') })), document: {
+          version: 1, source: 'local', recordId: id, tracks: choices.map((choice) => ({ role: choice !== chosen && chinese(choice.lang) && !chinese(chosen.lang) ? 'translation' : typeof choice.lang === 'string' && /(?:latn|roma)/i.test(choice.lang) ? 'romanization' : 'original', lang: str(choice.lang), offsetMs: -(num(choice.offset) ?? 0), lines: list(choice.line).map((l) => ({ startMs: num(l.start), text: text(l.value, '') })) })),
+        } };
+      } catch (e) {
+        // Only a declared unsupported protocol may fall back. Permission or transport
+        // failures must not become an empty local result that triggers the network.
+        if (signal?.aborted || !(e instanceof ApiError) || ![20, 30].includes(e.code ?? 0)) throw e;
+      }
     }
     const plain = object((await this.request('getLyrics', { artist, title }, signal)).lyrics);
-    return { synced: false, offsetMs: 0, lines: text(plain.value, '').split(/\r?\n/).filter(Boolean).map((text) => ({ text })) };
+    return { synced: false, offsetMs: 0, lines: text(plain.value, '').split(/\r?\n/).filter(Boolean).map((text) => ({ text })), document: { version: 1, source: 'local', recordId: id, tracks: [{ role: 'original', text: text(plain.value, '') }] } };
   }
   async scrobble(id: string, time: number, submission: boolean) { return this.request('scrobble', { id, time, submission }, undefined, true); }
 }

@@ -1,4 +1,5 @@
 import type { HistoryEntry, PlaybackSource, PlayerSnapshot, Track } from './models.ts';
+import { isLyricsSettings, type LyricsSettings } from './lyrics/types.ts';
 
 export interface UserPreferences {
   theme: 'light' | 'dark'; accent: string; sidePanel: boolean; panelWidth: number; trackColumns: number[];
@@ -19,6 +20,7 @@ export interface UserData {
   organization: UserOrganization;
   queue: PlayerSnapshot | null;
   history: HistoryEntry[];
+  lyrics?: LyricsSettings;
 }
 export interface UserDocument { revision: number; updatedAt: number; data: UserData | null }
 export interface UserBackup { format: 'tooku-user-data'; version: 1; owner: string; exportedAt: number; data: UserData }
@@ -43,7 +45,7 @@ function validTrack(v: unknown): v is Track {
     && (v.artists === undefined || Array.isArray(v.artists) && v.artists.length <= 100 && v.artists.every((a) => record(a) && keys(a, ['id', 'name']) && optionalId(a.id) && text(a.name)));
 }
 export function isUserData(v: unknown): v is UserData {
-  if (!record(v) || !keys(v, ['version', 'preferences', 'profile', 'organization', 'queue', 'history']) || v.version !== 1) return false;
+  if (!record(v) || !keys(v, ['version', 'preferences', 'profile', 'organization', 'queue', 'history', 'lyrics']) || v.version !== 1 || v.lyrics !== undefined && !isLyricsSettings(v.lyrics)) return false;
   const p = v.preferences; const art = v.profile; const o = v.organization; const q = v.queue;
   if (!record(p) || !keys(p, ['theme', 'accent', 'sidePanel', 'panelWidth', 'trackColumns', 'panelSections', 'lyricSize', 'lyricDelay', 'reducedMotion', 'shortcuts'])
     || !['light', 'dark'].includes(String(p.theme)) || typeof p.accent !== 'string' || !/^#[0-9a-f]{6}$/i.test(p.accent)

@@ -33,5 +33,23 @@ describe('Subsonic transport and contracts', () => {
     const lyrics = await api.lyrics('id', 'artist', 'title'); expect(lyrics.offsetMs).toBe(-500);
     expect(lyrics.lines[0].startMs! + lyrics.offsetMs).toBe(500);
   });
+  it('preserves structured foreign, translated and romanized lyric tracks with their own offsets', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok({ lyricsList: { structuredLyrics: [
+      { synced: true, lang: 'jpn-Latn', line: [{ start: 1000, value: 'konnichiwa' }] },
+      { synced: true, lang: 'zho', offset: 100, line: [{ start: 1000, value: '你好' }] },
+      { synced: true, lang: 'jpn', offset: 200, line: [{ start: 1000, value: 'こんにちは' }] },
+    ] } })));
+    const api = new MusicApi('https://example.test', 'u', 'p'); api.extensions.set('songLyrics', [1]);
+    const lyrics = await api.lyrics('id', 'artist', 'title');
+    expect(lyrics.lang).toBe('jpn'); expect(lyrics.document?.tracks.map((t) => t.role)).toEqual(['romanization', 'translation', 'original']);
+    expect(lyrics.document?.tracks[1].offsetMs).toBe(-100);
+  });
+  it('does not conceal local permission or transport failures behind empty fallback lyrics', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ 'subsonic-response': { status: 'failed', error: { code: 50 } } })));
+    vi.stubGlobal('fetch', fetch); const api = new MusicApi('https://example.test', 'u', 'p'); api.extensions.set('songLyrics', [1]);
+    await expect(api.lyrics('id', 'artist', 'title')).rejects.toMatchObject({ code: 50 }); expect(fetch).toHaveBeenCalledTimes(1);
+    fetch.mockRejectedValue(new Error('offline'));
+    await expect(api.lyrics('id', 'artist', 'title')).rejects.toThrow(); expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it('carries abort into outstanding requests when logging out', async () => { let captured: AbortSignal | undefined; vi.stubGlobal('fetch', vi.fn((_url, options) => { captured = options.signal; return Promise.resolve(ok()); })); const api = new MusicApi('https://example.test', 'u', 'p'); await api.request('ping'); api.dispose(); expect(captured?.aborted).toBe(true); });
 });

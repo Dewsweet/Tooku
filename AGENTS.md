@@ -9,7 +9,7 @@
 3. 先完成当前任务内的工作；不要因路线图中存在待办就自动扩大范围。
 4. 最新用户要求优先于仓库内旧设计；`docs/01`–`docs/11` 包含历史方案，不能据此恢复已取消的交互。发现文档与实现不一致时，核对最新要求并同步相关文档。
 
-网络歌词与本地双语处理的已讨论边界、待验证内容和实施阶段见 [独立歌词组件方案](docs/15-lyrics-service-design.md)。该文当前是设计稿，不能将其中拟议接口、来源选择器、服务状态或存储字段当成已实现能力；继续设计不等于启动实现。
+网络歌词与本地双语处理已接入，边界、接口、缓存和维护方式见 [独立歌词组件方案与实现](docs/15-lyrics-service-design.md)。网络查询与检测由 Tooku 独立负责，不依赖 Navidrome 认证；本地优先，明确缺失才自动联网，本地读取失败不得当成缺失。
 
 ## 2. 当前工程事实
 
@@ -61,7 +61,7 @@ npm.cmd run build
 
 ## 5. 模块边界与数据规则
 
-- API 请求、DTO 转换、能力检测与错误语义集中在 `src/api/client.ts`；页面不自行拼接认证 URL。
+- Navidrome API 请求、DTO 转换、能力检测与错误语义集中在 `src/api/client.ts`；独立网络歌词集中在 `src/api/lyrics.ts` / `server/lyrics/`，只允许固定来源，不上传本地歌词或账号凭据。页面不自行拼接认证 URL。
 - 新组件优先通过 `useApi()`、`useMusicLibrary()`、`useQueryClient()` 使用当前 Provider 的实例。
 - 服务查询 key 包含 `api.identity`，依赖真实曲库的查询再包含 `libraryId`。`identity` 当前是规范化服务基址与账号的组合，变更规则必须考虑迁移。
 - 播放命令统一交给 `src/features/player/engine.ts` 的 `player`；不要在页面或弹窗中创建第二个音频元素或第二套队列。

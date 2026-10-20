@@ -377,3 +377,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Lyrics protocol research
+
+Tooku's minimal lyric adapters are independently implemented with Node built-ins; no code or packages from the following projects are included. Protocol research references (2026-10-20): NeteaseCloudMusicApiEnhanced/api-enhanced (MIT), jsososo/QQMusicApi (GPL-3.0), L-1124/QQMusicApi (GPL-3.0), chenmozhijin/LDDC (GPL-3.0). See docs/15-lyrics-service-design.md for source links and implementation boundaries. Future code reuse requires separate license review and attribution; module separation does not remove license obligations.
