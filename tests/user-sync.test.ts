@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MusicApi } from '../src/api/client';
 import { UserDataApi, UserDataError } from '../src/api/userData';
 import { usePreferences } from '../src/state/preferences';
-import { useLibrary } from '../src/state/library';
+import { orderKey, libraryItems, useLibrary } from '../src/state/library';
 import { useProfiles } from '../src/state/profile';
 import { chooseUserData, connectUserSync, disconnectUserSync, localUserData, refreshUserSync, useUserSync } from '../src/storage/userSync';
 import type { UserDocument } from '../src/domain/userData';
@@ -33,15 +33,81 @@ beforeEach(() => {
 });
 afterEach(() => { disconnectUserSync(); api.dispose(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('user data migration and sync', () => {
-  it('previews legacy data without uploading, retains consent across restarts, and preserves pre-import copies', async () => {
-    useLibrary.getState().change(api.identity, () => ({ folders: [{ id: 'one', name: '旧目录', libraryId: 'music', parentId: null }], placements: {}, views: {} }));
+  it('automatically uploads the original browser and restores avatar and playlist order in a fresh browser', async () => {
+    const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBz8AAAAASUVORK5CYII=';
+    const order = { [orderKey('music', null)]: ['playlist:second', 'playlist:first'] };
+    useProfiles.getState().setAvatar(api.identity, avatar);
+    useLibrary.getState().change(api.identity, () => ({ defaultId: 'music', folders: [{ id: 'one', name: '旧目录', libraryId: 'music', parentId: null }], placements: {}, views: {}, order }));
+    await connectUserSync(api);
+    expect(remote.data?.profile.avatar).toBe(avatar);
+    expect(remote.data?.organization.order).toEqual(order);
+    expect(memory.has(`${api.identity}|before-import`)).toBe(true); expect(useUserSync.getState().status).toBe('ready');
+    // A different browser has neither localStorage stores nor IndexedDB sync history.
+    disconnectUserSync(); memory.clear(); localStorage.clear();
+    useProfiles.setState(useProfiles.getInitialState(), true); useLibrary.setState(useLibrary.getInitialState(), true);
+    usePreferences.setState(usePreferences.getInitialState(), true); vi.mocked(client.write).mockClear();
+    await connectUserSync(api);
+    expect(useUserSync.getState().status).toBe('ready');
+    expect(useProfiles.getState().avatars[api.identity]).toBe(avatar);
+    const organization = useLibrary.getState().profiles[api.identity];
+    expect(libraryItems(organization, [{ id: 'first', name: '第一张' }, { id: 'second', name: '第二张' }], 'music', null, 'music').filter((i) => i.kind === 'playlist').map((i) => i.key)).toEqual(order[orderKey('music', null)]);
+    expect(client.write).not.toHaveBeenCalled();
+  });
+  it('requires a choice when both sides have different data, including after reconnecting', async () => {
+    await connectUserSync(api); await chooseUserData('local');
+    remote = { ...remote, data: { ...remote.data!, profile: { avatar: 'data:image/png;base64,AA==', playlistCovers: {} } } };
+    disconnectUserSync(); memory.clear();
+    useLibrary.getState().change(api.identity, () => ({ folders: [{ id: 'one', name: '本地目录', libraryId: 'music', parentId: null }], placements: {}, views: {} }));
+    vi.mocked(client.write).mockClear();
     await connectUserSync(api); expect(useUserSync.getState().status).toBe('review');
-    await vi.advanceTimersByTimeAsync(1000); expect(client.write).not.toHaveBeenCalled();
     disconnectUserSync(); await connectUserSync(api); await vi.advanceTimersByTimeAsync(1000);
     expect(useUserSync.getState().status).toBe('review'); expect(client.write).not.toHaveBeenCalled();
-    await chooseUserData('local'); expect(remote.data?.organization.folders[0].name).toBe('旧目录');
-    expect(memory.has(`${api.identity}|before-import`)).toBe(true); expect(useUserSync.getState().status).toBe('ready');
+    expect(useLibrary.getState().profiles[api.identity].folders[0].name).toBe('本地目录');
+    await chooseUserData('local');
     disconnectUserSync(); await connectUserSync(api); expect(useUserSync.getState().status).toBe('ready');
+  });
+  it('does not create default server data from an unused browser, or let default library discovery block reading', async () => {
+    useLibrary.getState().change(api.identity, () => ({ defaultId: 'music', folders: [], placements: {}, views: {} }));
+    memory.set(`${api.identity}|queue`, { version: 1, entries: [], currentId: null, position: 0, repeat: 'off', volume: .7 });
+    await connectUserSync(api); await vi.advanceTimersByTimeAsync(1000);
+    expect(client.write).not.toHaveBeenCalled(); expect(remote.data).toBeNull();
+    const data = structuredClone(localUserData()!);
+    disconnectUserSync();
+    remote = { revision: 1, updatedAt: Date.now(), data: { ...data, profile: { avatar: 'data:image/png;base64,AA==', playlistCovers: {} } } };
+    await connectUserSync(api);
+    expect(useUserSync.getState().status).toBe('ready'); expect(localUserData()?.profile.avatar).toBe(remote.data?.profile.avatar);
+  });
+  it('automatically completes a legacy unconfirmed migration when the server is still empty', async () => {
+    await connectUserSync(api); const local = structuredClone(localUserData()!); disconnectUserSync();
+    useLibrary.getState().change(api.identity, () => ({ folders: [], placements: {}, views: {}, order: { [orderKey('music', null)]: ['playlist:second', 'playlist:first'] } }));
+    memory.set(`${api.identity}|sync`, { version: 1, owner: client.owner, base: remote, local, accepted: false });
+    await connectUserSync(api);
+    expect(useUserSync.getState().status).toBe('ready');
+    expect(remote.data?.organization.order?.[orderKey('music', null)]).toEqual(['playlist:second', 'playlist:first']);
+  });
+  it('never replays an unknown initial upload after reconnecting', async () => {
+    await connectUserSync(api); const local = structuredClone(localUserData()!); disconnectUserSync();
+    useLibrary.getState().change(api.identity, () => ({ folders: [], placements: {}, views: {}, order: { [orderKey('music', null)]: ['playlist:second', 'playlist:first'] } }));
+    memory.set(`${api.identity}|sync`, { version: 1, owner: client.owner, base: remote, local, accepted: false });
+    vi.mocked(client.write).mockRejectedValueOnce(new UserDataError('unknown initial result'));
+    await connectUserSync(api); expect(useUserSync.getState().status).toBe('offline'); expect(client.write).toHaveBeenCalledTimes(1);
+    disconnectUserSync(); await connectUserSync(api); await vi.advanceTimersByTimeAsync(1000);
+    expect(useUserSync.getState().status).toBe('review'); expect(client.write).toHaveBeenCalledTimes(1);
+  });
+  it('preserves an intentional local deletion instead of treating a previously synced browser as new', async () => {
+    useProfiles.getState().setAvatar(api.identity, 'data:image/png;base64,AA==');
+    await connectUserSync(api); expect(remote.data?.profile.avatar).toBeDefined();
+    disconnectUserSync(); useProfiles.getState().setAvatar(api.identity);
+    await connectUserSync(api);
+    expect(useProfiles.getState().avatars[api.identity]).toBeUndefined();
+    expect(remote.data?.profile.avatar).toBeUndefined();
+  });
+  it('does not automatically migrate an existing cache into a different verified service account', async () => {
+    await connectUserSync(api); const local = structuredClone(localUserData()!); disconnectUserSync();
+    useProfiles.getState().setAvatar(api.identity, 'data:image/png;base64,AA==');
+    memory.set(`${api.identity}|sync`, { version: 1, owner: 'previous-service-account', base: remote, local, accepted: false });
+    await connectUserSync(api); await vi.advanceTimersByTimeAsync(1000);
+    expect(useUserSync.getState().status).toBe('review'); expect(client.write).not.toHaveBeenCalled();
   });
   it('stops on conflicts and resolves unknown writes by reading without replaying', async () => {
     await connectUserSync(api); await chooseUserData('local');

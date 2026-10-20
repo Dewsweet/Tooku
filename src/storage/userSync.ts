@@ -11,17 +11,26 @@ import { onProfileSave, readProfile, writeLocalData } from './local';
 type SyncStatus = 'local' | 'review' | 'ready' | 'saving' | 'conflict' | 'offline';
 interface SyncState { status: SyncStatus; message: string; remote: UserDocument | null; identity: string; }
 export const useUserSync = create<SyncState>(() => ({ status: 'local', message: '仅保存在此设备', remote: null, identity: '' }));
-interface Cache { version: 1; owner: string; base: UserDocument; local: UserData; accepted: boolean }
+interface Cache { version: 1; owner: string; base: UserDocument; local: UserData; accepted: boolean; requiresReview?: boolean }
 interface Connection {
   api: MusicApi; client: UserDataApi | null; base: UserDocument; queue: PlayerSnapshot | null; history: HistoryEntry[];
-  timer?: ReturnType<typeof setTimeout>; stops: (() => void)[]; applying: boolean; busy: boolean; device: UserPreferences; accepted: boolean; owner: string;
+  timer?: ReturnType<typeof setTimeout>; stops: (() => void)[]; applying: boolean; busy: boolean; device: UserPreferences; accepted: boolean; owner: string; requiresReview: boolean;
 }
 let current: Connection | null = null;
 const update = (patch: Partial<SyncState>) => useUserSync.setState(patch);
 export const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-function preferences(): UserPreferences {
-  const { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts } = usePreferences.getState();
+function preferences(source: UserPreferences = usePreferences.getState()): UserPreferences {
+  const { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts } = source;
   return { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts };
+}
+function hasAccountData(data: UserData, device: UserPreferences): boolean {
+  const organization = data.organization;
+  // Discovering the default library and persisting an empty player are automatic startup work.
+  // Neither represents local edits that should block a new browser from adopting its account.
+  return Boolean(data.profile.avatar || Object.keys(data.profile.playlistCovers).length
+    || organization.folders.length || Object.keys(organization.placements).length || organization.activeId
+    || Object.keys(organization.views).length || Object.values(organization.order ?? {}).some((items) => items.length)
+    || data.queue?.entries.length || data.history.length || !sameData(data.preferences, device));
 }
 function capture(c: Connection): UserData {
   const profile = useProfiles.getState();
@@ -29,7 +38,7 @@ function capture(c: Connection): UserData {
     organization: useLibrary.getState().profiles[c.api.identity] ?? emptyLibraryProfile, queue: c.queue, history: c.history };
 }
 async function cache(c: Connection) {
-  const saved = await writeLocalData(c.api.identity, 'sync', { version: 1, owner: c.client?.owner || c.owner, base: c.base, local: capture(c), accepted: c.accepted } satisfies Cache);
+  const saved = await writeLocalData(c.api.identity, 'sync', { version: 1, owner: c.client?.owner || c.owner, base: c.base, local: capture(c), accepted: c.accepted, requiresReview: c.requiresReview } satisfies Cache);
   if (!saved && current === c) update({ message: '本地同步缓存无法保存，请导出备份；浏览器原有数据仍保留。' });
 }
 async function apply(c: Connection, data: UserData) {
@@ -51,6 +60,8 @@ function changed(c: Connection) {
 async function flush(c: Connection) {
   if (current !== c || !c.client || c.busy || !['ready', 'saving'].includes(useUserSync.getState().status)) return;
   const data = capture(c); if (sameData(data, c.base.data)) return;
+  // An unused second browser must not seed the account with defaults ahead of its original browser.
+  if (!c.base.data && !hasAccountData(data, c.device)) return;
   if (!isUserData(data)) { c.accepted = false; update({ status: 'offline', message: '本地数据未通过格式或容量检查，请导出备份后检查。' }); await cache(c); return; }
   c.busy = true; update({ status: 'saving', message: '正在保存…' });
   try {
@@ -60,7 +71,7 @@ async function flush(c: Connection) {
   } catch (error) {
     if (current !== c) return;
     update({ status: error instanceof UserDataError && error.status === 409 ? 'conflict' : 'offline', message: error instanceof Error ? error.message : '同步未完成，本地数据已保留。' });
-    c.accepted = false;
+    c.accepted = false; c.requiresReview = true;
     await cache(c);
   } finally {
     c.busy = false;
@@ -83,28 +94,45 @@ export async function connectUserSync(api: MusicApi) {
   const stored = await readProfile<UserPreferences>('device', 'preferences'); const device = stored ?? preferences();
   if (!stored) await writeLocalData('device', 'preferences', device);
   usePreferences.getState().update(device);
-  const c: Connection = { api, client: null, base: { revision: 0, updatedAt: 0, data: null }, queue: null, history: [], stops: [], applying: false, busy: false, device, accepted: false, owner: '' };
+  const c: Connection = { api, client: null, base: { revision: 0, updatedAt: 0, data: null }, queue: null, history: [], stops: [], applying: false, busy: false, device, accepted: false, owner: '', requiresReview: false };
   current = c; update({ status: 'local', message: '仅保存在此设备', remote: null, identity: api.identity });
   const [queue, history, saved] = await Promise.all([readProfile<PlayerSnapshot>(api.identity, 'queue'), readProfile<HistoryEntry[]>(api.identity, 'history'), readProfile<Cache>(api.identity, 'sync')]);
   if (current !== c) return;
   c.queue = queue ?? null; c.history = history ?? [];
   if (saved?.version === 1 && isUserData(saved.local)) {
     usePreferences.getState().update(saved.local.preferences);
-    if (isUserDocument(saved.base)) { c.base = saved.base; c.owner = saved.owner; c.accepted = saved.accepted; }
+    if (isUserDocument(saved.base)) { c.base = saved.base; c.owner = saved.owner; c.accepted = saved.accepted; c.requiresReview = saved.requiresReview === true; }
   }
   try {
     c.client = await api.userData(); if (current !== c) { c.client?.dispose(); return; }
     if (!c.client) { subscribe(c); return; }
     const remote = await c.client.read(); if (current !== c) return;
     c.base = remote; c.owner = c.client.owner;
+    if (saved?.owner && saved.owner !== c.client.owner) c.requiresReview = true;
     const local = capture(c);
     const known = saved?.version === 1 && saved.accepted === true && saved.owner === c.client.owner && isUserData(saved.local) && isUserDocument(saved.base);
-    if (remote.data && sameData(local, remote.data)) update({ status: 'ready', remote, message: '已保存到服务器' });
-    else if (known && sameData(local, saved.base.data) && remote.data) { await apply(c, remote.data); update({ status: 'ready', remote, message: '已读取服务器数据' }); }
+    const localIsUnused = !hasAccountData(local, c.device)
+      && (!known || !saved.base.data || !hasAccountData(saved.base.data, c.device));
+    if (remote.data && sameData(local, remote.data)) { c.requiresReview = false; update({ status: 'ready', remote, message: '已保存到服务器' }); }
+    else if (known && sameData(local, saved.base.data) && remote.data) { await apply(c, remote.data); if (current !== c) return; update({ status: 'ready', remote, message: '已读取服务器数据' }); }
     else if (known && saved.base.revision === remote.revision) update({ status: 'ready', remote, message: '本地修改等待保存' });
-    else update({ status: 'review', remote, message: remote.data ? '此设备与服务器有不同数据，请在设置中比较。' : '可在设置中预览并导入此设备数据。' });
+    else if (!c.requiresReview && (!remote.data || !hasAccountData(remote.data, preferences(usePreferences.getInitialState())))) {
+      if (hasAccountData(local, c.device) && !await writeLocalData(api.identity, 'before-import', local)) throw new Error('无法保留迁移前副本，暂未上传。');
+      if (current !== c) return;
+      update({ status: 'ready', remote, message: '已连接服务器，自动保存用户数据' });
+    } else if (!c.requiresReview && localIsUnused && remote.data) {
+      if (!await writeLocalData(api.identity, 'before-import', local)) throw new Error('无法保留本地副本，暂未读取账号数据。');
+      await apply(c, remote.data);
+      if (current !== c) return;
+      update({ status: 'ready', remote, message: '已自动读取服务器数据' });
+    } else {
+      c.requiresReview = true;
+      update({ status: 'review', remote, message: '此设备与服务器有不同数据或待核实的保存结果，请在设置中比较。' });
+    }
+    if (current !== c) return;
     c.accepted = useUserSync.getState().status === 'ready';
-    subscribe(c); await cache(c); if (useUserSync.getState().status === 'ready') changed(c);
+    subscribe(c); await cache(c);
+    if (useUserSync.getState().status === 'ready') await flush(c);
   } catch (error) {
     if (current !== c) return;
     update({ status: 'offline', message: error instanceof Error ? error.message : '同步不可用，本地数据仍保留。' }); subscribe(c);
@@ -129,6 +157,7 @@ export async function refreshUserSync() {
   if (current !== c) return;
   // Unknown write results are resolved by reading; never blindly replay a timed-out request.
   c.base = remote; c.accepted = sameData(capture(c), remote.data);
+  c.requiresReview = !c.accepted;
   update({ status: c.accepted ? 'ready' : 'review', remote, message: '已重新读取，请比较后选择。' }); await cache(c);
 }
 export async function chooseUserData(source: 'local' | 'server', replacement?: UserData) {
@@ -160,12 +189,12 @@ export async function chooseUserData(source: 'local' | 'server', replacement?: U
       if (replacement) await apply(c, data);
     }
     if (current !== c) return;
-    c.accepted = true;
+    c.accepted = true; c.requiresReview = false;
     update({ status: 'ready', remote: c.base, message: '已使用所选数据；当前播放保持不变。' });
     await cache(c);
   } catch (error) {
     if (current === c) {
-      c.accepted = false;
+      c.accepted = false; c.requiresReview = true;
       update({ status: error instanceof UserDataError && error.status === 409 ? 'conflict' : 'offline', message: error instanceof Error ? error.message : '操作未完成，本地副本仍保留。' });
       await cache(c);
     }

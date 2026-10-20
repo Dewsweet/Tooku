@@ -54,7 +54,7 @@ React 页面 / 通用控件
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`PanelResizeHandle.tsx` | 正在播放/队列共用右栏；分栏拖动条由 App 放在面板间隙 |
 | 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、几何居中、空闲恢复和偏移换算 |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
-| 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 首次预览、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
+| 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 空端自动迁移/恢复、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
 | 后端与共享格式 | `server/api.ts`、`store.ts`、`index.ts`、`src/domain/userData.ts` | 固定上游认证、SQLite 原子 revision、限额与白名单 |
 | 启动与部署 | `scripts/dev-server.mjs`、`scripts/port-selection.mjs`、`start-tooku.cmd`、`deploy/` | 有界端口回退、健康检查与复用现有服务 |
 
@@ -95,8 +95,8 @@ React 页面 / 通用控件
 | --- | --- | --- |
 | 音乐文件、专辑、歌手、服务器收藏 | Navidrome | 以服务器授权和返回值为准 |
 | 歌单名称、简介、曲目和曲序 | Navidrome | Tooku 通过协议读写并核实 |
-| 头像、自定义歌单封面 | 确认迁移后 SQLite；localStorage 缓存：`tooku-profiles` | 本地按 `api.identity`，服务端按已验证 owner；处理后的 data URL 不上传 Navidrome |
-| 文件夹、歌单位置/混排、曲库视图与选中库 | 确认迁移后 SQLite；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
+| 头像、自定义歌单封面 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-profiles` | 本地按 `api.identity`，服务端按已验证 owner；处理后的 data URL 不上传 Navidrome |
+| 文件夹、歌单位置/混排、曲库视图与选中库 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
 | 明暗、主题色、布局、列宽、歌词和快捷键偏好 | SQLite 账号文档 / IndexedDB sync；`tooku-preferences` 作为当前偏好与设备回退 | 切号还原设备回退，账号修改存在各自 sync 缓存 |
 | 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
 | 同步基线、未上传数据、导入前副本 | IndexedDB `profiles` 中 `sync` / `before-import` | 原数据保留；清除本机播放快照不清迁移基线 |
@@ -107,7 +107,7 @@ React 页面 / 通用控件
 
 Navidrome 的 `getPlaylists` 返回账号可见的歌单。每库归属是 Tooku 的 `placements`，不能把它误当成协议天然返回的每库独立歌单集合。`getArtist` 可能聚合多个曲库，当前有专辑边界过滤，不能为了少发请求直接删除。
 
-清理站点数据、更换浏览器/设备、访问 origin 变化会影响本机数据；IndexedDB 也受此限制。已确认上传的数据可经同一 Tooku 部署、同一固定上游账号恢复。首次差异需预览选择；自动保存遇到冲突停止，不做字段合并。设置支持账号 JSON 导出/恢复，管理员使用 `npm.cmd run backup -- <新文件>` 做完整 SQLite 在线备份。详细边界见 [服务端持久化](13-server-persistence.md)。
+清理站点数据、更换浏览器/设备、访问 origin 变化会影响本机数据；IndexedDB 也受此限制。已上传的数据可经同一 Tooku 部署、同一固定上游账号恢复。服务器空时自动上传原浏览器数据，新浏览器本地空时自动读取；只有两端均有不同个性数据或待核实结果时需预览选择。默认库 ID 与空队列不阻断同步，已经同步的账号删除操作仍需保留。同步缓存新增可选 `requiresReview` 字段，兼容旧版 v1 缓存。自动保存遇到冲突停止，不做字段合并。设置支持账号 JSON 导出/恢复，管理员使用 `npm.cmd run backup -- <新文件>` 做完整 SQLite 在线备份。详细边界见 [服务端持久化](13-server-persistence.md)。
 
 ### 持久化的维护约束
 
