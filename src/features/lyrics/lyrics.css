@@ -5,8 +5,10 @@
 .lyric-original, .lyric-translation, .lyric-romanization { display: block; }
 .lyric-translation { font-size: .64em; font-weight: 500; line-height: 1.6; margin-top: 8px; letter-spacing: 0; }
 .lyric-romanization { font-size: .56em; font-weight: 500; margin-top: 5px; letter-spacing: 0; }
-.modal.lyrics-settings-modal { width: 580px; padding: 26px; border-radius: 20px; }
-.lyrics-settings-modal > .modal-heading { border: 0; padding-bottom: 0; margin-bottom: 22px; }
+.modal.lyrics-settings-modal { width: 580px; padding: 22px; border-radius: 12px; overflow: hidden; }
+.modal.lyrics-settings-modal[open] { display: flex; flex-direction: column; }
+.lyric-settings-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 8px; margin-right: -6px; }
+.lyrics-settings-modal > .modal-heading { border: 0; padding-bottom: 0; margin-bottom: 20px; flex-shrink: 0; }
 .lyrics-settings-modal > .modal-heading .icon-button { flex-shrink: 0; border-radius: 50%; }
 .lyric-settings-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); margin-bottom: 16px; }
 .lyric-settings-tabs button { flex: 1; border-radius: 9px; min-height: 36px; font-size: 14px; background: transparent; color: var(--muted); }
@@ -24,20 +26,19 @@
 .lyric-offset-control input::-webkit-inner-spin-button { appearance: none; }
 .lyric-offset-control > span { color: var(--muted); font-size: 13px; margin-right: 4px; }
 .lyric-offset-control .icon-button { width: 30px; height: 30px; border-radius: 50%; background: var(--surface); flex-shrink: 0; }
-.lyric-preview { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-top: 18px; max-height: 200px; overflow: auto; white-space: pre-line; }
-.lyric-preview p { margin: 10px 0; font-size: 17px; line-height: 1.6; font-weight: 600; }
-.lyric-preview span { display: block; margin-top: 3px; color: var(--muted); font-size: 14px; font-weight: 400; }
 .lyric-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
 .lyric-dialog-footer > :only-child { margin-right: auto; }
 .lyric-dialog-footer .primary-button { min-width: 86px; }
 .lyric-reload-row { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; display: flex; justify-content: center; }
 .lyric-reload-row .text-button { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
-.lyric-search { display: flex; gap: 8px; margin: 20px 0 14px; flex-wrap: wrap; }
-.lyric-search > .styled-select { width: 114px; min-width: 0; }
-.lyric-search-field { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 140px; padding: 0 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; color: var(--muted); }
-.lyric-search-field:focus-within { border-color: var(--accent); }
-.lyric-search-field input { flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; padding: 10px 0; }
-.lyric-candidates { display: flex; flex-direction: column; max-height: 42dvh; overflow: auto; gap: 4px; }
+.lyric-search { display: flex; flex-direction: column; gap: 16px; margin: 20px 0 14px; }
+.lyric-search-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.lyric-search-tools > .styled-select { width: 130px; min-width: 0; }
+.lyric-search-tools > button:last-child { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.lyric-search-fields { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; }
+.lyric-search-fields label { min-width: 0; font-size: 13px; font-weight: 500; color: var(--muted); }
+.lyric-search-fields input { width: 100%; }
+.lyric-candidates { display: flex; flex-direction: column; gap: 4px; }
 .lyric-candidates button { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; padding: 14px 12px; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 10px; }
 .lyric-candidates button:hover, .lyric-candidates button:focus-visible { background: var(--surface); }
 .lyric-candidates button[aria-pressed=true] { background: var(--soft); border-color: color-mix(in srgb, var(--accent) 20%, transparent); }
@@ -54,6 +55,5 @@
 @media (max-width: 540px) {
   .modal.lyrics-settings-modal { padding: 20px; }
   .lyrics-settings-modal .lyric-settings-row { grid-template-columns: minmax(0, .8fr) minmax(160px, 1fr); gap: 10px; }
-  .lyric-search-field { order: 1; flex-basis: 100%; }
-  .lyric-search > button:last-child { margin-left: auto; }
+  .lyric-search-fields { grid-template-columns: 1fr; }
 }

@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.spyOn(api, 'song').mockResolvedValue({ id: 'a', title: '当前曲目', artist: '测试歌手' });
   vi.spyOn(api, 'lyrics').mockResolvedValue({ synced: true, offsetMs: 0, lines: [{ startMs: 0, text: '第一句测试歌词' }, { startMs: 10000, text: '第二句测试歌词' }] });
   useSession.getState().setSession(api); usePreferences.setState({ reducedMotion: true });
+  useSession.setState({ notice: '' });
   useLyricsProfiles.setState({ profiles: {}, refreshes: {} });
   document.documentElement.dataset.motion = 'reduced';
   usePlayer.setState({ ...usePlayer.getInitialState(), status: 'paused', position: 11, duration: 90, volume: 0.65, currentId: 'first', entries: [
@@ -45,10 +46,50 @@ afterEach(() => {
   cleanup(); client.clear(); api.dispose(); useSession.getState().setSession(null); usePlayer.setState(usePlayer.getInitialState()); usePreferences.setState({ reducedMotion: false });
   delete document.documentElement.dataset.motion;
   Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal'); Reflect.deleteProperty(HTMLDialogElement.prototype, 'close'); Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
+  Reflect.deleteProperty(document.documentElement, 'requestFullscreen'); Reflect.deleteProperty(document, 'exitFullscreen'); Reflect.deleteProperty(document, 'fullscreenElement');
   vi.useRealTimers(); vi.restoreAllMocks();
 });
 function RouteMarker() { const location = useLocation(); return <output data-testid="route-path">{location.pathname}</output>; }
 const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}><MemoryRouter><Interactions>{child}<RouteMarker /></Interactions></MemoryRouter></QueryClientProvider>);
+function fullscreenFixture() {
+  let element: Element | null = null;
+  const set = (next: Element | null) => { element = next; document.dispatchEvent(new Event('fullscreenchange')); };
+  const request = vi.fn(async () => set(document.documentElement)); const exit = vi.fn(async () => set(null));
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => element });
+  Object.defineProperty(document.documentElement, 'requestFullscreen', { configurable: true, value: request });
+  Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit });
+  return { request, exit, set };
+}
+
+it('enters and exits native fullscreen, including Escape changes, without closing or resetting the player', async () => {
+  const fullscreen = fullscreenFixture(); const close = vi.fn();
+  surface(<LyricsPlayer onClose={close} addToPlaylist={() => {}} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' });
+  fireEvent.click(screen.getByRole('button', { name: '进入全屏' }));
+  await screen.findByRole('button', { name: '退出全屏' }); expect(fullscreen.request).toHaveBeenCalledOnce();
+  expect(screen.getByRole('dialog', { name: '正在播放' })).toHaveAttribute('open');
+  fireEvent.click(screen.getByRole('button', { name: '退出全屏' }));
+  await screen.findByRole('button', { name: '进入全屏' }); expect(fullscreen.exit).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '进入全屏' })); await screen.findByRole('button', { name: '退出全屏' });
+  act(() => fullscreen.set(null)); await screen.findByRole('button', { name: '进入全屏' });
+  expect(close).not.toHaveBeenCalled(); expect(usePlayer.getState().currentId).toBe('first'); expect(usePlayer.getState().position).toBe(11);
+});
+it('uses the dock fullscreen button to open the player within the same user action', async () => {
+  const fullscreen = fullscreenFixture(); const open = vi.fn();
+  surface(<PlayerBar openQueue={() => {}} openLyrics={open} />);
+  fireEvent.click(screen.getByRole('button', { name: '进入全屏' }));
+  await screen.findByRole('button', { name: '退出全屏' });
+  expect(fullscreen.request).toHaveBeenCalledOnce(); expect(open).toHaveBeenCalledOnce(); expect(usePlayer.getState().position).toBe(11);
+});
+it('reports fullscreen rejection without affecting audio and disables the control when unsupported', async () => {
+  const fullscreen = fullscreenFixture(); fullscreen.request.mockRejectedValue(new Error('denied'));
+  const view = surface(<PlayerBar openQueue={() => {}} openLyrics={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: '进入全屏' }));
+  await waitFor(() => expect(useSession.getState().notice).toBe('无法切换全屏，请重试'));
+  expect(usePlayer.getState().position).toBe(11); view.unmount();
+  Reflect.deleteProperty(document.documentElement, 'requestFullscreen');
+  surface(<PlayerBar openQueue={() => {}} openLyrics={() => {}} />); expect(screen.getByRole('button', { name: '进入全屏' })).toBeDisabled();
+});
 
 it('previews a seek and commits once on pointer release', () => {
   const seek = vi.spyOn(player, 'seek').mockImplementation(() => {});
@@ -76,13 +117,14 @@ it('keeps the expanded player focused on lyrics and closes without changing play
   expect(close).toHaveBeenCalledOnce();
   expect(usePlayer.getState().currentId).toBe('first'); expect(usePlayer.getState().position).toBe(11);
 });
-it('places three distinct lyric/source/collapse controls in the same player header', async () => {
+it('places lyric controls, fullscreen and collapse in the same player header', async () => {
   surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
   await screen.findByRole('button', { name: '第一句测试歌词' });
   const heading = screen.getByRole('button', { name: '收起播放器' }).closest('header')!;
   expect(within(heading).getByRole('button', { name: '歌词来源：本地' })).toBeInTheDocument();
   expect(within(heading).getByRole('button', { name: '歌词设置' })).toBeInTheDocument();
-  expect(heading.querySelectorAll('button')).toHaveLength(3);
+  expect(heading.querySelectorAll('button')).toHaveLength(4);
+  expect(within(heading).getByRole('button', { name: '进入全屏' })).toBeInTheDocument();
   fireEvent.click(within(heading).getByRole('button', { name: '歌词来源：本地' }));
   const menu = screen.getByRole('menu');
   expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['本地', '网易云', 'QQ 音乐']);
@@ -94,6 +136,7 @@ it('edits translation and offset together, retains playback and closes only the 
   fireEvent.click(screen.getByRole('button', { name: '歌词设置' }));
   const dialog = within(screen.getByRole('dialog', { name: '歌词设置' }));
   expect(dialog.getByRole('heading', { name: '歌词设置' })).toBeInTheDocument();
+  expect(dialog.queryByLabelText('歌词显示预览')).not.toBeInTheDocument();
   expect(dialog.getByRole('button', { name: '关闭' }).closest('header')?.parentElement).toBe(screen.getByRole('dialog', { name: '歌词设置' }));
   fireEvent.change(dialog.getByRole('spinbutton', { name: '歌词偏移秒数' }), { target: { value: '0.4' } });
   fireEvent.click(dialog.getByRole('checkbox', { name: '显示译文' }));
@@ -115,18 +158,50 @@ it('opens version search in the same settings panel and binds a manually selecte
   expect(useLyricsProfiles.getState().profiles[api.identity].tracks.a.bindings).toEqual({ netease: '456' });
   expect(usePlayer.getState().currentId).toBe('first'); expect(usePlayer.getState().position).toBe(11);
 });
+it('searches with separate edited title and artist fields only after submitting', async () => {
+  vi.spyOn(lyricsApi, 'search').mockResolvedValue({ version: 1, candidates: [], errors: [] });
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' }); fireEvent.click(screen.getByRole('button', { name: '歌词设置' }));
+  const dialog = within(screen.getByRole('dialog', { name: '歌词设置' })); fireEvent.click(dialog.getByRole('tab', { name: '版本' }));
+  await dialog.findByText('没有找到歌词版本');
+  expect(dialog.getByRole('textbox', { name: '歌词歌曲标题' })).toHaveValue('当前曲目');
+  expect(dialog.getByRole('textbox', { name: '歌词歌手' })).toHaveValue('测试歌手');
+  vi.mocked(lyricsApi.search).mockClear();
+  fireEvent.change(dialog.getByRole('textbox', { name: '歌词歌曲标题' }), { target: { value: ' 新标题 ' } });
+  fireEvent.change(dialog.getByRole('textbox', { name: '歌词歌手' }), { target: { value: '新歌手' } });
+  expect(lyricsApi.search).not.toHaveBeenCalled(); fireEvent.click(dialog.getByRole('button', { name: '搜索' }));
+  await waitFor(() => expect(lyricsApi.search).toHaveBeenCalledOnce());
+  expect(lyricsApi.search).toHaveBeenLastCalledWith(expect.objectContaining({ title: '新标题', artists: ['新歌手'] }), ['netease'], expect.any(AbortSignal), true, '新标题 新歌手');
+});
+it.each(['歌词内容', '当前歌曲'])('uses the song action menu when right-clicking the expanded %s region', async (label) => {
+  const add = vi.fn(); surface(<LyricsPlayer onClose={() => {}} addToPlaylist={add} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' }); fireEvent.contextMenu(screen.getByLabelText(label));
+  const menu = within(screen.getByRole('menu'));
+  expect(menu.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['查看专辑', '查看歌手', '查看歌单', '添加到歌单']);
+  expect(menu.queryByRole('menuitem', { name: '主页' })).not.toBeInTheDocument();
+  fireEvent.click(menu.getByRole('menuitem', { name: '添加到歌单' }));
+  await waitFor(() => expect(add).toHaveBeenCalledOnce()); expect(usePlayer.getState().position).toBe(11);
+});
+it('keeps field editing menus inside the nested lyrics settings dialog', async () => {
+  vi.spyOn(lyricsApi, 'search').mockResolvedValue({ version: 1, candidates: [], errors: [] });
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' }); fireEvent.click(screen.getByRole('button', { name: '歌词设置' }));
+  const dialog = within(screen.getByRole('dialog', { name: '歌词设置' })); fireEvent.click(dialog.getByRole('tab', { name: '版本' }));
+  fireEvent.contextMenu(dialog.getByRole('textbox', { name: '歌词歌曲标题' }));
+  expect(screen.getByRole('menuitem', { name: '全选' })).toBeInTheDocument(); expect(screen.queryByRole('menuitem', { name: '查看专辑' })).not.toBeInTheDocument();
+});
 it.each([false, true])('shows the same simple text for empty lyrics and instrumental music (%s)', async (instrumental) => {
   vi.mocked(api.lyrics).mockResolvedValue({ synced: false, offsetMs: 0, lines: [], instrumental });
   vi.spyOn(lyricsApi, 'search').mockResolvedValue({ version: 1, candidates: [], errors: [] });
   surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
-  const empty = await screen.findByRole('heading', { name: '该音乐没有歌词' });
+  const empty = await screen.findByRole('heading', { name: '该音乐没有歌词，请欣赏' });
   expect(empty.parentElement?.querySelector('svg')).toBeNull(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 it('does not display provider errors as a player failure when no network lyrics can be read', async () => {
   vi.mocked(api.lyrics).mockResolvedValue({ synced: false, offsetMs: 0, lines: [] });
   vi.spyOn(lyricsApi, 'search').mockRejectedValue(new Error('来源暂不可用'));
   surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
-  await screen.findByRole('heading', { name: '该音乐没有歌词' }); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  await screen.findByRole('heading', { name: '该音乐没有歌词，请欣赏' }); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(lyricsApi.search).toHaveBeenCalledTimes(2);
 });
 it.each([

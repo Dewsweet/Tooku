@@ -154,10 +154,10 @@ it('keeps card and tree folder actions in context menus and uses / for creation 
   expect(screen.getByRole('option', { name: '/' })).toBeInTheDocument();
   expect(screen.queryByText('根目录（留空）')).not.toBeInTheDocument();
 });
-it('links the dock title and artist separately and keeps only the full-player expansion control', () => {
+it('links the dock title and artist separately and offers a fullscreen control', () => {
   usePlayer.setState({entries:[{entryId:'e',track:song}],currentId:'e'});surface(<PlayerBar openQueue={()=>{}} openLyrics={()=>{}} />);
   expect(screen.getByRole('link',{name:'测试歌曲'})).toHaveAttribute('href','/albums/album');expect(screen.getByRole('link',{name:'测试歌手'})).toHaveAttribute('href','/artists/artist');
-  expect(screen.queryByRole('button',{name:'展开歌词播放器'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'展开完整播放器'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'展开歌词播放器'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'进入全屏'})).toBeInTheDocument();
 });
 
 it('disables management-grid dragging and keeps its content free of guidance text', () => {

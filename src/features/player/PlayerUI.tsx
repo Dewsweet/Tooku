@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, ListPlus, Maximize2, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, Disc3, Ellipsis } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, ListPlus, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, Disc3, Ellipsis } from 'lucide-react';
 import { Cover, Empty, IconButton, formatTime, useApi, toggleFavorite } from '../../components/Common';
 import { Modal } from '../../components/Modal';
 import { usePlayer, player } from './engine';
@@ -10,6 +10,7 @@ import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
 import type { Track } from '../../domain/models';
 import { AlbumLink, ArtistLinks } from '../../components/TrackLinks';
+import { FullscreenButton } from './FullscreenButton';
 
 export function Progress({ context = 'dock' }: { context?: 'dock' | 'room' }) {
   const position = usePlaybackPosition(); const duration = usePlayer((s) => s.duration); const entryId = usePlayer((s) => s.currentId);
@@ -67,7 +68,7 @@ export function PlayerBar({ openQueue, openLyrics, queueOpen = false }: { openQu
     <div className="dock-track"><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
       <div key={current?.entryId} className="dock-metadata"><strong>{current ? <AlbumLink track={current.track} title /> : '选择一首歌'}</strong><small>{current && <ArtistLinks track={current.track} resolve />}</small></div><Favorite track={current?.track} compact /></div>
     <div className="player-center"><Transport /><Progress /></div>
-    <div className="player-right"><IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton><Volume /><IconButton label="展开完整播放器" disabled={!current} onClick={openLyrics}><Maximize2 size={18} /></IconButton></div>
+    <div className="player-right"><IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton><Volume /><FullscreenButton disabled={!current} openPlayer={openLyrics} /></div>
     {state.error && <div className="player-error" role="alert"><span>{state.error}</span><button onClick={() => player.play()}>重试</button><button onClick={() => player.mode('compatible')}>兼容模式</button></div>}
   </footer>;
 }
@@ -113,7 +114,12 @@ export function LyricsPlayer({ onClose, addToPlaylist }: { onClose: () => void; 
     { label: '查看歌单', icon: <ListMusic size={16} />, disabled: !playlistId, action: () => { if (playlistId) showPage(`/playlists/${encodeURIComponent(playlistId)}`); } },
     { label: '添加到歌单', icon: <ListPlus size={16} />, divider: true, disabled: !track, action: () => { if (track) addToPlaylist(track); } },
   ];
-  return <Modal title="正在播放" variant="player" onClose={onClose} headerActions={<div className="player-lyric-actions" ref={setLyricToolbar} />}>
+  return <Modal title="正在播放" variant="player" onClose={onClose} headerActions={<><div className="player-lyric-actions" ref={setLyricToolbar} /><span className="player-toolbar-divider" aria-hidden="true" /><FullscreenButton /></>} onContextMenu={(event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('dialog') !== event.currentTarget) return;
+    if (target.closest('[role="menu"], [role="listbox"]')) { event.preventDefault(); event.stopPropagation(); return; }
+    menu(event, items);
+  }}>
     <div className="room-backdrop" aria-hidden="true"><Cover id={track?.coverArt} size={240} /></div>
     <div className="room-body"><section className="room-record" aria-label="当前歌曲"><div className="room-artwork-slot"><div key={track?.id} className="room-artwork"><Cover id={track?.coverArt} size={900} /><div className="artwork-sheen" /></div></div>
       <div className="room-song"><div key={track?.id} className="room-song-copy"><h1>{track?.title ?? '选择一首喜欢的歌'}</h1><p>{track?.artist ?? 'Tooku'}</p></div><div className="room-song-actions"><Favorite track={track} /><IconButton label="当前歌曲更多选项" aria-haspopup="menu" disabled={!track} onClick={(event) => menu(event, items)}><Ellipsis size={22} /></IconButton></div></div>

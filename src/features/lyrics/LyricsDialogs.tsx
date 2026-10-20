@@ -1,10 +1,9 @@
-import { useContext, useId, useMemo, useState } from 'react';
+import { useContext, useId, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Minus, Plus, RefreshCw, Search } from 'lucide-react';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { formatTime, IconButton, QueryState, useApi } from '../../components/Common';
-import { normalizeLyrics } from '../../domain/lyrics/normalize';
 import { providerNames, type LyricCandidate, type LyricEdit, type LyricLayout, type ProviderId } from '../../domain/lyrics/types';
 import type { Track } from '../../domain/models';
 import { describeTrack, LyricsApiContext, useLyrics } from './useLyrics';
@@ -19,10 +18,10 @@ export function LyricsSettingsDialog({ track, data, onSave, onSelect, onRecommen
   const canDisplay = Boolean(data.document && data.lyrics?.lines.length);
   const [tab, setTab] = useState<SettingsTab>(canDisplay ? 'display' : 'versions');
   const [draft, setDraft] = useState<LyricEdit>(data.edit ?? { layout: 'auto', hash: data.hash });
-  const preview = useMemo(() => data.document ? normalizeLyrics(data.document, draft) : undefined, [data.document, draft]);
   const id = useId();
   const offset = (delta: number) => setDraft((value) => ({ ...value, delayMs: Math.max(-600000, Math.min(600000, (value.delayMs ?? 0) + delta)) }));
   return <Modal title="歌词设置" className="lyrics-settings-modal" onClose={onClose}>
+    <div className="lyric-settings-body">
     <div className="lyric-settings-tabs" role="tablist" aria-label="歌词设置分类" onKeyDown={(event) => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       if (!canDisplay || !data.settings.enabled) return;
@@ -45,26 +44,34 @@ export function LyricsSettingsDialog({ track, data, onSave, onSelect, onRecommen
         <input id={`${id}-offset`} aria-label="歌词偏移秒数" type="number" min={-600} max={600} step={.1} value={Number(((draft.delayMs ?? 0) / 1000).toFixed(1))} onChange={(event) => { const seconds = Number(event.target.value); if (Number.isFinite(seconds)) setDraft({ ...draft, delayMs: Math.round(Math.max(-600, Math.min(600, seconds)) * 1000) }); }} /><span>秒</span>
         <IconButton label="歌词延后 0.1 秒" onClick={() => offset(100)}><Plus size={16} /></IconButton>
       </div></div>
-      <div className="lyric-preview" aria-label="歌词显示预览">{preview?.lines.filter((line) => line.text.trim()).slice(0, 3).map((line, i) => <p key={i}>{line.text}{draft.showRomanization && line.romanization?.map((text, j) => <span key={`r-${j}`}>{text}</span>)}{draft.showTranslation !== false && line.translation?.map((text, j) => <span key={j}>{text}</span>)}</p>)}</div>
       <footer className="lyric-dialog-footer"><button type="button" className="text-button" onClick={() => onSave()}>重置显示</button><button className="primary-button">保存</button></footer>
     </form>}
     {tab === 'versions' && <div id={`${id}-versions`} role="tabpanel" aria-labelledby={`${id}-versions-tab`}>
       <LyricVersions track={track} data={data} onSelect={onSelect} onRecommend={onRecommend} />
     </div>}
     <div className="lyric-reload-row"><button type="button" className="text-button" disabled={data.loading} onClick={onReload}><RefreshCw size={15} />刷新歌词</button></div>
+    </div>
   </Modal>;
 }
 function LyricVersions({ track, data, onSelect, onRecommend }: { track: Track; data: LyricsData; onSelect: (candidate: LyricCandidate) => void; onRecommend: (provider: ProviderId) => void }) {
   const api = useApi(); const network = useContext(LyricsApiContext);
   const [provider, setProvider] = useState<ProviderId>(data.source !== 'local' && data.settings.order.includes(data.source) ? data.source : data.settings.order[0]);
-  const [keyword, setKeyword] = useState(`${track.title} ${track.artist}`);
-  const [submitted, setSubmitted] = useState(keyword); const [attempt, setAttempt] = useState(0);
-  const query = useQuery({ queryKey: [api.identity, 'lyric-candidates', describeTrack(track), provider, submitted, attempt], retry: false, enabled: data.settings.enabled, queryFn: ({ signal }) => network.search(describeTrack(track), [provider], signal, true, submitted) });
+  const [title, setTitle] = useState(track.title.slice(0, 256));
+  const [artist, setArtist] = useState(track.artist.slice(0, 240));
+  const [submitted, setSubmitted] = useState({ title, artist }); const [attempt, setAttempt] = useState(0);
+  const query = useQuery({
+    queryKey: [api.identity, 'lyric-candidates', describeTrack(track), provider, submitted, attempt], retry: false, enabled: data.settings.enabled,
+    queryFn: ({ signal }) => network.search({ ...describeTrack(track), title: submitted.title, artists: submitted.artist ? [submitted.artist] : [] }, [provider], signal, true, `${submitted.title} ${submitted.artist}`.trim()),
+  });
   return <>
-    <form className="lyric-search" onSubmit={(event) => { event.preventDefault(); if (keyword.trim()) { setSubmitted(keyword.trim()); setAttempt((n) => n + 1); } }}>
-      <Select aria-label="歌词平台" value={provider} onChange={(value) => { if (value === 'netease' || value === 'qq') setProvider(value); }}>{data.settings.order.map((item) => <option key={item} value={item}>{providerNames[item]}</option>)}</Select>
-      <div className="lyric-search-field"><Search size={17} /><input aria-label="搜索歌词" value={keyword} maxLength={512} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault(); }} /></div>
-      <button className="subtle-button" disabled={!keyword.trim() || query.isFetching}>搜索</button>
+    <form className="lyric-search" onSubmit={(event) => { event.preventDefault(); if (title.trim()) { setSubmitted({ title: title.trim(), artist: artist.trim() }); setAttempt((n) => n + 1); } }} onKeyDown={(event) => { if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault(); }}>
+      <div className="lyric-search-tools"><Select aria-label="歌词平台" value={provider} onChange={(value) => { if (value === 'netease' || value === 'qq') setProvider(value); }}>{data.settings.order.map((item) => <option key={item} value={item}>{providerNames[item]}</option>)}</Select>
+        <button className="subtle-button" disabled={!title.trim() || query.isFetching}><Search size={16} />搜索</button>
+      </div>
+      <div className="lyric-search-fields">
+        <label>歌曲标题<input aria-label="歌词歌曲标题" value={title} maxLength={256} onChange={(event) => setTitle(event.target.value)} /></label>
+        <label>歌手<input aria-label="歌词歌手" value={artist} maxLength={240} onChange={(event) => setArtist(event.target.value)} /></label>
+      </div>
     </form>
     <QueryState pending={query.isPending && data.settings.enabled} error={null} pendingText="正在搜索歌词…" />
     {!query.isPending && !query.data?.candidates.length && <p className="lyric-empty">没有找到歌词版本</p>}

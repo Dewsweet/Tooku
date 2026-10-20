@@ -32,7 +32,7 @@ const originalLike = (text: string) => foreign(text) && !chinese(text);
 const credit = (text: string) => /^(?:作词|作曲|编曲|演唱|歌手|制作人?|混音|录音|母带|翻译|译者|歌词|词|曲|lyrics|composer|artist)\s*[:：]/i.test(text);
 const marker = (text: string) => text.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
 const instrumental = (text: string) => /^(?:纯音乐(?:请欣赏)?|此歌曲为没有填词的纯音乐(?:请您欣赏)?|instrumental(?:only)?|instrumentaltrack)$/.test(marker(text));
-const noLyrics = (text: string) => /^(?:暂无歌词|无歌词|没有歌词|此歌曲暂无歌词|该音乐没有歌词|nolyrics(?:available|found)?)$/.test(marker(text));
+const noLyrics = (text: string) => /^(?:暂无歌词|无歌词|没有歌词|此歌曲暂无歌词|该音乐没有歌词(?:请欣赏)?|nolyrics(?:available|found)?)$/.test(marker(text));
 const content = (line: LyricLine) => Boolean(line.text.trim()) && !credit(line.text);
 
 function inlineParts(text: string, separator?: string, manual = false, allowHan = false) {
