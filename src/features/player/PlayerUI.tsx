@@ -1,12 +1,12 @@
-import { Select } from '../../components/Select';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, Maximize2, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, SlidersHorizontal } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, ListPlus, Maximize2, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, Disc3, Ellipsis } from 'lucide-react';
 import { Cover, Empty, IconButton, formatTime, useApi, toggleFavorite } from '../../components/Common';
 import { Modal } from '../../components/Modal';
 import { usePlayer, player } from './engine';
 import { Lyrics } from './Lyrics';
-import { usePreferences } from '../../state/preferences';
+import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
 import type { Track } from '../../domain/models';
 import { AlbumLink, ArtistLinks } from '../../components/TrackLinks';
@@ -54,11 +54,11 @@ function Favorite({ track, compact = false }: { track?: Track; compact?: boolean
   return <IconButton label={starred ? '取消收藏当前歌曲' : '收藏当前歌曲'} disabled={!track || busy} aria-pressed={Boolean(starred)} className={`icon-button favorite-control ${compact ? 'compact' : ''}`} onClick={async () => { if (!track) return; setBusy(true); await toggleFavorite(api, { ...track, starred: starred ? 'true' : undefined }); setBusy(false); }}>{busy ? <LoaderCircle className="spin" size={19} /> : <Heart key={starred ? 'saved' : 'unsaved'} className={starred ? 'favorite-pop' : ''} size={20} fill={starred ? 'currentColor' : 'none'} />}</IconButton>;
 }
 
-function Volume({ room = false }: { room?: boolean }) {
+function Volume() {
   const volume = usePlayer((s) => s.volume); const supported = usePlayer((s) => s.volumeSupported); const previous = useRef(0.7);
   if (!supported) return <span className="volume-hint">使用系统音量</span>;
   const Icon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
-  return <div className={`volume-control ${room ? 'volume-room' : ''}`}><IconButton label={volume === 0 ? '取消静音' : '静音'} onClick={() => { if (volume > 0) { previous.current = volume; player.volume(0); } else player.volume(previous.current || 0.7); }}><Icon size={19} /></IconButton><input type="range" aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} min={0} max={1} step={0.01} value={volume} style={{ '--progress': `${volume * 100}%` } as CSSProperties} onChange={(e) => player.volume(Number(e.target.value))} /></div>;
+  return <div className="volume-control"><IconButton label={volume === 0 ? '取消静音' : '静音'} onClick={() => { if (volume > 0) { previous.current = volume; player.volume(0); } else player.volume(previous.current || 0.7); }}><Icon size={19} /></IconButton><input type="range" aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} min={0} max={1} step={0.01} value={volume} style={{ '--progress': `${volume * 100}%` } as CSSProperties} onChange={(e) => player.volume(Number(e.target.value))} /></div>;
 }
 
 export function PlayerBar({ openQueue, openLyrics, queueOpen = false }: { openQueue: () => void; openLyrics: () => void; queueOpen?: boolean }) {
@@ -92,19 +92,31 @@ export function Queue({ onClose }: { onClose: () => void }) {
   return <Modal title="播放队列" variant="queue" onClose={onClose}><QueueContents /></Modal>;
 }
 
-export function LyricsPlayer({ onClose }: { onClose: () => void }) {
-  const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId); const preferences = usePreferences();
-  const [panel, setPanel] = useState<'lyrics' | 'queue'>('lyrics'); const [options, setOptions] = useState(false);
+export function LyricsPlayer({ onClose, addToPlaylist }: { onClose: () => void; addToPlaylist: (track: Track) => void }) {
+  const state = usePlayer(); const track = state.entries.find((e) => e.entryId === state.currentId)?.track;
+  const api = useApi(); const menu = useContextMenu(); const navigate = useNavigate();
+  const detail = useQuery({ queryKey: [api.identity, 'song', track?.id], enabled: Boolean(track && (!track.albumId || !(track.artistId || track.artists?.some((artist) => artist.id)))), queryFn: ({ signal }) => api.song(track!.id, signal) });
+  const source = track && detail.data?.id === track.id ? {
+    ...track, ...detail.data,
+    albumId: detail.data.albumId ?? track.albumId,
+    artistId: detail.data.artistId ?? track.artistId,
+    artists: detail.data.artists?.some((artist) => artist.id) ? detail.data.artists : track.artists,
+  } : track;
+  const artists = source?.artists?.some((artist) => artist.id) ? source.artists : [{ id: source?.artistId, name: source?.artist ?? '' }];
+  const showPage = (path: string) => { onClose(); navigate(path); };
+  const items: MenuItem[] = [
+    { label: '查看专辑', icon: <Disc3 size={16} />, disabled: !source?.albumId, action: () => { if (source?.albumId) showPage(`/albums/${encodeURIComponent(source.albumId)}`); } },
+    ...artists.map((artist) => ({ label: artists.length > 1 ? `查看歌手 ${artist.name}` : '查看歌手', icon: <Mic2 size={16} />, disabled: !artist.id, action: () => { if (artist.id) showPage(`/artists/${encodeURIComponent(artist.id)}`); } })),
+    { label: '查看歌单', icon: <ListMusic size={16} />, action: () => showPage('/playlists') },
+    { label: '添加到歌单', icon: <ListPlus size={16} />, divider: true, disabled: !track, action: () => { if (track) addToPlaylist(track); } },
+  ];
   return <Modal title="正在播放" variant="player" onClose={onClose}>
-    <div className="room-backdrop" aria-hidden="true"><Cover id={current?.track.coverArt} size={240} /></div>
-    <div className="room-topline"><div className="room-tabs" role="tablist" aria-label="播放器内容"><button role="tab" aria-selected={panel === 'lyrics'} aria-controls="room-lyrics" onClick={() => setPanel('lyrics')}><Mic2 size={16} />歌词</button><button role="tab" aria-selected={panel === 'queue'} aria-controls="room-queue" onClick={() => setPanel('queue')}><ListMusic size={17} />队列</button></div></div>
-    <div className="room-body"><section className="room-record" aria-label="当前歌曲"><div key={current?.entryId} className={`room-artwork ${state.status === 'playing' ? 'is-playing' : ''}`}><Cover id={current?.track.coverArt} size={900} /><div className="artwork-sheen" /></div>
-      <div className="room-song"><div key={current?.entryId} className="room-song-copy"><h1>{current?.track.title ?? '选择一首喜欢的歌'}</h1><p>{current?.track.artist ?? 'Tooku'}</p></div><Favorite track={current?.track} /></div>
-      {state.status === 'blocked' && <div className="room-error" role="status">点击播放以继续</div>}
+    <div className="room-backdrop" aria-hidden="true"><Cover id={track?.coverArt} size={240} /></div>
+    <div className="room-body"><section className="room-record" aria-label="当前歌曲"><div className="room-artwork-slot"><div key={track?.id} className="room-artwork"><Cover id={track?.coverArt} size={900} /><div className="artwork-sheen" /></div></div>
+      <div className="room-song"><div key={track?.id} className="room-song-copy"><h1>{track?.title ?? '选择一首喜欢的歌'}</h1><p>{track?.artist ?? 'Tooku'}</p></div><div className="room-song-actions"><Favorite track={track} /><IconButton label="当前歌曲更多选项" aria-haspopup="menu" disabled={!track} onClick={(event) => menu(event, items)}><Ellipsis size={22} /></IconButton></div></div>
       <Progress context="room" /><Transport large />
-      <div className="room-extras"><Volume room /><IconButton label="歌词显示设置" aria-expanded={options} className={`icon-button ${options ? 'selected' : ''}`} onClick={() => setOptions(!options)}><SlidersHorizontal size={18} /></IconButton></div>
-      {options && <div className="room-options"><label>歌词字号<Select value={preferences.lyricSize} onChange={(value) => preferences.update({ lyricSize: Number(value) })}>{[24, 30, 36, 42].map((size) => <option key={size} value={size}>{size}</option>)}</Select></label><label>歌词延迟 · 毫秒<input type="number" step={100} min={-10000} max={10000} value={preferences.lyricDelay} onChange={(e) => preferences.update({ lyricDelay: Math.max(-10000, Math.min(10000, Number(e.target.value))) })} /></label></div>}
+      {state.status === 'blocked' && !state.error && <div className="room-error" role="status">点击播放以继续</div>}
       {state.error && <div className="room-error" role="alert"><p>{state.error}</p><button className="text-button" onClick={() => player.mode('compatible')}>使用兼容模式重试</button></div>}
-    </section><section className="room-content" id={panel === 'lyrics' ? 'room-lyrics' : 'room-queue'} role="tabpanel" aria-label={panel === 'lyrics' ? '歌词' : '队列'} key={panel}>{panel === 'lyrics' ? <Lyrics key={current?.track.id} track={current?.track} /> : <QueueContents embedded />}</section></div>
+    </section><section className="room-content" aria-label="歌词"><Lyrics key={track?.id} track={track} /></section></div>
   </Modal>;
 }

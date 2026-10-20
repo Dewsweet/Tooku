@@ -53,7 +53,7 @@ React 页面 / 通用控件
 | 左栏文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 横线排序、变色移入文件夹、末尾横线移到根目录；主体管理页不参与拖放 |
 | API 与统一模型 | `src/api/client.ts`、`src/domain/models.ts` | HTTP/业务错误分开，DTO 转换集中；不要照抄旧文档示意字段名 |
 | 播放引擎与算法 | `src/features/player/engine.ts`、`src/domain/queue.ts` | 单实例媒体、异步竞争、队列条目身份与有效收听 |
-| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx` | UI 发命令，不创建音频；完整播放器中的队列视图可保留 |
+| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx` | UI 发命令，不创建音频；展开界面只显示歌词，三点菜单集中歌曲操作 |
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`PanelResizeHandle.tsx` | 正在播放/队列共用右栏；分栏拖动条由 App 放在面板间隙 |
 | 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、几何居中、空闲恢复和偏移换算 |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
@@ -97,7 +97,7 @@ React 页面 / 通用控件
 
 复用 `IconButton` 的中文名称和应用 tooltip。使用 `data-tooltip` 提供其他提示，默认上方浮现、边缘翻转。统一菜单须在深浅主题中可读、可用 Esc 关闭、可通过键盘访问；弹窗内浮层不应被遮挡或变成不可点击。
 
-展开播放器采用柔化封面铺底，左侧大封面、歌曲信息与播放控制，右侧大字歌词；不显示品牌、歌词来源、动态歌词标签、音频格式、普通播放状态和底部下一首预告等小字。顶部保留歌词/队列切换，字号与延迟从显示设置调整，异常状态仍提供必要反馈。共用歌词仅在手动浏览时显示“同步”，闲置 5 秒后恢复自动跟随并收起按钮；第一句、最后一句和换行长句都应能居中。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
+展开播放器采用柔化封面铺底，左侧大封面、歌曲信息与播放控制，右侧大字歌词；不显示品牌、歌词来源、动态歌词标签、音频格式、普通播放状态和底部下一首预告等小字。左侧封面与控制区固定，按剩余空间缩放封面，任何窗口尺寸下均不依靠左侧或整个播放器滚动；窄屏改为固定上下分区。进度时间分别左、右对齐。仅右侧歌词容器滚动，右上角收起；不放歌词/队列切换、音量或歌词显示设置。收藏右侧三点按钮复用统一菜单，可查看专辑、歌手、歌单，以及打开已有添加歌单弹窗；页面跳转时收起播放器，不改变音频。缺少专辑/歌手 ID 时尝试已有 song 查询补全，仍缺失则禁用对应入口；不猜测当前歌曲所属歌单。异常状态仍提供必要反馈。共用歌词仅在手动浏览时显示“同步”，闲置 5 秒后恢复自动跟随并收起按钮；第一句、最后一句和换行长句都应能居中。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
 
 歌手图片写回入口集中在 `src/api/client.ts`：登录时仅对 Navidrome 尝试 `/auth/login`，原生 JWT 与角色只留会话内存，退出清除；密码只传给登录请求。`POST /api/artist/:id/image` 使用 `image` multipart 字段，`DELETE` 恢复默认，写前/后均读取 `/api/artist/:id`。HTTP 权限错误由 Navidrome 最终裁决，不自动重放上传；确认后的预览仅留查询内存，等待上游构建图片。`server/navidromeProxy.ts` 为开发/生产共用路径及方法白名单，仅新增登录与歌手图片所需路由；不开放其余原生管理接口。原生认证失败不阻断 Subsonic 登录，旧版服务器或直连 CORS 配置不支持时无法编辑。协议参照 [Navidrome v0.64.1 上传实现](https://github.com/navidrome/navidrome/blob/v0.64.1/server/nativeapi/artists.go)。
 

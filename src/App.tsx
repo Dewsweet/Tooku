@@ -87,7 +87,7 @@ export default function App() {
     {!compactPanel && prefs.sidePanel && <PanelResizeHandle />}{panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
     {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel view={queue ? 'queue' : 'now'} onViewChange={(view) => setQueue(view === 'queue')} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
     <div inert={mobile && menu || panelOverlay}><PlayerBar queueOpen={queue && panelVisible} openQueue={toggleQueue} openLyrics={() => currentId && setLyrics(true)} /></div>
-    {lyrics && <LyricsPlayer onClose={() => setLyrics(false)} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
+    {lyrics && <LyricsPlayer onClose={() => setLyrics(false)} addToPlaylist={setAdding} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
     {notice && <div className="toast" role="status">{notice}<IconButton label="关闭提示" onClick={() => useSession.getState().notify('')}><X size={17} /></IconButton></div>}
   </div>;
 }
