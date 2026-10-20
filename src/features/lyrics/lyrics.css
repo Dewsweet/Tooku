@@ -1,22 +1,59 @@
-.lyric-toolbar { display: flex; justify-content: flex-end; gap: 4px; align-items: center; flex-shrink: 0; padding: 0 4px 8px; }
-.lyric-toolbar .styled-select { width: auto; min-width: 100px; border: 0; background: transparent; font-size: 13px; }
-.lyric-toolbar .icon-button { width: 36px; height: 36px; }
+.lyric-toolbar, .player-lyric-actions { display: flex; justify-content: flex-end; gap: 4px; align-items: center; flex-shrink: 0; }
+.room-lyrics-panel > .lyric-toolbar { padding: 0 4px 8px; }
+.lyric-toolbar .icon-button { width: 36px; height: 36px; border-radius: 50%; color: var(--muted); }
+.lyric-toolbar .icon-button:hover, .lyric-toolbar .icon-button:focus-visible { background: var(--surface); color: var(--text); }
 .lyric-original, .lyric-translation, .lyric-romanization { display: block; }
 .lyric-translation { font-size: .64em; font-weight: 500; line-height: 1.6; margin-top: 8px; letter-spacing: 0; }
 .lyric-romanization { font-size: .56em; font-weight: 500; margin-top: 5px; letter-spacing: 0; }
-.lyric-search { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-.lyric-search input { flex: 1; min-width: 160px; width: auto; }
-.lyric-candidates { display: flex; flex-direction: column; max-height: 50dvh; overflow: auto; }
-.lyric-candidates button { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px 10px; color: var(--text); background: transparent; border-radius: 8px; }
+.modal.lyrics-settings-modal { width: 580px; padding: 26px; border-radius: 20px; }
+.lyrics-settings-modal > .modal-heading { border: 0; padding-bottom: 0; margin-bottom: 22px; }
+.lyrics-settings-modal > .modal-heading .icon-button { flex-shrink: 0; border-radius: 50%; }
+.lyric-settings-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); margin-bottom: 16px; }
+.lyric-settings-tabs button { flex: 1; border-radius: 9px; min-height: 36px; font-size: 14px; background: transparent; color: var(--muted); }
+.lyric-settings-tabs button[aria-selected=true] { background: var(--bg); color: var(--text); box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 8%, transparent); }
+.lyrics-settings-modal .lyric-settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr); flex-direction: row; gap: 20px; align-items: center; min-height: 62px; padding: 12px 0; margin: 0; border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 500; }
+.lyric-settings-row > label { margin: 0; font: inherit; }
+.lyric-settings-row .styled-select, .lyric-settings-row > input:not([type=checkbox]) { width: 100%; min-width: 0; }
+.lyric-settings-row .lyric-toggle { appearance: none; position: relative; justify-self: end; width: 38px; height: 23px; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--shell); cursor: pointer; }
+.lyric-toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; background: var(--bg); border-radius: 50%; box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 20%, transparent); }
+.lyric-settings-row .lyric-toggle:checked { background: var(--accent); border-color: var(--accent); }
+.lyric-toggle:checked::after { left: 18px; background: var(--accent-contrast); }
+.lyric-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.lyric-offset-control { display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
+.lyric-offset-control input { width: 72px; min-width: 0; text-align: center; padding: 8px 2px; border-color: transparent; background: transparent; font-variant-numeric: tabular-nums; appearance: textfield; }
+.lyric-offset-control input::-webkit-inner-spin-button { appearance: none; }
+.lyric-offset-control > span { color: var(--muted); font-size: 13px; margin-right: 4px; }
+.lyric-offset-control .icon-button { width: 30px; height: 30px; border-radius: 50%; background: var(--surface); flex-shrink: 0; }
+.lyric-preview { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-top: 18px; max-height: 200px; overflow: auto; white-space: pre-line; }
+.lyric-preview p { margin: 10px 0; font-size: 17px; line-height: 1.6; font-weight: 600; }
+.lyric-preview span { display: block; margin-top: 3px; color: var(--muted); font-size: 14px; font-weight: 400; }
+.lyric-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.lyric-dialog-footer > :only-child { margin-right: auto; }
+.lyric-dialog-footer .primary-button { min-width: 86px; }
+.lyric-reload-row { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; display: flex; justify-content: center; }
+.lyric-reload-row .text-button { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.lyric-search { display: flex; gap: 8px; margin: 20px 0 14px; flex-wrap: wrap; }
+.lyric-search > .styled-select { width: 114px; min-width: 0; }
+.lyric-search-field { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 140px; padding: 0 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; color: var(--muted); }
+.lyric-search-field:focus-within { border-color: var(--accent); }
+.lyric-search-field input { flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; padding: 10px 0; }
+.lyric-candidates { display: flex; flex-direction: column; max-height: 42dvh; overflow: auto; gap: 4px; }
+.lyric-candidates button { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; padding: 14px 12px; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 10px; }
 .lyric-candidates button:hover, .lyric-candidates button:focus-visible { background: var(--surface); }
-.lyric-candidates span { font-size: 13px; color: var(--muted); }
-.lyric-check { display: flex; align-items: center; gap: 10px; flex-direction: row; }
-.lyric-check input { width: auto; }
-.lyric-preview { background: var(--surface); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; max-height: 180px; overflow: auto; }
-.lyric-preview p { margin: 10px 0; }
-.lyric-preview span { display: block; margin-top: 4px; color: var(--muted); }
+.lyric-candidates button[aria-pressed=true] { background: var(--soft); border-color: color-mix(in srgb, var(--accent) 20%, transparent); }
+.lyric-version-copy { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
+.lyric-version-copy strong { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.lyric-version-copy > span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.lyric-version-duration { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lyric-candidates svg { color: var(--accent); flex-shrink: 0; }
+.lyric-empty { color: var(--muted); padding: 30px 12px; text-align: center; }
 .lyrics-service-row { gap: 12px; flex-wrap: wrap; }
 .lyrics-service-row > div { display: flex; align-items: center; gap: 12px; }
 .lyrics-service-row details { width: 100%; color: var(--muted); font-size: 13px; }
-.panel-module-lyrics .lyric-toolbar { padding-bottom: 0; }
 .panel-module-lyrics .lyric-translation { font-size: .72em; }
+@media (max-width: 540px) {
+  .modal.lyrics-settings-modal { padding: 20px; }
+  .lyrics-settings-modal .lyric-settings-row { grid-template-columns: minmax(0, .8fr) minmax(160px, 1fr); gap: 10px; }
+  .lyric-search-field { order: 1; flex-basis: 100%; }
+  .lyric-search > button:last-child { margin-left: auto; }
+}

@@ -48,14 +48,38 @@ it('does not use network for known instrumental tracks or when disabled', async 
   act(() => useLyricsProfiles.getState().update(api.identity, (s) => ({ ...s, enabled: false })));
   expect(network.search).not.toHaveBeenCalled();
 });
-it('requires manual choice for ambiguous search results and remembers the binding for this account', async () => {
+it('automatically takes a nearby edition and lets the listener override its binding', async () => {
   useLyricsProfiles.getState().update(api.identity, (s) => ({ ...s, order: ['netease'] }));
   vi.mocked(network.search).mockResolvedValue({ version: 1, candidates: [{ provider: 'netease', id: '123', title: 'Song', artists: ['Artist'], confident: false }], errors: [] });
   const { result } = renderHook(() => useLyrics(track), { wrapper });
-  await waitFor(() => expect(result.current.candidates).toHaveLength(1)); expect(network.lyrics).not.toHaveBeenCalled();
-  act(() => updateLyricChoice(api.identity, track.id, { mode: 'netease', bindings: { netease: '123' } }));
-  await waitFor(() => expect(result.current.source).toBe('netease'));
-  expect(network.lyrics).toHaveBeenCalledTimes(1); expect(useLyricsProfiles.getState().profiles['other-account']).toBeUndefined();
+  await waitFor(() => expect(result.current.source).toBe('netease')); expect(network.lyrics).toHaveBeenCalledTimes(1);
+  vi.mocked(network.lyrics).mockResolvedValue({ ...fetched, document: { ...fetched.document, recordId: '456' } });
+  act(() => updateLyricChoice(api.identity, track.id, { mode: 'netease', bindings: { netease: '456' } }));
+  await waitFor(() => expect(result.current.document?.recordId).toBe('456'));
+  expect(network.lyrics).toHaveBeenCalledTimes(2); expect(useLyricsProfiles.getState().profiles['other-account']).toBeUndefined();
+});
+it('tries the next provider when the first returns no lyric data', async () => {
+  vi.mocked(network.search).mockResolvedValueOnce({ version: 1, candidates: [], errors: [] }).mockResolvedValueOnce({ version: 1, candidates: [{ provider: 'qq', id: 'qq123', title: 'Song', artists: ['Artist'], durationMs: 185000 }], errors: [] });
+  vi.mocked(network.lyrics).mockResolvedValue({ ...fetched, document: { ...fetched.document, source: 'qq', recordId: 'qq123' } });
+  const view = renderHook(() => useLyrics(track), { wrapper });
+  await waitFor(() => expect(view.result.current.source).toBe('qq')); expect(network.search).toHaveBeenCalledTimes(2);
+});
+it('uses the next nearby candidate when the first candidate has an empty body', async () => {
+  vi.mocked(network.search).mockResolvedValue({ version: 1, candidates: ['123', '456'].map((id) => ({ provider: 'netease', id, title: 'Song', artists: ['Artist'], durationMs: 180000 })), errors: [] });
+  vi.mocked(network.lyrics).mockResolvedValueOnce({ ...fetched, document: { ...fetched.document, tracks: [] } }).mockResolvedValueOnce({ ...fetched, document: { ...fetched.document, recordId: '456' } });
+  const view = renderHook(() => useLyrics(track), { wrapper });
+  await waitFor(() => expect(view.result.current.document?.recordId).toBe('456')); expect(network.lyrics).toHaveBeenCalledTimes(2);
+});
+it('finishes with a quiet empty result when both providers return no data or fail', async () => {
+  vi.mocked(network.search).mockResolvedValueOnce({ version: 1, candidates: [], errors: [] }).mockRejectedValueOnce(new Error('provider unavailable'));
+  const view = renderHook(() => useLyrics(track), { wrapper });
+  await waitFor(() => expect(view.result.current.loading).toBe(false));
+  expect(network.search).toHaveBeenCalledTimes(2); expect(view.result.current.error).toBeNull(); expect(view.result.current.document).toBeUndefined();
+});
+it('treats local mode as local-first with fallback and reads legacy automatic modes compatibly', async () => {
+  updateLyricChoice(api.identity, track.id, { mode: 'local' });
+  const view = renderHook(() => useLyrics(track), { wrapper });
+  await waitFor(() => expect(view.result.current.source).toBe('netease')); expect(view.result.current.mode).toBe('local');
 });
 it('switches explicitly to network and back to local while applying edits only to an unchanged source', async () => {
   vi.mocked(api.lyrics).mockResolvedValue({ synced: false, offsetMs: 0, lines: [{ text: 'local' }] });

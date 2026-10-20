@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { IconButton } from './Common';
 
-export function Modal({ title, children, onClose, wide = false, variant = 'default', busy = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; variant?: 'default' | 'player' | 'queue'; busy?: boolean }) {
+export function Modal({ title, children, onClose, headerActions, className = '', wide = false, variant = 'default', busy = false }: { title: string; children: ReactNode; onClose: () => void; headerActions?: ReactNode; className?: string; wide?: boolean; variant?: 'default' | 'player' | 'queue'; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null); const close = useRef(onClose);
   const pending = useRef(busy); pending.current = busy;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -21,11 +21,11 @@ export function Modal({ title, children, onClose, wide = false, variant = 'defau
     dialog.addEventListener('cancel', cancel);
     return () => { clearTimeout(timer.current); timer.current = undefined; dialog.removeEventListener('cancel', cancel); dialog.close(); if (previous?.isConnected) previous.focus(); };
   }, []);
-  return <dialog ref={ref} className={`modal ${wide ? 'wide' : ''} modal-${variant} ${closing ? 'is-closing' : ''}`} aria-label={title} aria-busy={busy || undefined} onClick={(event) => {
+  return <dialog ref={ref} className={`modal ${wide ? 'wide' : ''} modal-${variant} ${closing ? 'is-closing' : ''} ${className}`} aria-label={title} aria-busy={busy || undefined} onClick={(event) => {
     if (event.target !== event.currentTarget || variant === 'player') return;
     const bounds = event.currentTarget.getBoundingClientRect();
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) requestClose.current();
   }}>
-    <header className="modal-heading"><h2>{title}</h2><IconButton label={variant === 'player' ? '收起播放器' : '关闭'} disabled={busy} onClick={() => requestClose.current()}>{variant === 'player' ? <ChevronDown size={25} /> : <X size={22} />}</IconButton></header>{children}
+    <header className="modal-heading"><h2>{title}</h2>{headerActions}<IconButton label={variant === 'player' ? '收起播放器' : '关闭'} disabled={busy} onClick={() => requestClose.current()}>{variant === 'player' ? <ChevronDown size={25} /> : <X size={22} />}</IconButton></header>{children}
   </dialog>;
 }

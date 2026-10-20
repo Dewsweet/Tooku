@@ -6,6 +6,43 @@ import { rankCandidates } from '../server/lyrics/matching';
 const document = (text: string): LyricDocument => ({ version: 1, source: 'local', recordId: 'song', tracks: [{ role: 'original', text }] });
 const edit = (layout: LyricLayout) => ({ layout, hash: 'test' });
 describe('bilingual lyric normalization', () => {
+  it.each([
+    ['English', 'I', 'Hello world'], ['French', 'À bientôt', 'Écoute-moi'], ['Russian', 'Привет', 'Добрый вечер'],
+    ['Greek', 'Καλημέρα', 'Σε αγαπώ'], ['Arabic', 'مرحبا', 'أحبك'], ['Thai', 'สวัสดี', 'ฉันรักคุณ'],
+    ['Vietnamese', 'Ở đây', 'Tôi yêu em'], ['Korean', '안녕하세요', '사랑해요'],
+  ])('groups four common bilingual formats for %s', (_language, first, second) => {
+    const samples = [
+      `[00:01]${first}  你好\n[00:03]${second}  世界`,
+      `[00:01]${first}/ 你好\n[00:03]${second}／世界`,
+      `[00:00]作词：示例\n[00:01]${first}\n[00:01]你好\n[00:02]\n[00:03]${second}\n[00:03]世界`,
+      `[00:01]${first}\n[00:03]${second}\n[00:01.10]你好\n[00:03.10]世界`,
+      `${first}\n${second}\n你好\n世界`,
+    ];
+    for (const sample of samples) {
+      const lyrics = normalizeLyrics(document(sample));
+      expect(lyrics.lines.find((line) => line.text === first)?.translation, sample).toEqual(['你好']);
+      expect(lyrics.lines.find((line) => line.text === second)?.translation, sample).toEqual(['世界']);
+    }
+  });
+  it('handles bilingual newlines inside structured tag fields with their original timestamps', () => {
+    const doc: LyricDocument = { version: 1, source: 'local', recordId: 'song', tracks: [{ role: 'original', offsetMs: -100, lines: [{ text: 'Écoute-moi\r\n听我说', startMs: 1000 }, { text: 'Привет\n你好', startMs: 3000 }] }] };
+    expect(normalizeLyrics(doc).lines).toEqual([{ text: 'Écoute-moi', startMs: 900, translation: ['听我说'] }, { text: 'Привет', startMs: 2900, translation: ['你好'] }]);
+  });
+  it('groups isolated well-formed lines and Japanese Han exceptions without losing unpaired text', () => {
+    const result = normalizeLyrics(document('[00:01]こんにちは/你好\n[00:03]さようなら / 再见\n[00:05]夢/梦想\n[00:07]unpaired'));
+    expect(result.lines.map((line) => line.text)).toEqual(['こんにちは', 'さようなら', '夢', 'unpaired']);
+    expect(result.lines[2].translation).toEqual(['梦想']);
+    expect(normalizeLyrics(document('Hello  my world    你好世界')).lines[0]).toEqual({ text: 'Hello  my world', translation: ['你好世界'] });
+    expect(normalizeLyrics(document('hello / 你好\nnormal sentence')).lines[0].translation).toEqual(['你好']);
+  });
+  it('does not pair an incomplete static translation block by shifting all following lines', () => {
+    const result = normalizeLyrics(document('hello\nworld\nagain\n你好\n世界'));
+    expect(result.lines.map((line) => line.text)).toEqual(['hello', 'world', 'again', '你好', '世界']);
+    expect(result.lines.some((line) => line.translation)).toBe(false);
+  });
+  it.each(['[00:00]纯音乐，请欣赏', '[00:00]此歌曲为没有填词的纯音乐，请您欣赏', '[00:00][Instrumental]', '[00:00]暂无歌词', '[00:00]No lyrics available', '[00:00]作曲：示例\n[00:01]'])('normalizes empty/placeholder lyrics to an empty body: %s', (text) => {
+    expect(normalizeLyrics(document(text)).lines).toEqual([]);
+  });
   it('parses BOM, metadata, entities, repeated timestamps and offsets without inventing timing', () => {
     expect(parseLyricTrack({ role: 'original', offsetMs: 100, text: '\ufeff[ar:test]\r\n[offset:500]\r\n[00:01.25][00:04]hello &amp; world\r\n[00:05]\r\nplain' })).toEqual([
       { text: 'hello & world', startMs: 850 }, { text: 'hello & world', startMs: 3600 }, { text: '', startMs: 4600 }, { text: 'plain' },
@@ -17,7 +54,7 @@ describe('bilingual lyric normalization', () => {
     expect(result.lines).toEqual([{ text: 'hello world', startMs: 1000, translation: ['你好世界'] }, { text: 'stay here', startMs: 2000, translation: ['留在这里'] }]);
   });
   it('preserves English spacing and Japanese Han text when language or layout is ambiguous', () => {
-    for (const text of ['one  two\nthree  four', '夢 / 世界\n自由 / 孤独', 'hello / 你好\nnormal sentence']) {
+    for (const text of ['one  two\nthree  four', '夢 / 世界\n自由 / 孤独']) {
       expect(normalizeLyrics(document(text)).lines.map((l) => l.text)).toEqual(text.split('\n'));
     }
   });
@@ -28,7 +65,8 @@ describe('bilingual lyric normalization', () => {
   });
   it('lets manual correction group static halves and a custom separator; original mode preserves text', () => {
     const raw = document('hello\nworld\n你好\n世界');
-    expect(normalizeLyrics(raw).lines).toHaveLength(4);
+    expect(normalizeLyrics(raw).lines).toHaveLength(2);
+    expect(normalizeLyrics(raw, edit('original')).lines).toHaveLength(4);
     expect(normalizeLyrics(raw, edit('halves')).lines).toEqual([{ text: 'hello', translation: ['你好'] }, { text: 'world', translation: ['世界'] }]);
     const inline = document('夢|梦想');
     expect(normalizeLyrics(inline, { ...edit('inline'), separator: '|' }).lines[0]).toEqual({ text: '夢', translation: ['梦想'] });
@@ -55,10 +93,11 @@ describe('bilingual lyric normalization', () => {
 describe('matching and persisted choices', () => {
   const track = { title: 'Song', artists: ['Artist'], album: 'Album', durationMs: 180000 };
   const candidate = { provider: 'netease' as const, id: '123', ...track };
-  it('automatically accepts a unique version, but rejects covers, live versions and missing duration', () => {
+  it('accepts nearby editions and strong metadata without duration, but rejects other songs and versions', () => {
     expect(rankCandidates(track, [candidate])[0].confident).toBe(true);
-    for (const change of [{ artists: ['Other'] }, { title: 'Song (Live)' }, { durationMs: undefined }]) expect(rankCandidates(track, [{ ...candidate, ...change }])[0].confident).toBe(false);
-    expect(rankCandidates(track, [candidate, { ...candidate, id: '456' }])[0].confident).toBe(false);
+    for (const change of [{ artists: ['Other'] }, { title: 'Song (Live)' }, { durationMs: 250000 }]) expect(rankCandidates(track, [{ ...candidate, ...change }])[0].confident).toBe(false);
+    expect(rankCandidates(track, [{ ...candidate, durationMs: undefined }])[0].confident).toBe(true);
+    expect(rankCandidates(track, [candidate, { ...candidate, id: '456', durationMs: 185000 }])[0].confident).toBe(true);
   });
   it('validates optional choices without allowing URLs, secrets or unknown schema fields', () => {
     expect(isLyricsSettings(defaultLyricsSettings)).toBe(true);

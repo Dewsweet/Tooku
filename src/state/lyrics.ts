@@ -19,5 +19,5 @@ export const useLyricsProfiles = create<LyricsProfiles>()(persist((set) => ({
   return { ...current, profiles };
 } }));
 export function updateLyricChoice(identity: string, id: string, patch: Partial<LyricChoice>) {
-  useLyricsProfiles.getState().update(identity, (s) => ({ ...s, tracks: { ...s.tracks, [id]: { ...s.tracks[id], mode: s.tracks[id]?.mode ?? 'auto', ...patch } } }));
+  useLyricsProfiles.getState().update(identity, (s) => ({ ...s, tracks: { ...s.tracks, [id]: { ...s.tracks[id], mode: s.tracks[id]?.mode ?? 'local', ...patch } } }));
 }

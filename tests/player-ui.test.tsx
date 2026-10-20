@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { MusicApi } from '../src/api/client';
+import { lyricsApi } from '../src/api/lyrics';
+import { useLyricsProfiles } from '../src/state/lyrics';
 import { useSession } from '../src/state/session';
 import { usePreferences } from '../src/state/preferences';
 import { player, usePlayer } from '../src/features/player/engine';
@@ -31,6 +33,7 @@ beforeEach(() => {
   vi.spyOn(api, 'song').mockResolvedValue({ id: 'a', title: '当前曲目', artist: '测试歌手' });
   vi.spyOn(api, 'lyrics').mockResolvedValue({ synced: true, offsetMs: 0, lines: [{ startMs: 0, text: '第一句测试歌词' }, { startMs: 10000, text: '第二句测试歌词' }] });
   useSession.getState().setSession(api); usePreferences.setState({ reducedMotion: true });
+  useLyricsProfiles.setState({ profiles: {}, refreshes: {} });
   document.documentElement.dataset.motion = 'reduced';
   usePlayer.setState({ ...usePlayer.getInitialState(), status: 'paused', position: 11, duration: 90, volume: 0.65, currentId: 'first', entries: [
     { entryId: 'first', source: { kind: 'playlist', id: 'playlist a' }, track: { id: 'a', title: '当前曲目', artist: '测试歌手', albumId: 'album a', artistId: 'artist a', duration: 90 } },
@@ -72,6 +75,59 @@ it('keeps the expanded player focused on lyrics and closes without changing play
   fireEvent.click(dialog.getByRole('button', { name: '收起播放器' }));
   expect(close).toHaveBeenCalledOnce();
   expect(usePlayer.getState().currentId).toBe('first'); expect(usePlayer.getState().position).toBe(11);
+});
+it('places three distinct lyric/source/collapse controls in the same player header', async () => {
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' });
+  const heading = screen.getByRole('button', { name: '收起播放器' }).closest('header')!;
+  expect(within(heading).getByRole('button', { name: '歌词来源：本地' })).toBeInTheDocument();
+  expect(within(heading).getByRole('button', { name: '歌词设置' })).toBeInTheDocument();
+  expect(heading.querySelectorAll('button')).toHaveLength(3);
+  fireEvent.click(within(heading).getByRole('button', { name: '歌词来源：本地' }));
+  const menu = screen.getByRole('menu');
+  expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['本地', '网易云', 'QQ 音乐']);
+  expect(within(menu).queryByText(/自动/)).not.toBeInTheDocument();
+});
+it('edits translation and offset together, retains playback and closes only the settings dialog', async () => {
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' });
+  fireEvent.click(screen.getByRole('button', { name: '歌词设置' }));
+  const dialog = within(screen.getByRole('dialog', { name: '歌词设置' }));
+  expect(dialog.getByRole('heading', { name: '歌词设置' })).toBeInTheDocument();
+  expect(dialog.getByRole('button', { name: '关闭' }).closest('header')?.parentElement).toBe(screen.getByRole('dialog', { name: '歌词设置' }));
+  fireEvent.change(dialog.getByRole('spinbutton', { name: '歌词偏移秒数' }), { target: { value: '0.4' } });
+  fireEvent.click(dialog.getByRole('checkbox', { name: '显示译文' }));
+  fireEvent.click(dialog.getByRole('button', { name: '保存' }));
+  expect(screen.queryByRole('dialog', { name: '歌词设置' })).not.toBeInTheDocument();
+  expect(useLyricsProfiles.getState().profiles[api.identity].tracks.a.edits?.local).toMatchObject({ delayMs: 400, showTranslation: false });
+  expect(usePlayer.getState().position).toBe(11); expect(screen.getByRole('dialog', { name: '正在播放' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '歌词设置' })).toHaveFocus();
+});
+it('opens version search in the same settings panel and binds a manually selected alternative', async () => {
+  vi.spyOn(lyricsApi, 'search').mockResolvedValue({ version: 1, candidates: [{ provider: 'netease', id: '456', title: '另一个版本', artists: ['测试歌手'], durationMs: 90000 }], errors: [] });
+  vi.spyOn(lyricsApi, 'lyrics').mockResolvedValue({ version: 1, document: { version: 1, source: 'netease', recordId: '456', tracks: [{ role: 'original', text: '[00:01]网络歌词' }] }, cached: false, stale: false });
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  await screen.findByRole('button', { name: '第一句测试歌词' }); fireEvent.click(screen.getByRole('button', { name: '歌词设置' }));
+  const dialog = within(screen.getByRole('dialog', { name: '歌词设置' }));
+  fireEvent.click(dialog.getByRole('tab', { name: '版本' }));
+  fireEvent.click(await dialog.findByRole('button', { name: /另一个版本/ }));
+  await screen.findByRole('button', { name: '网络歌词' });
+  expect(useLyricsProfiles.getState().profiles[api.identity].tracks.a.bindings).toEqual({ netease: '456' });
+  expect(usePlayer.getState().currentId).toBe('first'); expect(usePlayer.getState().position).toBe(11);
+});
+it.each([false, true])('shows the same simple text for empty lyrics and instrumental music (%s)', async (instrumental) => {
+  vi.mocked(api.lyrics).mockResolvedValue({ synced: false, offsetMs: 0, lines: [], instrumental });
+  vi.spyOn(lyricsApi, 'search').mockResolvedValue({ version: 1, candidates: [], errors: [] });
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  const empty = await screen.findByRole('heading', { name: '该音乐没有歌词' });
+  expect(empty.parentElement?.querySelector('svg')).toBeNull(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+it('does not display provider errors as a player failure when no network lyrics can be read', async () => {
+  vi.mocked(api.lyrics).mockResolvedValue({ synced: false, offsetMs: 0, lines: [] });
+  vi.spyOn(lyricsApi, 'search').mockRejectedValue(new Error('来源暂不可用'));
+  surface(<LyricsPlayer onClose={() => {}} addToPlaylist={() => {}} />);
+  await screen.findByRole('heading', { name: '该音乐没有歌词' }); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(lyricsApi.search).toHaveBeenCalledTimes(2);
 });
 it.each([
   ['查看专辑', '/albums/album%20a'],

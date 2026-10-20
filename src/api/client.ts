@@ -287,11 +287,14 @@ export class MusicApi {
         const data = await this.request('getLyricsBySongId', { id }, signal);
         const choices = list(object(data.lyricsList).structuredLyrics);
         const chinese = (lang: unknown) => typeof lang === 'string' && /^(?:zho|chi|cmn|zh)(?:$|[-_])/i.test(lang);
-        const romanized = (lang: unknown) => typeof lang === 'string' && /(?:latn|roma)/i.test(lang);
-        const chosen = choices.find((l) => l.synced === true && !chinese(l.lang) && !romanized(l.lang) && typeof l.lang === 'string') ?? choices.find((l) => l.synced === true && !romanized(l.lang)) ?? choices[0];
+        const romanized = (lang: unknown) => typeof lang === 'string' && (/(?:^|[-_])(?:romaji|romanization|romanisation|romanized|romanised|roma)(?:$|[-_])/i.test(lang) || /^(?:ja|jpn|ko|kor|zh|zho|chi|cmn|ru|rus|el|ell|gre|ar|ara|th|tha|hi|hin|he|heb|uk|ukr|bg|bul|sr|srp)[-_]latn(?:$|[-_])/i.test(lang));
+        const nativeForeign = (choice: DTO) => typeof choice.lang === 'string' && !chinese(choice.lang) && !romanized(choice.lang);
+        const chosen = choices.find((choice) => choice.synced === true && nativeForeign(choice))
+          ?? choices.find(nativeForeign) ?? choices.find((choice) => choice.synced === true && !romanized(choice.lang))
+          ?? choices.find((choice) => !romanized(choice.lang)) ?? choices[0];
         // OpenSubsonic positive offset means earlier; our internal positive delay means later.
         if (chosen) return { synced: chosen.synced === true, offsetMs: -(num(chosen.offset) ?? 0), lang: str(chosen.lang), lines: list(chosen.line).map((l) => ({ startMs: num(l.start), text: text(l.value, '') })), document: {
-          version: 1, source: 'local', recordId: id, tracks: choices.map((choice) => ({ role: choice !== chosen && chinese(choice.lang) && !chinese(chosen.lang) ? 'translation' : typeof choice.lang === 'string' && /(?:latn|roma)/i.test(choice.lang) ? 'romanization' : 'original', lang: str(choice.lang), offsetMs: -(num(choice.offset) ?? 0), lines: list(choice.line).map((l) => ({ startMs: num(l.start), text: text(l.value, '') })) })),
+          version: 1, source: 'local', recordId: id, tracks: choices.map((choice) => ({ role: choice !== chosen && romanized(choice.lang) ? 'romanization' : choice !== chosen && chinese(choice.lang) && !chinese(chosen.lang) ? 'translation' : 'original', lang: str(choice.lang), offsetMs: -(num(choice.offset) ?? 0), lines: list(choice.line).map((l) => ({ startMs: num(l.start), text: text(l.value, '') })) })),
         } };
       } catch (e) {
         // Only a declared unsupported protocol may fall back. Permission or transport

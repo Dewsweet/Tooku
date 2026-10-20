@@ -1,10 +1,22 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MusicApi, normalizeServer, authToken, track } from '../src/api/client';
+import { normalizeLyrics } from '../src/domain/lyrics/normalize';
 
 const ok = (data: Record<string, unknown> = {}) => new Response(JSON.stringify({ 'subsonic-response': { status: 'ok', ...data } }), { headers: { 'Content-Type': 'application/json' } });
 afterEach(() => vi.unstubAllGlobals());
 describe('Subsonic transport and contracts', () => {
+  it('keeps native Latin-script languages as originals and pairs static translations returned first', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok({ lyricsList: { structuredLyrics: [
+      { synced: false, lang: 'zho', line: [{ value: '听我说' }, { value: '你好' }] },
+      { synced: false, lang: 'fra-Latn', line: [{ value: 'Écoute-moi' }, { value: 'Bonjour' }] },
+    ] } })));
+    const api = new MusicApi('https://example.test', 'u', 'p'); api.extensions.set('songLyrics', [1]);
+    const lyrics = await api.lyrics('id', 'artist', 'title'); expect(lyrics.lang).toBe('fra-Latn');
+    expect(lyrics.document?.tracks.map((item) => item.role)).toEqual(['translation', 'original']);
+    if (!lyrics.document) throw new Error('Missing lyric document');
+    expect(normalizeLyrics(lyrics.document).lines).toEqual([{ text: 'Écoute-moi', translation: ['听我说'] }, { text: 'Bonjour', translation: ['你好'] }]);
+  });
   it('preserves base paths and rejects credentials in a URL', () => { expect(normalizeServer(' https://example.test/music/// ')).toBe('https://example.test/music'); expect(normalizeServer('/nd', 'http://localhost:5173')).toBe('http://localhost:5173/nd'); expect(() => normalizeServer('https://user:password@example.test')).toThrow(); expect(() => normalizeServer('https://example.test?token=secret')).toThrow(); expect(() => normalizeServer('file:///music')).toThrow(); });
   it('uses the protocol hash on UTF-8 raw password plus salt', () => { const password = ' 密码🎵 '; const salt = '测试salt'; expect(authToken(password, salt)).toBe(createHash('md5').update(password + salt, 'utf8').digest('hex')); });
   it('checks failed business envelopes even on HTTP 200 and does not expose server echoes', async () => { vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ 'subsonic-response': { status: 'failed', error: { code: 40, message: 'password=private' } } })))); const api = new MusicApi('https://example.test/music', 'user', 'private', 'salt'); await expect(api.request('ping')).rejects.toMatchObject({ code: 40, message: '用户名或密码不正确。' }); });
