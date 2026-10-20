@@ -42,6 +42,7 @@ React 页面 / 通用控件
 | 封面与头像 | `EntityArtwork.tsx`、`ProfileAvatar.tsx`、`AvatarEditor.tsx` | 歌单本地封面覆盖、加载失败回退；头像圆形预览，歌单与歌手图片方形预览 |
 | 歌曲/歌手独立链接 | `src/components/TrackLinks.tsx` | 歌曲在底栏跳专辑，歌手跳歌手；不要把整组信息包成同一个链接 |
 | 首页和搜索 | `src/pages/Home.tsx`、`Search.tsx` | 数据按当前曲库筛选，保留综合搜索分类和真实统计 |
+| 收藏与内容筛选 | `src/pages/Collection.tsx`、`src/components/FilterPills.tsx` | 收藏/主页共用圆角胶囊筛选；收藏歌手复用 `ArtistGrid`；三类空状态仅显示“还没有收藏的歌曲/专辑/歌手” |
 | 专辑与歌手页 | `src/pages/Library.tsx`、`ArtistDetail.tsx` | 专辑自动分批浏览；歌手横幅、播放与专辑区，保留当前库边界 |
 | 全站滚动条 | `src/components/ContentScrollbar.tsx`、`ScrollArea.tsx` | 中部、左栏和播放侧栏叠加贴边 8 px 滑块；监听滚动和内容尺寸，支持拖动、键盘及清理；弹窗/菜单使用 `src/scrollbars.css` 原生回退 |
 | 自动加载 | `src/components/AutoLoadMore.tsx` | 监听中部 `.content` 滚动容器；接近底部预读，失败时停止，卸载清理监听 |
@@ -80,6 +81,7 @@ React 页面 / 通用控件
 
 - 歌曲标题及播放按钮有明确入口；双击行空白是补充操作，不拦截歌手、专辑等链接的自身语义。
 - 表格使用同一底色，仅悬停/选中反馈；列宽可调。加入队列、下一首、添加歌单、移动等操作进统一右键菜单，行尾只留收藏。
+- 收藏页的歌曲、专辑、歌手筛选与主页共用 `FilterPills`，保留键盘焦点与按下状态，支持窄屏换行。三类内容分别复用歌曲表格、专辑网格、圆形图片加姓名的歌手网格；空状态仅显示“还没有收藏的歌曲/专辑/歌手”，不加引导小字。收藏歌手保留接口返回的 `coverArt`，复用已有自定义图片与加载失败回退。
 - 普通歌单详情采用播放、随机、更多选项的操作组；点击封面进入信息编辑，不使用单独曲目编辑页。
 - 有权限的歌单可在列表直接拖动保存，重复歌曲保留；失败后可重读核实，支持撤销上次已保存修改。
 - 左栏歌单区的新建图标创建歌单，可选择文件夹，留空为根目录；管理页在根目录或文件夹内就地创建歌单/文件夹。
@@ -160,6 +162,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
 | `src/components/content-scrollbar.css`、`src/scrollbars.css` | 主浏览区/侧栏浮动滚动条、其余滚动区域原生回退 |
 | `src/pages/home.css` | 独立主页 |
+| `src/components/filter-pills.css` | 主页/收藏共用圆角筛选，含选中、悬停、窄屏与减少动态效果 |
 | `src/pages/album-browse.css`、`artist-detail.css` | 专辑自动加载表面、歌手横幅及详情布局 |
 
 这是一份现状地图，不要求继续把所有业务样式堆进通用文件。按任务逐步收敛组件的样式责任，避免重复规则、不断追加覆盖和大范围 `!important`。修改表格断点时结合主体容器宽度，不能只看整个 viewport。
@@ -183,6 +186,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 全站浮动滚动条几何、拖动、键盘及清理 | `tests/content-scrollbar.test.tsx` |
 | 歌手横幅、缺图、管理员上传/旧图清理、播放及切页取消 | `tests/artist-detail.test.tsx` |
 | 歌手封面稳定回退、组合名搜索和来源候选解析 | `tests/artist-artwork.test.ts` |
+| 收藏分类空状态、歌手卡片/图片回退和接口图片字段 | `tests/favorites.test.tsx` |
 | 原生图片认证、管理员权限、写后核实、结果未知和并发写入保护、代理白名单 | `tests/artist-image-api.test.ts` |
 | Windows 端口回退 | `tests/startup.test.mjs` |
 | 服务端身份、SQLite、限额、备份、重启 | `tests/user-data.test.ts` |

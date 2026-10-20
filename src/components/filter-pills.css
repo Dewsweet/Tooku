@@ -1,0 +1,7 @@
+.filter-pills { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 27px; }
+.filter-pills button { font-size: 13px; padding: 9px 18px; background: color-mix(in srgb, var(--bg) 66%, transparent); color: var(--text); border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 22px; }
+.filter-pills button[aria-pressed=true] { background: var(--text); color: var(--bg); border-color: transparent; box-shadow: 0 3px 9px #0000000a; }
+@media (hover: hover) { .filter-pills button:hover { transform: translateY(-1px); } }
+@media (max-width: 767px) { .filter-pills { margin-bottom: 23px; } }
+@media (prefers-reduced-motion: reduce) { .filter-pills button:hover { transform: none; } }
+:root[data-motion=reduced] .filter-pills button:hover { transform: none; }

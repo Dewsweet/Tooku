@@ -251,7 +251,7 @@ export class MusicApi {
   }
   async favorites(signal?: AbortSignal, musicFolderId?: string) {
     const data = object((await this.request('getStarred2', { musicFolderId }, signal)).starred2);
-    return { songs: list(data.song).map(track), albums: list(data.album).map(album), artists: list(data.artist).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手') })) };
+    return { songs: list(data.song).map(track), albums: list(data.album).map(album), artists: list(data.artist).map((a) => ({ id: text(a.id, ''), name: text(a.name, '未知歌手'), coverArt: str(a.coverArt) })) };
   }
   async star(id: string, starred: boolean, kind: 'song' | 'album' | 'artist' = 'song') {
     return this.request(starred ? 'unstar' : 'star', { [kind === 'song' ? 'id' : `${kind}Id`]: id }, undefined, true);

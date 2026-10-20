@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, Heart, ListMusic, Play, Clock3, Pause } from 'lucide-react';
 import { AlbumGrid, Cover, Empty, QueryState, useApi } from '../components/Common';
 import { ArtistGrid } from '../components/ArtistGrid';
+import { FilterPills } from '../components/FilterPills';
 import { player, usePlayer } from '../features/player/engine';
 import { playlistPlacement, useMusicLibrary } from '../state/library';
 import { useSession, errorMessage } from '../state/session';
@@ -27,7 +28,7 @@ export function Home() {
     try { const data = await api.playlist(playlist.id); if (data.songs.length) player.replace(data.songs); else useSession.getState().notify('这张歌单还没有歌曲。'); }
     catch (error) { useSession.getState().notify(errorMessage(error)); } finally { setBusy(null); }
   }
-  return <div className="home-page"><div className="home-filters" role="group" aria-label="主页内容">{([['all', '全部'], ['playlists', '歌单'], ['albums', '专辑'], ['artists', '歌手']] as const).map(([value, name]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{name}</button>)}</div>
+  return <div className="home-page"><FilterPills label="主页内容" options={([['all', '全部'], ['playlists', '歌单'], ['albums', '专辑'], ['artists', '歌手']] as const)} value={filter} onChange={setFilter} />
     <header className="home-welcome"><div><h1>现在就听</h1><p>{active?.name ?? '你的音乐'}{stats.length > 0 && <span> · {stats.join(' · ')}</span>}</p></div></header>
     <QueryState pending={libraryPending} error={libraryError} retry={() => reloadLibraries()} />
     {overview.error && <button className="overview-retry text-button" onClick={() => overview.refetch()}>概览暂不可用，点击重试</button>}

@@ -1,9 +1,5 @@
 .workspace-shell .content:has(.home-page) { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, var(--bg)) 0, var(--bg) 380px); }
 .home-page { min-width: 0; }
-.home-filters { display: flex; align-items: center; gap: 8px; margin-bottom: 27px; }
-.home-filters button { font-size: 13px; padding: 9px 18px; background: color-mix(in srgb, var(--bg) 66%, transparent); color: var(--text); border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 22px; }
-.home-filters button[aria-pressed=true] { background: var(--text); color: var(--bg); border-color: transparent; box-shadow: 0 3px 9px #0000000a; }
-.home-filters button:hover { transform: translateY(-1px); }
 .home-welcome { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin-bottom: 25px; }
 .workspace-shell .home-welcome h1 { font-size: clamp(28px, 2.8vw, 38px); font-weight: 760; letter-spacing: -1.3px; margin-bottom: 10px; }
 .home-welcome p { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.8; }
@@ -48,7 +44,6 @@
 @media (min-width: 1650px) { .home-playlist-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media (max-width: 950px) { .home-shortcuts { gap: 8px; } .shortcut-art { width: 42px; } .home-shortcuts > a { gap: 8px; } .home-shortcuts > a > svg { display: none; } .home-shortcuts strong { font-size: 12px; } }
 @media (max-width: 767px) {
-  .home-filters { margin-bottom: 23px; }
   .home-welcome { align-items: flex-start; flex-direction: column; gap: 10px; }
   .home-welcome p > span { display: block; font-size: 12px; }
   .home-library-button { font-size: 12px; }
