@@ -79,6 +79,8 @@ node tests/fixtures/server.mjs
 
 当前为 React + TypeScript + Vite 网页应用及 Node.js / SQLite 用户数据服务，以 Subsonic / OpenSubsonic 为音乐数据协议，使用常驻 HTMLAudioElement 播放。持久化、迁移与备份恢复已接入，后续继续完善歌单权限、界面反馈、播放稳定性和部署。拼音搜索、双语/逐词歌词、PWA 和高级音频实验保留为后续功能；这些规划尚不代表已经实现。
 
+网络与双语歌词的设计见 [独立歌词组件方案](docs/15-lyrics-service-design.md)：歌词系统属于 Tooku，随 Tooku 启动，默认本地优先、缺失自动联网，并支持手动选择来源。当前仅完成方案，尚未接入网络服务或新增设置入口。
+
 核心差异化：中文输入与检索体验、精致且可降级的歌词页、明确可控的播放队列、稳定的连续听歌流程。首页内容来自用户自己的音乐库。
 
 ## 文档入口
@@ -89,6 +91,7 @@ node tests/fixtures/server.mjs
 | [开发接入指南](docs/12-agent-development-guide.md) | 当前模块地图、数据归属、组件复用、任务路径与验证尺度 |
 | [服务端持久化](docs/13-server-persistence.md) | 账号验证、SQLite、迁移、冲突、备份恢复及部署 |
 | [歌手图片补齐试验](docs/14-artist-artwork-experiment.md) | 专辑封面兜底、组合名处理及网易云/QQ 公开样本比较 |
+| [独立歌词组件方案](docs/15-lyrics-service-design.md) | 未实现的网络歌词、双语配对、来源选择、状态与存储设计及分阶段计划 |
 | [项目调研](docs/01-research.md) | 参考项目、来源、复用取舍、许可证事实 |
 | [产品需求](docs/02-product-requirements.md) | 用户场景、功能优先级、首版范围 |
 | [交互与视觉](docs/03-design.md) | 信息架构、页面布局、播放器与中文规范 |
