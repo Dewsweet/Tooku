@@ -14,7 +14,7 @@ it('bounds the thumb within the track and hides scrolling for a short page', () 
   expect(scrollThumbGeometry(400, 200, 0).range).toBe(0);
   const top = scrollThumbGeometry(400, 1600, 0);
   const end = scrollThumbGeometry(400, 1600, 1200);
-  expect(top.top).toBe(0); expect(end.top + end.thumb).toBe(392);
+  expect(top.top).toBe(0); expect(end.top + end.thumb).toBe(400);
   expect(scrollThumbGeometry(400, 1600, 9999).top).toBe(end.top);
 });
 
@@ -33,7 +33,7 @@ it('supports keyboard scrolling and thumb dragging in the existing viewport', as
   await waitFor(() => expect(thumb).toHaveAttribute('aria-valuenow', '1200'));
   fireEvent.keyDown(thumb, { key: 'Home' }); expect(viewport.scrollTop).toBe(0);
   fireEvent.pointerDown(thumb, { button: 0, clientY: 20 });
-  fireEvent.pointerMove(thumb, { clientY: 118 });
+  fireEvent.pointerMove(thumb, { clientY: 120 });
   expect(viewport.scrollTop).toBe(400);
   fireEvent.pointerUp(thumb);
   view.unmount();

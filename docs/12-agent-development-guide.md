@@ -43,7 +43,7 @@ React 页面 / 通用控件
 | 歌曲/歌手独立链接 | `src/components/TrackLinks.tsx` | 歌曲在底栏跳专辑，歌手跳歌手；不要把整组信息包成同一个链接 |
 | 首页和搜索 | `src/pages/Home.tsx`、`Search.tsx` | 数据按当前曲库筛选，保留综合搜索分类和真实统计 |
 | 专辑与歌手页 | `src/pages/Library.tsx`、`ArtistDetail.tsx` | 专辑自动分批浏览；歌手横幅、播放与专辑区，保留当前库边界 |
-| 歌手滚动条 | `src/components/ContentScrollbar.tsx` | 在原 `.content` 外叠加滑块；监听滚动和内容尺寸，支持拖动、键盘及清理 |
+| 全站滚动条 | `src/components/ContentScrollbar.tsx`、`ScrollArea.tsx` | 中部、左栏和播放侧栏叠加贴边 8 px 滑块；监听滚动和内容尺寸，支持拖动、键盘及清理；弹窗/菜单使用 `src/scrollbars.css` 原生回退 |
 | 自动加载 | `src/components/AutoLoadMore.tsx` | 监听中部 `.content` 滚动容器；接近底部预读，失败时停止，卸载清理监听 |
 | 歌单管理与详情 | `src/features/library/PlaylistViews.tsx` | 直接排序、随机播放、撤销、只读判断；详情通过 key 隔离每张歌单的编辑状态 |
 | 歌单信息弹窗 | `src/features/library/PlaylistDetailsEditor.tsx` | 名称/简介写 Navidrome，封面写 Tooku 本地配置 |
@@ -72,7 +72,7 @@ React 页面 / 通用控件
 - 设置通过头像菜单进入，菜单可快速切换真实曲库；右侧版块配置按钮不属于新增账户设置入口。
 - 独立歌曲页已取消，旧 `/songs` 兼容地址转到 `/search?type=songs`。主页筛选为全部、歌单、专辑、歌手；歌手卡片复用 `components/ArtistGrid.tsx` 并进入现有歌手详情页。主页不显示底部曲库名与“浏览所有歌曲”小字。综合搜索保留歌曲分类，已有歌曲默认视图配置在主页回退到全部，不改写存储数据。
 - 专辑页沿用每批 30 张的接口，在距中部滚动区底部 600px 时自动读取下一批，不显示“加载更多”按钮；小曲库自然读完，大曲库随滚动继续读取。延迟加载封面、跳过屏外卡片绘制，重复整页停止追加；后续批次失败保留已有内容，只由用户重试。
-- 歌手列表保持圆形卡片；详情统一为柔化背景、方形前景图片、大号歌手名、播放/随机/收藏和专辑区。自定义图片优先，悬停/键盘聚焦显示“选择照片”，点击打开文件选择与共享裁剪弹窗；右键可恢复默认图片。歌手图使用 `getArtist` 明确返回的 `coverArt` 经 `MusicApi.coverUrl` 生成图片地址；缺图/图片失败依次尝试该歌手本库专辑封面、主题渐变；专辑封面以方形主体和柔化横幅展示，不作为真实歌手照。封面按稳定专辑 ID 选择，排除明确属于其他专辑歌手的记录，所有图片失败后停止重试。播放和专辑区使用纯色背景。歌手路由的主浏览区隐藏原生滚动条，由 `ContentScrollbar` 在右缘叠加无箭头、透明轨道和半透明滑块，不占内容宽度，也不替换滚动容器；支持轨道点击、拖动、方向键、翻页键及 Home/End。Navidrome 的图片源取决于服务端本地图与外部元数据设置，当前页面只读取本地自定义图片和 Navidrome 图片，不存图片认证 URL；联网来源仅通过独立脚本试验，尚未自动接入页面。播放仅在主动点击后读取本库歌手专辑，全部成功后统一交给 `player`，切页/切库取消未完成操作。
+- 歌手列表保持圆形卡片；详情统一为柔化背景、方形前景图片、大号歌手名、播放/随机/收藏和专辑区。旧版私人图片仍优先展示；管理员原生会话可悬停/键盘聚焦显示“选择照片”，点击打开文件选择与共享裁剪弹窗。新图由 `MusicApi.saveArtistImage` 上传 Navidrome，读回核实后清除该歌手的旧私人覆盖；不批量迁移，不写 Tooku 账号文档。右键可恢复服务器默认、重新读取或移除旧私人图片。写入结果未知时停止写入，先“重新读取”再人工核实。歌手图使用 `getArtist` 明确返回的 `coverArt` 经 `MusicApi.coverUrl` 生成图片地址；缺图/图片失败依次尝试该歌手本库专辑封面、主题渐变；专辑封面以方形主体和柔化横幅展示，不作为真实歌手照。封面按稳定专辑 ID 选择，排除明确属于其他专辑歌手的记录，所有图片失败后停止重试。播放和专辑区使用纯色背景。所有路由的主浏览区隐藏原生滚动条，由 `ContentScrollbar` 在右缘叠加无箭头、透明轨道和 8 px 半透明滑块，贴边且悬停变亮，不占内容宽度，也不替换主滚动容器；左栏与播放侧栏复用 `ScrollArea`，弹窗、菜单、横向表格使用全站原生回退样式；支持轨道点击、拖动、方向键、翻页键及 Home/End。Navidrome 的图片源取决于服务端本地图与外部元数据设置，当前页面展示旧版私人图片与 Navidrome 图片，管理员可手动上传到 Navidrome，不存图片认证 URL；联网来源仅通过独立脚本试验，尚未自动接入页面。播放仅在主动点击后读取本库歌手专辑，全部成功后统一交给 `player`，切页/切库取消未完成操作。
 - 底栏可显示当前歌曲的小封面；左栏底部不再放独立的大封面或额外暂停按钮。
 - 右栏队列不是第二份播放状态；其“当前播放 / 接下来”应反映引擎真实队列。
 
@@ -93,13 +93,15 @@ React 页面 / 通用控件
 
 歌词按钮文案为“同步”。手动滚动后停止自动追踪，闲置 5 秒后恢复；第一句、最后一句和换行长句都应能居中。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
 
+歌手图片写回入口集中在 `src/api/client.ts`：登录时仅对 Navidrome 尝试 `/auth/login`，原生 JWT 与角色只留会话内存，退出清除；密码只传给登录请求。`POST /api/artist/:id/image` 使用 `image` multipart 字段，`DELETE` 恢复默认，写前/后均读取 `/api/artist/:id`。HTTP 权限错误由 Navidrome 最终裁决，不自动重放上传；确认后的预览仅留查询内存，等待上游构建图片。`server/navidromeProxy.ts` 为开发/生产共用路径及方法白名单，仅新增登录与歌手图片所需路由；不开放其余原生管理接口。原生认证失败不阻断 Subsonic 登录，旧版服务器或直连 CORS 配置不支持时无法编辑。协议参照 [Navidrome v0.64.1 上传实现](https://github.com/navidrome/navidrome/blob/v0.64.1/server/nativeapi/artists.go)。
+
 ## 5. 数据归属与当前限制
 
 | 数据 | 当前保存位置 | 作用域 / 事实 |
 | --- | --- | --- |
-| 音乐文件、专辑、歌手、服务器收藏 | Navidrome | 以服务器授权和返回值为准 |
+| 音乐文件、专辑、歌手、新上传的歌手图片、服务器收藏 | Navidrome | 以服务器授权和返回值为准 |
 | 歌单名称、简介、曲目和曲序 | Navidrome | Tooku 通过协议读写并核实 |
-| 头像、自定义歌单封面及歌手图片 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-profiles` | 本地按 `api.identity`，服务端按已验证 owner；处理后的 data URL 不上传 Navidrome |
+| 头像、自定义歌单封面及旧版私人歌手图片 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-profiles` | 本地按 `api.identity`，服务端按已验证 owner；旧版 data URL 不自动上传 Navidrome |
 | 文件夹、歌单位置/混排、曲库视图与选中库 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
 | 明暗、主题色、布局、列宽、歌词和快捷键偏好 | SQLite 账号文档 / IndexedDB sync；`tooku-preferences` 作为当前偏好与设备回退 | 切号还原设备回退，账号修改存在各自 sync 缓存 |
 | 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
@@ -156,7 +158,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/browse.css` | 统一选择器、头像裁剪、实体封面、搜索、队列等浏览表面 |
 | `src/interactions.css` | 菜单/tooltip、分栏与列宽手柄、当前歌单/目录及歌手过渡样式 |
 | `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
-| `src/components/content-scrollbar.css` | 歌手浏览区浮动滚动条 |
+| `src/components/content-scrollbar.css`、`src/scrollbars.css` | 主浏览区/侧栏浮动滚动条、其余滚动区域原生回退 |
 | `src/pages/home.css` | 独立主页 |
 | `src/pages/album-browse.css`、`artist-detail.css` | 专辑自动加载表面、歌手横幅及详情布局 |
 
@@ -178,9 +180,10 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 菜单、提示、焦点 | `tests/interactions.test.tsx` |
 | 专辑播放入口 | `tests/albums.test.tsx` |
 | 专辑自动分页、失败重试、重复页 | `tests/album-browse.test.tsx` |
-| 歌手滚动条几何、拖动、键盘及清理 | `tests/content-scrollbar.test.tsx` |
-| 歌手横幅、缺图、上传/恢复默认、播放及切页取消 | `tests/artist-detail.test.tsx` |
+| 全站浮动滚动条几何、拖动、键盘及清理 | `tests/content-scrollbar.test.tsx` |
+| 歌手横幅、缺图、管理员上传/旧图清理、播放及切页取消 | `tests/artist-detail.test.tsx` |
 | 歌手封面稳定回退、组合名搜索和来源候选解析 | `tests/artist-artwork.test.ts` |
+| 原生图片认证、管理员权限、写后核实、结果未知和并发写入保护、代理白名单 | `tests/artist-image-api.test.ts` |
 | Windows 端口回退 | `tests/startup.test.mjs` |
 | 服务端身份、SQLite、限额、备份、重启 | `tests/user-data.test.ts` |
 | 迁移确认、离线、冲突、账号偏好隔离 | `tests/user-sync.test.ts` |

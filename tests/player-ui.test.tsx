@@ -8,6 +8,17 @@ import { player, usePlayer } from '../src/features/player/engine';
 import { LyricsPlayer, PlayerBar, Progress } from '../src/features/player/PlayerUI';
 import { Modal } from '../src/components/Modal';
 
+it('does not start dismissing a busy modal and can close again after saving fails', () => {
+  const close = vi.fn();
+  const view = render(<Modal title="保存图片" busy onClose={close}><p>正在保存</p></Modal>);
+  fireEvent(screen.getByRole('dialog', { name: '保存图片' }), new Event('cancel', { cancelable: true }));
+  expect(close).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog')).not.toHaveClass('is-closing');
+  view.rerender(<Modal title="保存图片" onClose={close}><p>保存失败</p></Modal>);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
 let api: MusicApi; let client: QueryClient;
 beforeEach(() => {
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });

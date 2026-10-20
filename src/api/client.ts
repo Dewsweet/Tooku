@@ -53,12 +53,17 @@ export class MusicApi {
   #auth: { u: string; t: string; s: string };
   #abort = new AbortController();
   #userData: UserDataApi | null = null;
+  #nativeToken = '';
+  #nativeAdmin = false;
+  #uncertainArtistImages = new Set<string>();
+  #writingArtistImages = new Set<string>();
+  get canEditArtistImages() { return Boolean(this.#nativeToken && this.#nativeAdmin); }
   constructor(readonly base: string, readonly username: string, password: string, salt?: string) {
     const random = salt ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
     this.#auth = { u: username, t: authToken(password, random), s: random };
     this.identity = `${base}|${username}`;
   }
-  dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; }
+  dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; this.#nativeToken = ''; this.#nativeAdmin = false; this.#uncertainArtistImages.clear(); this.#writingArtistImages.clear(); }
   async userData() {
     if (this.base !== `${window.location.origin}/nd`) return null;
     this.#userData?.dispose();
@@ -80,7 +85,7 @@ export class MusicApi {
     const args = this.#params(params); args.delete('f');
     return `${this.base}/rest/${method}.view?${args}`;
   }
-  coverUrl(id?: string, size = 400) { return id ? this.mediaUrl('getCoverArt', { id, size }) : undefined; }
+  coverUrl(id?: string, size = 400, revision?: number) { return id ? this.mediaUrl('getCoverArt', { id, size, _: revision }) : undefined; }
   streamUrl(id: string, mode: 'original' | 'compatible') {
     return this.mediaUrl('stream', { id, ...(mode === 'compatible' ? { format: 'mp3', maxBitRate: 320 } : {}) });
   }
@@ -110,7 +115,7 @@ export class MusicApi {
     }
     return result;
   }
-  async connect() {
+  async connect(password?: string) {
     const ping = await this.request('ping');
     try {
       const ext = await this.request('getOpenSubsonicExtensions');
@@ -118,7 +123,75 @@ export class MusicApi {
         if (typeof item.name === 'string' && Array.isArray(item.versions)) this.extensions.set(item.name, item.versions.filter((v): v is number => typeof v === 'number'));
       }
     } catch { /* optional detection must not block a valid login */ }
+    if (str(ping.type)?.toLowerCase() === 'navidrome' && password !== undefined) {
+      try {
+        const response = await fetch(`${this.base}/auth/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: this.username, password }),
+          credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
+          signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(12000)]),
+        });
+        if (response.ok) {
+          const data = object(await response.json());
+          if (!this.#abort.signal.aborted && typeof data.token === 'string' && data.token && typeof data.isAdmin === 'boolean') {
+            this.#nativeToken = data.token; this.#nativeAdmin = data.isAdmin;
+          }
+        }
+      } catch { /* Native artwork authentication is optional; listening must remain available. */ }
+    }
     return text(ping.serverVersion, '版本未知');
+  }
+  async #nativeRequest(path: string, body?: FormData, remove = false) {
+    if (!this.canEditArtistImages) throw new ApiError('更换服务器歌手图片需要 Navidrome 管理员权限；请重新登录或检查原生 API 代理。');
+    const write = Boolean(body || remove);
+    let response: Response;
+    try {
+      response = await fetch(`${this.base}/api/${path}`, {
+        method: remove ? 'DELETE' : body ? 'POST' : 'GET', body,
+        headers: { 'x-nd-authorization': `Bearer ${this.#nativeToken}` }, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
+        signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(write ? 30000 : 12000)]),
+      });
+    } catch {
+      throw new ApiError(write ? '图片保存结果暂时未知，请重新读取服务器图片后再操作。' : '无法读取 Navidrome 歌手图片，请检查原生 API 连接。');
+    }
+    const refreshed = response.headers.get('x-nd-authorization');
+    if (refreshed && !this.#abort.signal.aborted) this.#nativeToken = refreshed.replace(/^Bearer\s+/i, '');
+    if (!response.ok) {
+      if (response.status === 401) { this.#nativeToken = ''; this.#nativeAdmin = false; }
+      throw new ApiError(response.status === 401 ? '图片编辑会话已失效，请重新登录。' : response.status === 403 ? 'Navidrome 拒绝了图片操作，请检查账号权限。' : response.status === 404 ? '服务器不支持此图片接口，或歌手已不存在。' : write && response.status >= 500 ? '图片保存结果暂时未知，请重新读取服务器图片后再操作。' : `图片请求失败（HTTP ${response.status}）。`);
+    }
+    try { return object(await response.json()); }
+    catch { throw new ApiError(write ? '图片保存结果暂时未知，请重新读取服务器图片后再操作。' : '图片接口返回无效数据，请检查原生 API 代理。'); }
+  }
+  async artistImage(id: string) {
+    const data = await this.#nativeRequest(`artist/${encodeURIComponent(id)}`);
+    if (data.id !== id || data.uploadedImage !== undefined && typeof data.uploadedImage !== 'string') throw new ApiError('服务器没有返回有效的歌手图片信息。');
+    this.#uncertainArtistImages.delete(id);
+    return { uploadedImage: str(data.uploadedImage) ?? '', updatedAt: str(data.updatedAt) };
+  }
+  async saveArtistImage(id: string, image?: string) {
+    if (this.#writingArtistImages.has(id)) throw new ApiError('此歌手的图片正在保存，请稍候。');
+    if (this.#uncertainArtistImages.has(id)) throw new ApiError('上次图片保存结果未知，请先重新读取服务器图片。');
+    this.#writingArtistImages.add(id);
+    try { return await this.#writeArtistImage(id, image); }
+    finally { this.#writingArtistImages.delete(id); }
+  }
+  async #writeArtistImage(id: string, image?: string) {
+    const before = await this.artistImage(id);
+    let body: FormData | undefined;
+    if (image !== undefined) {
+      if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 2 * 1024 * 1024) throw new ApiError('请选择有效且不超过 2 MB 的歌手图片。');
+      const bytes = Uint8Array.from(atob(image.slice(image.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+      body = new FormData(); body.append('image', new Blob([bytes], { type: image.slice(5, image.indexOf(';')) }), 'artist-image');
+    } else if (!before.uploadedImage) return before;
+    this.#uncertainArtistImages.add(id);
+    const result = await this.#nativeRequest(`artist/${encodeURIComponent(id)}/image`, body, image === undefined);
+    if (result.status !== 'ok') throw new ApiError('图片保存结果暂时未知，请重新读取服务器图片后再操作。');
+    const after = await this.artistImage(id);
+    if (image === undefined ? Boolean(after.uploadedImage) : !after.uploadedImage || after.updatedAt === before.updatedAt && after.uploadedImage === before.uploadedImage) {
+      this.#uncertainArtistImages.add(id);
+      throw new ApiError('保存后图片信息与预期不同，请重新读取服务器图片后核实。');
+    }
+    return after;
   }
   async libraries(signal?: AbortSignal): Promise<MusicLibrary[]> {
     const data = await this.request('getMusicFolders', {}, signal);

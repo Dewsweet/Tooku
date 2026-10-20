@@ -13,7 +13,7 @@ export function Login() {
     e.preventDefault(); setPending(true); setError(''); let api: MusicApi | undefined;
     try {
       api = new MusicApi(normalizeServer(server), username.trim(), password);
-      const version = await api.connect(); setPassword(''); await connectUserSync(api); await player.attach(api);
+      const version = await api.connect(password); setPassword(''); await connectUserSync(api); await player.attach(api);
       useSession.getState().setSession(api, version);
       const sync = useUserSync.getState(); useSession.getState().notify(['review', 'offline'].includes(sync.status) ? `${sync.message} 入口：头像 → 账户与设置 → 用户数据。` : '');
     } catch (error) { disconnectUserSync(); api?.dispose(); setError(errorMessage(error)); } finally { setPending(false); }

@@ -54,8 +54,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .workspace-shell .sidebar nav a:hover { background: var(--hover); }
 .workspace-shell .sidebar nav a.active { color: var(--accent); background: var(--soft); }
 .workspace-shell .sidebar nav a.active svg { color: var(--accent); }
-.sidebar-scroll { min-height: 0; flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; border-top: 1px solid var(--line); }
-.sidebar-scroll:hover { scrollbar-color: var(--line) transparent; }
+.sidebar-scroll { border-top: 1px solid var(--line); }
 .sidebar-group-heading { position: sticky; top: 0; z-index: 1; background: var(--sidebar); display: flex; align-items: center; justify-content: space-between; padding: 14px 5px 11px 14px; font-size: 15px; font-weight: 650; }
 .sidebar-group-heading > a { flex: 1; }
 .tree-folder-heading { display: flex; align-items: center; min-height: 37px; padding-right: 3px; }
@@ -71,7 +70,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .tree-empty { display: block; font-size: 13px; padding: 15px 14px; color: var(--muted); }
 .sidebar-playlists .loading { padding: 25px 4px; font-size: 13px; }
 .workspace-shell .app-main { position: fixed; top: var(--header-height); left: calc(var(--sidebar-width) + var(--gutter) * 2); right: var(--gutter); bottom: var(--dock-height); margin: 0; height: auto; padding: 0; border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); border-radius: 13px; overflow: hidden; background: var(--bg); box-shadow: var(--panel-shadow); transition: right .25s cubic-bezier(.2,.75,.3,1); }
-.workspace-shell .content { max-width: none; width: 100%; height: 100%; margin: 0; overflow: auto; padding: 30px 30px 45px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.workspace-shell .content { max-width: none; width: 100%; height: 100%; margin: 0; overflow: auto; padding: 30px 30px 45px; }
 .workspace-shell .content > :not(dialog) { animation: surface-enter .24s ease both; }
 .workspace-shell h1 { font-size: 29px; letter-spacing: -.8px; font-weight: 720; }
 .workspace-shell .page-heading { margin-bottom: 25px; }

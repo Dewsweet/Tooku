@@ -8,6 +8,7 @@
 .artist-hero[data-has-art=true]::after { background: linear-gradient(180deg, #0000000a 15%, #00000075 70%, #000000b0), linear-gradient(90deg, #00000036, transparent 80%); }
 .artist-portrait { position: relative; display: grid; place-items: center; width: clamp(128px, 14vw, 190px); aspect-ratio: 1; flex-shrink: 0; padding: 0; overflow: hidden; border-radius: 8px; box-shadow: var(--card-shadow); background: var(--soft); color: var(--accent); }
 .artist-portrait > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.artist-portrait:disabled { opacity: 1; cursor: default; }
 .artist-portrait-initials { font-size: 40px; font-weight: 700; }
 .artist-portrait-edit { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #00000070; color: #fff; font-size: 15px; font-weight: 600; opacity: 0; transition: opacity .18s ease; }
 .artist-portrait:hover .artist-portrait-edit, .artist-portrait:focus-visible .artist-portrait-edit { opacity: 1; }

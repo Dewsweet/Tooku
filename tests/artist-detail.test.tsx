@@ -13,8 +13,11 @@ import { Interactions } from '../src/components/Interactions';
 vi.mock('../src/features/player/engine', () => ({ player: { replace: vi.fn(), shuffle: vi.fn() } }));
 afterEach(() => { cleanup(); useSession.getState().setSession(null); useSession.getState().notify(''); useLibrary.setState({ profiles: {} }); useProfiles.setState(useProfiles.getInitialState(), true); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal'); Reflect.deleteProperty(HTMLDialogElement.prototype, 'close'); });
 
-function setup(coverArt?: string) {
+function setup(coverArt?: string, editable = true) {
   const api = new MusicApi('https://example.test', 'fixture', 'not-real');
+  vi.spyOn(api, 'canEditArtistImages', 'get').mockReturnValue(editable);
+  vi.spyOn(api, 'artistImage').mockResolvedValue({ uploadedImage: '', updatedAt: undefined });
+  vi.spyOn(api, 'saveArtistImage').mockResolvedValue({ uploadedImage: 'saved.jpg', updatedAt: '2026-10-20T12:00:00Z' });
   vi.spyOn(api, 'libraries').mockResolvedValue([{ id: 'library-1', name: '测试曲库' }]);
   vi.spyOn(api, 'artist').mockResolvedValue({ name: '测试歌手', coverArt, albums: [{ id: 'album-1', name: '第一张', artist: '测试歌手', coverArt: 'album-cover' }, { id: 'album-2', name: '第二张', artist: '测试歌手' }] });
   vi.spyOn(api, 'favorites').mockResolvedValue({ songs: [], artists: [], albums: [] });
@@ -119,12 +122,12 @@ it('shows a server artist photo in the same foreground layout and respects accou
   act(() => useProfiles.getState().setArtistCover(api.identity, 'a', custom));
   expect(container.querySelector('.artist-hero-image')).toHaveAttribute('src', custom);
   fireEvent.contextMenu(screen.getByRole('button', { name: '更换歌手图片' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: '恢复默认图片' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '移除旧版私人图片' }));
   await waitFor(() => expect(container.querySelector('.artist-hero-image')).not.toHaveAttribute('src', custom));
   unmount(); client.clear(); api.dispose();
 });
 
-it('crops and saves an uploaded artist image, then restores focus to the picture button', async () => {
+it('awaits a verified server upload, keeps failures in the cropper and leaves playback alone', async () => {
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
   vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 640, height: 640, close: vi.fn() }));
@@ -139,18 +142,29 @@ it('crops and saves an uploaded artist image, then restores focus to the picture
   expect(await screen.findByRole('dialog', { name: '编辑歌手图片' })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByRole('button', { name: '使用图片' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: '使用图片' }));
-  expect(useProfiles.getState().artistCovers[api.identity]?.a).toBe(image);
+  await waitFor(() => expect(api.saveArtistImage).toHaveBeenCalledWith('a', image));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(useProfiles.getState().artistCovers[api.identity]?.a).toBeUndefined();
   expect(container.querySelector('.artist-hero-image')).toHaveAttribute('src', image);
   expect(picture).toHaveFocus();
   expect(HTMLCanvasElement.prototype.toDataURL).toHaveBeenCalledWith('image/jpeg', .9);
   expect(player.replace).not.toHaveBeenCalled();
   vi.mocked(HTMLCanvasElement.prototype.toDataURL).mockReturnValue('data:image/jpeg;base64,AQ==');
-  vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+  vi.mocked(api.saveArtistImage).mockRejectedValueOnce(new Error('Navidrome 拒绝了图片操作'));
   fireEvent.change(screen.getByLabelText('上传歌手图片'), { target: { files: [new File(['replacement'], 'replacement.png', { type: 'image/png' })] } });
   await waitFor(() => expect(screen.getByRole('button', { name: '使用图片' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: '使用图片' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('图片未能保存');
-  expect(useProfiles.getState().artistCovers[api.identity]?.a).toBe(image);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Navidrome 拒绝了图片操作');
+  expect(useProfiles.getState().artistCovers[api.identity]?.a).toBeUndefined();
   expect(container.querySelector('.artist-hero-image')).toHaveAttribute('src', image);
+  unmount(); client.clear(); api.dispose();
+});
+
+it('does not offer server image changes without an admin session', async () => {
+  const { api, client, unmount } = setup(undefined, false);
+  await screen.findByRole('heading', { name: '测试歌手' });
+  expect(screen.getByRole('button', { name: '歌手图片' })).toBeDisabled();
+  expect(screen.queryByText('选择照片')).not.toBeInTheDocument();
+  expect(api.saveArtistImage).not.toHaveBeenCalled();
   unmount(); client.clear(); api.dispose();
 });

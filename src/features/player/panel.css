@@ -4,7 +4,7 @@
 .now-panel-heading h2 { font-size: 15px; font-weight: 680; letter-spacing: -.2px; margin: 0; }
 .now-panel-heading > div { display: flex; gap: 2px; }
 .now-panel-heading .icon-button { width: 30px; height: 32px; border-radius: 50%; }
-.now-panel-scroll { overflow: auto; min-height: 0; flex: 1; scrollbar-width: thin; scrollbar-color: var(--line) transparent; padding: 0 15px 20px; }
+.now-panel-scroll { padding: 0 15px 20px; }
 .now-panel-stack { display: flex; flex-direction: column; gap: 17px; animation: surface-enter .25s ease both; }
 .panel-module { min-width: 0; flex-shrink: 0; background: var(--surface); border-radius: 11px; padding: 15px; }
 .panel-module-cover { padding: 0 0 5px; background: transparent; }

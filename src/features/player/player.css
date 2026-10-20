@@ -82,7 +82,7 @@ html:has(dialog[open]) { overflow: hidden; }
 .queue-intro .eyebrow { font-size: 9px; letter-spacing: 2px; margin-bottom: 8px; }
 .queue-intro h3 { font-size: 15px; margin: 0; }
 .queue-intro h3 > span { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 11px; }
-.queue-content .queue-list { min-height: 0; max-height: none; flex: 1; overflow: auto; overscroll-behavior: contain; position: relative; scrollbar-width: thin; padding-right: 4px; }
+.queue-content .queue-list { min-height: 0; max-height: none; flex: 1; overflow: auto; overscroll-behavior: contain; position: relative; padding-right: 4px; }
 .queue-content .queue-row { border: 0; border-radius: 9px; padding: 7px 3px; position: relative; transition: background .18s; }
 .queue-content .queue-row + .queue-row { margin-top: 3px; }
 .queue-content .queue-row:hover { background: var(--surface); }

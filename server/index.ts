@@ -5,6 +5,7 @@ import { stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUserApi, upstreamUrl } from './api.ts';
+import { isNavidromeProxyRequest } from './navidromeProxy.ts';
 
 const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 const upstream = upstreamUrl(process.env.NAVIDROME_UPSTREAM || 'http://127.0.0.1:44533');
@@ -14,7 +15,8 @@ const server = createServer(async (req, res) => {
   res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.url?.split('?')[0] === '/__tooku/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ app: 'tooku', version: '0.1.0', persistence: 1 })); return; }
   if (req.url?.startsWith('/api/tooku/')) { await api.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
-  if (req.url?.startsWith('/nd/rest/')) {
+  if (req.url?.startsWith('/nd/') && !isNavidromeProxyRequest(req.url, req.method)) { res.writeHead(404); res.end(); return; }
+  if (req.url && isNavidromeProxyRequest(req.url, req.method)) {
     const target = new URL(`${upstream}${req.url.slice(3)}`);
     const headers = { ...req.headers, host: target.host }; delete headers.authorization; delete headers.cookie;
     const upstreamRequest = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, { method: req.method, headers }, (reply) => {

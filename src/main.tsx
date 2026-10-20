@@ -10,5 +10,6 @@ import './features/player/player.css';
 import './workspace.css';
 import './browse.css';
 import './interactions.css';
+import './scrollbars.css';
 
 createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={queryClient}><BrowserRouter><Interactions><App /></Interactions></BrowserRouter></QueryClientProvider></StrictMode>);

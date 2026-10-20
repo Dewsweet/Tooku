@@ -7,6 +7,7 @@ import { AlbumGrid, Empty, IconButton, QueryState, useApi } from '../components/
 import type { Album, Track } from '../domain/models';
 import { artistArtworkCandidates } from '../domain/artistArtwork';
 import { AvatarEditor } from '../components/AvatarEditor';
+import { artistImageKey, useArtistImage, type ArtistImageDisplay } from '../components/useArtistImage';
 import { useContextMenu } from '../components/Interactions';
 import { player } from '../features/player/engine';
 import { useMusicLibrary } from '../state/library';
@@ -16,39 +17,61 @@ import './artist-detail.css';
 
 function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; coverArt?: string; albums: Album[] }) {
   const api = useApi();
+  const client = useQueryClient();
+  const serverImage = useArtistImage(api.identity, id);
+  const editable = api.canEditArtistImages;
+  const imageInfo = useQuery({ queryKey: [api.identity, 'artist-image-info', id], enabled: editable, retry: false, queryFn: () => api.artistImage(id) });
   const custom = useProfiles((state) => state.artistCovers?.[api.identity]?.[id]);
   const menu = useContextMenu();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [loaded, setLoaded] = useState<string>();
   const [failed, setFailed] = useState<string[]>([]);
+  const [restoring, setRestoring] = useState(false);
   const candidates = [
-    ...(custom ? [{ kind: 'custom', src: custom }] : []),
-    ...artistArtworkCandidates(id, coverArt, albums).map((image) => ({ kind: image.kind, src: api.coverUrl(image.coverArt, 600) })),
+    ...(serverImage ? [{ kind: 'artist', src: serverImage.preview ?? api.coverUrl(`ar-${id}`, 600, serverImage.revision) }] : custom ? [{ kind: 'custom', src: custom }] : []),
+    ...artistArtworkCandidates(id, coverArt, albums).map((image) => ({ kind: image.kind, src: api.coverUrl(image.coverArt, 600, serverImage?.revision) })),
   ];
   const candidate = candidates.find((image) => image.src && !failed.includes(image.src));
   const src = candidate?.src;
   const hasArt = Boolean(src && loaded === src);
-  function saveImage(image?: string) {
-    const previous = useProfiles.getState().artistCovers?.[api.identity]?.[id];
-    try { useProfiles.getState().setArtistCover(api.identity, id, image); }
-    catch {
-      try { useProfiles.getState().setArtistCover(api.identity, id, previous); } catch { /* Restore visible state even if storage is unavailable. */ }
-      throw new Error('图片未能保存，请检查浏览器存储空间。');
-    }
+  function refreshImage(preview?: string) {
+    client.setQueryData<ArtistImageDisplay>(artistImageKey(api.identity, id), { revision: Date.now(), preview });
+    void client.invalidateQueries({ queryKey: [api.identity, 'artist'] });
+    void client.invalidateQueries({ queryKey: [api.identity, 'artists'] });
+  }
+  async function saveImage(image?: string) {
+    const info = await api.saveArtistImage(id, image);
+    client.setQueryData([api.identity, 'artist-image-info', id], info);
+    refreshImage(image);
+    try { useProfiles.getState().setArtistCover(api.identity, id, undefined); }
+    catch { if (useSession.getState().api === api) useSession.getState().notify('图片已保存到 Navidrome，本机旧图片缓存未能清除。'); }
+  }
+  async function verifyImage() {
+    const info = await api.artistImage(id);
+    client.setQueryData([api.identity, 'artist-image-info', id], info); refreshImage();
+  }
+  async function restoreImage() {
+    if (restoring) return;
+    setRestoring(true);
+    try { await saveImage(); }
+    catch (error) { if (useSession.getState().api === api) useSession.getState().notify(errorMessage(error)); }
+    finally { setRestoring(false); }
   }
   return <><header className="artist-hero" data-has-art={hasArt} data-artwork={hasArt ? candidate?.kind : 'none'}>
     {src && <img key={src} className="artist-hero-image" src={src} alt="" referrerPolicy="no-referrer" onLoad={() => setLoaded(src)} onError={() => setFailed((previous) => [...previous, src])} />}
-    <button type="button" className="artist-portrait" aria-label="更换歌手图片" data-tooltip="更换歌手图片" onClick={() => input.current?.click()} onContextMenu={(event) => menu(event, [
+    <button type="button" className="artist-portrait" disabled={!editable || restoring} aria-label={editable ? '更换歌手图片' : '歌手图片'} data-tooltip={editable ? '更换歌手图片（保存到 Navidrome）' : '更换图片需要 Navidrome 管理员会话'} onClick={() => input.current?.click()} onContextMenu={(event) => editable && menu(event, [
       { label: '选择照片', icon: <Pencil size={16} />, action: () => input.current?.click() },
-      { label: '恢复默认图片', disabled: !custom, action: () => saveImage() },
+      { label: '重新读取服务器图片', action: verifyImage },
+      { label: '恢复服务器默认图片', disabled: !imageInfo.data?.uploadedImage, action: restoreImage },
+      ...(custom ? [{ label: '移除旧版私人图片', action: () => useProfiles.getState().setArtistCover(api.identity, id, undefined) }] : []),
     ])}>
       {hasArt ? <img src={src} alt={candidate?.kind === 'album' ? '专辑封面' : `${name}的图片`} referrerPolicy="no-referrer" /> : <span className="artist-portrait-initials" aria-hidden="true">{name.trim().slice(0, 2)}</span>}
-      <span className="artist-portrait-edit"><Pencil size={34} /><span>选择照片</span></span>
+      {editable && <span className="artist-portrait-edit"><Pencil size={34} /><span>{restoring ? '正在恢复…' : '选择照片'}</span></span>}
     </button>
     <div className="artist-hero-copy"><h1>{name}</h1><p>{albums.length} 张专辑</p></div>
     <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="上传歌手图片" onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ''; if (selected) setFile(selected); }} />
-  </header>{file && <AvatarEditor kind="artist" file={file} onSave={(image) => saveImage(image)} onClose={() => setFile(null)} />}</>;
+  </header>{file && <AvatarEditor kind="artist" file={file} onSave={saveImage} onVerify={verifyImage} onClose={() => setFile(null)} />}</>;
 }
 
 export function ArtistDetail() {

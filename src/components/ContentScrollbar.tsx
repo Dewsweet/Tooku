@@ -2,14 +2,14 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import './content-scrollbar.css';
 
 export function scrollThumbGeometry(height: number, scrollHeight: number, scrollTop: number) {
-  const track = Math.max(0, height - 8);
+  const track = Math.max(0, height);
   const range = Math.max(0, scrollHeight - height);
   const thumb = Math.min(track, Math.max(28, scrollHeight ? track * height / scrollHeight : track));
   const travel = Math.max(0, track - thumb);
   return { range, thumb, travel, top: range ? Math.min(range, Math.max(0, scrollTop)) / range * travel : 0, value: Math.round(scrollTop) };
 }
 
-export function ContentScrollbar({ viewport, scope }: { viewport: RefObject<HTMLElement | null>; scope: string }) {
+export function ContentScrollbar({ viewport, scope, controls = 'workspace-content', label = '页面滚动条' }: { viewport: RefObject<HTMLElement | null>; scope: string; controls?: string; label?: string }) {
   const [metrics, setMetrics] = useState(() => scrollThumbGeometry(0, 0, 0));
   const [active, setActive] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -56,7 +56,7 @@ export function ContentScrollbar({ viewport, scope }: { viewport: RefObject<HTML
     event.preventDefault();
     element.scrollTop = (event.clientY - event.currentTarget.getBoundingClientRect().top - metrics.thumb / 2) / metrics.travel * metrics.range;
   }}>
-    <div ref={thumb} role="scrollbar" aria-label="页面滚动条" aria-controls="workspace-content" aria-orientation="vertical" aria-valuemin={0} aria-valuemax={Math.round(metrics.range)} aria-valuenow={Math.min(Math.round(metrics.range), Math.max(0, metrics.value))} tabIndex={0} className="content-scrollbar-thumb" style={{ height: metrics.thumb, transform: `translateY(${metrics.top}px)` }} onKeyDown={(event) => {
+    <div ref={thumb} role="scrollbar" aria-label={label} aria-controls={controls} aria-orientation="vertical" aria-valuemin={0} aria-valuemax={Math.round(metrics.range)} aria-valuenow={Math.min(Math.round(metrics.range), Math.max(0, metrics.value))} tabIndex={0} className="content-scrollbar-thumb" style={{ height: metrics.thumb, transform: `translateY(${metrics.top}px)` }} onKeyDown={(event) => {
       const element = viewport.current; if (!element) return;
       const step = event.key === 'ArrowDown' ? 40 : event.key === 'ArrowUp' ? -40 : event.key === 'PageDown' || event.key === ' ' && !event.shiftKey ? element.clientHeight : event.key === 'PageUp' || event.key === ' ' && event.shiftKey ? -element.clientHeight : null;
       if (event.key === 'Home' || event.key === 'End' || step !== null) {

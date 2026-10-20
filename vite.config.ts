@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { createUserApi } from './server/api.ts';
+import { isNavidromeProxyRequest } from './server/navidromeProxy.ts';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'NAVIDROME_');
@@ -10,6 +11,10 @@ export default defineConfig(({ mode }) => {
       configureServer(server) {
         const users = createUserApi({ upstream: env.NAVIDROME_UPSTREAM });
         server.middlewares.use((req, res, next) => { void users.handle(req, res, next); });
+        server.middlewares.use((req, res, next) => {
+          if (req.url?.startsWith('/nd/') && !isNavidromeProxyRequest(req.url, req.method)) { res.statusCode = 404; res.end(); return; }
+          next();
+        });
         server.httpServer?.once('close', () => users.close());
         server.middlewares.use('/__tooku/health', (_req, res) => {
           res.setHeader('Content-Type', 'application/json');
@@ -22,7 +27,7 @@ export default defineConfig(({ mode }) => {
       port: 18733,
       strictPort: true,
       proxy: {
-        '/nd/rest': {
+        '^/nd/(rest/|auth/login$|api/artist/)': {
           target: env.NAVIDROME_UPSTREAM || 'http://127.0.0.1:44533',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/nd/, ''),

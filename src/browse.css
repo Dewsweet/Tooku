@@ -6,7 +6,7 @@
 .styled-select[aria-expanded=true] > svg { transform: rotate(180deg); }
 .modal label > .styled-select { width: 100%; }
 .setting-row .styled-select { margin-left: auto; max-width: 230px; flex-shrink: 0; }
-.select-options { position: fixed; inset: auto; margin: 0; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); box-shadow: 0 14px 42px #14152524, 0 2px 8px #1415250a; overflow: auto; scrollbar-width: thin; z-index: 100; }
+.select-options { position: fixed; inset: auto; margin: 0; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); box-shadow: 0 14px 42px #14152524, 0 2px 8px #1415250a; overflow: auto; z-index: 100; }
 .select-options:popover-open { animation: surface-enter .13s ease both; }
 .select-options [role=option] { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 12px; min-height: 39px; border-radius: 7px; font-size: 13px; cursor: pointer; }
 .select-options [role=option] > span { overflow-wrap: anywhere; }
