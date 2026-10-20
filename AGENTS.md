@@ -12,17 +12,17 @@
 ## 2. 当前工程事实
 
 - 产品名 **Tooku**，面向中文用户的 Navidrome 第三方网页播放器。
-- 当前是 React + TypeScript + Vite SPA；有固定上游反向代理，**还没有 Tooku 自有业务后端、SQLite 或服务端用户数据同步**。
+- 当前是 React + TypeScript + Vite SPA，加 Node.js 24 内置 HTTP / SQLite 后端；开发与生产均有固定上游反向代理。
 - 服务数据使用 TanStack Query，播放与本地偏好使用 Zustand，队列和历史快照使用 IndexedDB。
 - 依赖版本以 `package.json` 与 `pnpm-lock.yaml` 为准；不主动升级框架或引入第二套 UI、状态、音频框架。
-- 服务端持久化、迁移、备份是接下来讨论的优先方向，尚未实现；不是本文件要求立即执行的工作。
+- 用户数据保存、迁移预览、冲突选择及备份恢复已实现；实现边界见 [服务端持久化](docs/13-server-persistence.md)。音乐与服务器歌单仍属于 Navidrome。
 
 ## 3. 本地启动与命令
 
 本项目使用 Windows PowerShell；不要假设系统已安装全局 pnpm。
 
 ```powershell
-# Node.js >= 22.12；已有 node_modules 时直接运行
+# Node.js >= 24；已有 node_modules 时直接运行
 npm.cmd run dev
 
 # 仅首次安装或需要恢复锁定依赖时使用
@@ -71,9 +71,10 @@ npm.cmd run build
 ## 6. 存储与凭据边界
 
 - 音乐、服务器歌单内容和元信息属于 Navidrome。
-- 当前头像、自定义歌单封面、文件夹及歌单归属/排序是浏览器本地数据；不要把它们描述为已跨设备同步。
-- `tooku-preferences` 当前是设备级外观/布局偏好；头像和曲库组织按 `api.identity` 分组，不能宣称所有偏好都已按账号隔离。
+- 经 `/nd` 登录且在设置确认迁移后，头像、自定义封面、文件夹、归属/排序、偏好、队列与历史保存到 Tooku SQLite；浏览器保留缓存。直连其他 Navidrome 地址只保存本地。
+- 服务端按固定上游和已验证的规范账号隔离，不能信任客户端 identity/owner；本地旧身份规则保持不变。`tooku-preferences` 保留设备回退，账号偏好通过 IndexedDB 的 sync 缓存隔离。
 - IndexedDB 也是浏览器存储，不是服务端备份。增加持久化时先设计已有数据迁移、导出/恢复、账号隔离和失败回退；不得清空本地数据作为迁移步骤。
+- 用户数据整体使用原子 revision 检查；409 / 结果未知后停止写入，读回比较后再选择。同步与恢复不得调用 player.attach 或重建当前音频。维护 `src/domain/userData.ts` 的共享白名单与版本迁移，禁止落库认证 URL。
 - 密码、token、salt 只保留在会话内存。不要写入源码、文档、环境文件、启动参数、日志、测试样本或持久化 store。
 - 音频/封面认证 URL 即时生成，不把包含认证参数的 URL 存入快照、截图说明或调试输出。
 - 真实服务写入联调使用已授权的专用测试资源；不要为测试修改或删除用户正在使用的歌单。

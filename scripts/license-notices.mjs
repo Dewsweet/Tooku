@@ -22,7 +22,7 @@ function inspect(directory) {
 }
 for (const name of Object.keys(manifest.dependencies ?? {})) inspect(path.join(root, 'node_modules', name));
 const sections = [...seen.values()].sort((a, b) => a.pkg.name.localeCompare(b.pkg.name)).map(({ pkg, license }) => `## ${pkg.name} ${pkg.version}\n\nDeclared license: ${pkg.license ?? 'see license text'}\n\n${license.trim()}\n`);
-const notices = `# Tooku third-party notices\n\nGenerated from installed production dependencies and their packaged license texts. This file does not assign a license to Tooku's original source. Regenerate after dependency changes with: node scripts/license-notices.mjs\n\n${sections.join('\n---\n\n')}`;
+const notices = `# Tooku third-party notices\n\nGenerated from installed production dependencies and their packaged license texts. This file does not assign a license to Tooku's original source. Regenerate after dependency changes with: node scripts/license-notices.mjs\n\nThe server uses Node.js 24 built-in HTTP, crypto, filesystem and SQLite modules, with no additional npm production packages. Node.js and its bundled components are covered by the LICENSE shipped with the runtime distribution: https://github.com/nodejs/node/blob/v24.x/LICENSE . The Docker runtime retains that distribution and its notices.\n\n${sections.join('\n---\n\n')}`;
 fs.writeFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), notices);
 fs.writeFileSync(path.join(root, 'public', 'third-party-notices.txt'), notices);
 console.log(`Recorded full packaged licenses for ${seen.size} production packages.`);

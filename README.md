@@ -8,7 +8,7 @@
 
 ## 本地运行
 
-需要 Node.js 22.12+，本次使用 Node 24.15.0。**无需安装全局 pnpm**：已有依赖时可双击根目录 [start-tooku.cmd](start-tooku.cmd)，或通过 npm 启动。
+需要 Node.js 24+（内置 SQLite 与 TypeScript 执行），本次使用 Node 24.15.0。**无需安装全局 pnpm**：已有依赖时可双击根目录 [start-tooku.cmd](start-tooku.cmd)，或通过 npm 启动。
 
 ```powershell
 Set-Location G:\Code\Tooku
@@ -30,15 +30,17 @@ npm.cmd run build
 
 现已实现：登录和扩展检测、专辑/歌手浏览、中文输入法安全的检索、收藏、普通歌单与保存核实、常驻播放器、队列与循环/随机、逐行/静态歌词、歌词偏移、Media Session、本机快照/收听历史、响应式与主题设置。**实现不代表所有 Navidrome 音频格式、权限和扩展都已实测。**
 
-实际验证和待办见 [开发记录](docs/09-development-status.md)。PWA、拼音搜索、双语/逐词歌词、在线歌词、服务端队列同步和高级音频实验尚未实现。
+实际验证和待办见 [开发记录](docs/09-development-status.md)。PWA、拼音搜索、双语/逐词歌词、在线歌词和高级音频实验尚未实现。
 
 新版主页展示曲库概览、歌单和专辑。Logo/主页/搜索位于头部，账户设置只从头像菜单进入，菜单也可快速切换真实曲库。右栏整合正在播放与队列，支持调整宽度、版块与顺序；左栏歌单树独立管理。歌曲表格支持列宽调整、空白区域双击播放和统一右键操作；歌单支持直接拖动排序、撤销，以及点击封面修改名称、简介和本地封面。
 
-**Tooku 目前没有自有业务后端或 SQLite。** 头像、自定义封面、文件夹分类和布局仍保存在当前浏览器；名称、简介、曲目顺序等服务器歌单数据保存在 Navidrome。当前数据归属和开发约定见 [开发接入指南](docs/12-agent-development-guide.md)，历史改版记录见 [主页改版](docs/11-home-refresh-and-checklist.md)。
+**Tooku 现有 Node.js + SQLite 用户数据后端。** 使用 `/nd` 登录后，从头像 → 账户与设置 → 用户数据预览导入；确认后自动保存头像、封面、目录、偏好、队列和历史。已有浏览器数据保留，遇到多设备冲突需选择版本，不自动覆盖。新设备或未迁移设备可预览使用服务器数据；已连接设备在下次登录读取新版本，不实时接管另一设备的播放。完整服务地址直连仍可使用，仅保存本地数据。名称、简介、歌曲和曲序等歌单数据继续保存在 Navidrome。
+
+默认数据库 `.local/data/tooku.sqlite`，可用进程环境变量 `TOOKU_DATA_DIR` 指定持久化目录；不要放在构建输出目录。生产运行先执行 `npm.cmd run build`，再执行 `npm.cmd start`，默认监听 `127.0.0.1:18733`；可用 `TOOKU_HOST` / `TOOKU_PORT` 调整。生产运行不依赖 node_modules。设置中可导出/恢复当前账号 JSON，管理员可用 `npm.cmd run backup -- .local/backups/tooku.sqlite` 创建新的完整数据库备份。恢复步骤、代理和数据边界见 [服务端持久化](docs/13-server-persistence.md)。
 
 ## 可选 Docker 部署
 
-已准备 [Dockerfile](Dockerfile)、[Compose](compose.yaml) 和 Nginx 固定上游代理模板。此电脑未安装 Docker，容器构建/运行仍待验证。
+已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据 API 和固定上游代理。Compose 将 `/data` 挂载到 `tooku-data` 卷，重建容器保留数据库。此电脑未安装 Docker，容器构建/运行仍待验证。`deploy/default.conf.template` 只用于可选的外层 Nginx 代理。
 
 ```powershell
 docker compose up --build -d
@@ -73,7 +75,7 @@ node tests/fixtures/server.mjs
 
 ## 推荐路线
 
-当前为 React + TypeScript + Vite 网页应用，以 Subsonic / OpenSubsonic 为主要数据协议，使用常驻 HTMLAudioElement 播放。接下来讨论的优先方向是 Tooku 服务端持久化、现有浏览器数据迁移与备份恢复，再继续完善歌单权限、界面反馈、播放稳定性和部署。拼音搜索、双语/逐词歌词、PWA 和高级音频实验保留为后续功能；这些规划尚不代表已经实现。
+当前为 React + TypeScript + Vite 网页应用及 Node.js / SQLite 用户数据服务，以 Subsonic / OpenSubsonic 为音乐数据协议，使用常驻 HTMLAudioElement 播放。持久化、迁移与备份恢复已接入，后续继续完善歌单权限、界面反馈、播放稳定性和部署。拼音搜索、双语/逐词歌词、PWA 和高级音频实验保留为后续功能；这些规划尚不代表已经实现。
 
 核心差异化：中文输入与检索体验、精致且可降级的歌词页、明确可控的播放队列、稳定的连续听歌流程。首页内容来自用户自己的音乐库。
 
@@ -83,6 +85,7 @@ node tests/fixtures/server.mjs
 | --- | --- |
 | [Agent 开发规范](AGENTS.md) | 所有 Agent 的接入入口、必须延续的产品与工程约定 |
 | [开发接入指南](docs/12-agent-development-guide.md) | 当前模块地图、数据归属、组件复用、任务路径与验证尺度 |
+| [服务端持久化](docs/13-server-persistence.md) | 账号验证、SQLite、迁移、冲突、备份恢复及部署 |
 | [项目调研](docs/01-research.md) | 参考项目、来源、复用取舍、许可证事实 |
 | [产品需求](docs/02-product-requirements.md) | 用户场景、功能优先级、首版范围 |
 | [交互与视觉](docs/03-design.md) | 信息架构、页面布局、播放器与中文规范 |

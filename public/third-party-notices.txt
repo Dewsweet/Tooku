@@ -2,6 +2,8 @@
 
 Generated from installed production dependencies and their packaged license texts. This file does not assign a license to Tooku's original source. Regenerate after dependency changes with: node scripts/license-notices.mjs
 
+The server uses Node.js 24 built-in HTTP, crypto, filesystem and SQLite modules, with no additional npm production packages. Node.js and its bundled components are covered by the LICENSE shipped with the runtime distribution: https://github.com/nodejs/node/blob/v24.x/LICENSE . The Docker runtime retains that distribution and its notices.
+
 ## @tanstack/query-core 5.104.2
 
 Declared license: MIT

@@ -7,4 +7,8 @@ services:
       NAVIDROME_UPSTREAM: http://host.docker.internal:44533
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - tooku-data:/data
     restart: unless-stopped
+volumes:
+  tooku-data:

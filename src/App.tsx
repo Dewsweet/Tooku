@@ -14,6 +14,7 @@ import { PlayerBar, LyricsPlayer } from './features/player/PlayerUI';
 import { IconButton } from './components/Common';
 import type { Track } from './domain/models';
 import { clearProfile } from './storage/local';
+import { disconnectUserSync } from './storage/userSync';
 import { useMusicLibrary } from './state/library';
 import { PlaylistTree } from './features/library/Organization';
 import { NowPlayingPanel } from './features/player/NowPlayingPanel';
@@ -44,7 +45,7 @@ export default function App() {
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => useSession.getState().notify(''), 9000); return () => clearTimeout(timer); }, [notice]);
   const logout = (clear = true) => {
     if (!api) return;
-    player.persist(); player.logout(); queryClient.cancelQueries(); api.dispose(); queryClient.clear(); useSession.getState().setSession(null);
+    player.persist(); player.logout(); disconnectUserSync(); queryClient.cancelQueries(); api.dispose(); queryClient.clear(); useSession.getState().setSession(null);
     if (clear) clearProfile(api.identity).catch(() => useSession.getState().notify('本机快照未能清除，请检查浏览器存储。'));
     setQueue(false); setLyrics(false); setAdding(null); setMenu(false); setPanelOverlay(false); navigate('/');
   };
@@ -52,7 +53,7 @@ export default function App() {
     if (!api) return;
     return queryClient.getQueryCache().subscribe((event) => {
       if (event.type === 'updated' && event.query.state.error instanceof ApiError && event.query.state.error.code === 40) {
-        player.persist(); player.logout(); api.dispose(); queryClient.cancelQueries(); queryClient.clear();
+        player.persist(); player.logout(); disconnectUserSync(); api.dispose(); queryClient.cancelQueries(); queryClient.clear();
         useSession.getState().setSession(null); useSession.getState().notify('认证已失效，请重新连接。');
       }
     });

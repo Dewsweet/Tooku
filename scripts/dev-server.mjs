@@ -8,9 +8,9 @@ import { spawn } from 'node:child_process';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateFile = path.join(root, '.local', 'server.json');
 const open = process.argv.includes('--open');
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (major < 22 || major === 22 && minor < 12) {
-  console.error('Tooku requires Node.js 22.12 or newer.'); process.exit(1);
+const [major] = process.versions.node.split('.').map(Number);
+if (major < 24) {
+  console.error('Tooku requires Node.js 24 or newer.'); process.exit(1);
 }
 
 async function running(origin) {

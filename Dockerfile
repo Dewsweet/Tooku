@@ -6,9 +6,15 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM nginx:1.30.5-alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY deploy/default.conf.template /etc/nginx/templates/default.conf.template
-ENV NAVIDROME_UPSTREAM=http://host.docker.internal:44533
-ENV NGINX_ENVSUBST_FILTER=^NAVIDROME_UPSTREAM$
+FROM node:24-alpine
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY server ./server
+COPY src/domain ./src/domain
+COPY package.json ./package.json
+RUN mkdir /data && chown node:node /data
+USER node
+ENV NODE_ENV=production TOOKU_HOST=0.0.0.0 TOOKU_PORT=8080 TOOKU_DATA_DIR=/data NAVIDROME_UPSTREAM=http://host.docker.internal:44533
+VOLUME /data
 EXPOSE 8080
+CMD ["node", "server/index.ts"]

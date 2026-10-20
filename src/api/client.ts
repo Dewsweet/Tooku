@@ -1,4 +1,5 @@
 import md5 from 'blueimp-md5';
+import { UserDataApi } from './userData';
 import type { Album, Artist, Lyrics, Playlist, Track, MusicLibrary } from '../domain/models';
 
 type DTO = Record<string, unknown>;
@@ -51,12 +52,20 @@ export class MusicApi {
   readonly extensions = new Map<string, number[]>();
   #auth: { u: string; t: string; s: string };
   #abort = new AbortController();
+  #userData: UserDataApi | null = null;
   constructor(readonly base: string, readonly username: string, password: string, salt?: string) {
     const random = salt ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
     this.#auth = { u: username, t: authToken(password, random), s: random };
     this.identity = `${base}|${username}`;
   }
-  dispose() { this.#abort.abort(); this.#auth = { u: '', t: '', s: '' }; }
+  dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; }
+  async userData() {
+    if (this.base !== `${window.location.origin}/nd`) return null;
+    this.#userData?.dispose();
+    const client = new UserDataApi(); await client.connect(this.#auth);
+    if (this.#abort.signal.aborted) { client.dispose(); throw new ApiError('连接已关闭。'); }
+    this.#userData = client; return client;
+  }
   supports(name: string, version = 1) { return (this.extensions.get(name) ?? []).some((v) => v >= version); }
   #params(params: Params) {
     const out = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json', ...this.#auth });

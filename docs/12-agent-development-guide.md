@@ -12,20 +12,21 @@
 4. 有写入验证需求时优先使用隔离测试服务或授权的专用测试歌单；真实账号凭据只通过登录页输入。
 5. 完成实现与必要的基础检查，按功能保存 Git 提交；人工功能和观感检查在回复中简列。
 
-没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。若 Node 低于 22.12，应先解决运行时兼容问题。
+没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。服务端使用内置 SQLite / TypeScript 执行，需要 Node 24+。
 
 ## 2. 当前架构
 
-Tooku 0.1.0 是独立 SPA，技术栈以 [package.json](../package.json) 为准：React、TypeScript、Vite、React Router、TanStack Query、Zustand、idb、Lucide React、Vitest 与 Testing Library。未引入 Tailwind、Radix、CSS Modules 或独立播放 SDK。
+Tooku 0.1.0 是 SPA 与 Node.js / SQLite 用户数据服务，技术栈以 [package.json](../package.json) 为准：React、TypeScript、Vite、React Router、TanStack Query、Zustand、idb、Lucide React、Vitest 与 Testing Library。后端只用 Node 内置模块；未引入第二套 UI、状态或播放框架。
 
 ```text
 React 页面 / 通用控件
   ├─ TanStack Query → MusicApi → /nd/rest → Navidrome
   ├─ player 命令 → 常驻 PlayerEngine → HTMLAudioElement
-  └─ Zustand / IndexedDB → 此浏览器中的偏好、组织信息、快照
+  ├─ Zustand / IndexedDB → 浏览器缓存、未上传修改与设备回退
+  └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
 ```
 
-开发环境由 Vite 固定上游代理转发 `/nd/rest`。现有 Docker 模板是静态产物加 Nginx，同样转发固定上游；这不是 Tooku 业务后端，也没有提供服务端用户数据持久化。直接填写完整 Navidrome 地址的访问方式也仍存在。
+开发环境由 Vite 挂载业务 API 并固定转发 `/nd/rest`。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷。直接填写完整 Navidrome 地址仍可使用，只保存本地；服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
 
 ## 3. 源码与修改入口
 
@@ -53,6 +54,8 @@ React 页面 / 通用控件
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`PanelResizeHandle.tsx` | 正在播放/队列共用右栏；分栏拖动条由 App 放在面板间隙 |
 | 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、几何居中、空闲恢复和偏移换算 |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
+| 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 首次预览、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
+| 后端与共享格式 | `server/api.ts`、`store.ts`、`index.ts`、`src/domain/userData.ts` | 固定上游认证、SQLite 原子 revision、限额与白名单 |
 | 启动与部署 | `scripts/dev-server.mjs`、`scripts/port-selection.mjs`、`start-tooku.cmd`、`deploy/` | 有界端口回退、健康检查与复用现有服务 |
 
 新增功能优先扩展这些边界，不要求为了符合早期“目录建议”搬动整个仓库。已有文件包含较长 JSX，新代码优先写清晰的组件和函数；拆分只服务当前任务。
@@ -92,10 +95,11 @@ React 页面 / 通用控件
 | --- | --- | --- |
 | 音乐文件、专辑、歌手、服务器收藏 | Navidrome | 以服务器授权和返回值为准 |
 | 歌单名称、简介、曲目和曲序 | Navidrome | Tooku 通过协议读写并核实 |
-| 头像、自定义歌单封面 | localStorage：`tooku-profiles` | 按 `api.identity` 分组；图片为本地处理后的 data URL，不上传 Navidrome |
-| 文件夹、歌单位置/混排、曲库视图与选中库 | localStorage：`tooku-library-organization` | 按身份分组，内部按真实 `libraryId` 组织；不是服务器目录 |
-| 明暗、主题色、布局、列宽、歌词和快捷键偏好 | localStorage：`tooku-preferences` | 当前设备级；尚未全部按账号区分 |
-| 队列、暂停位置、此设备历史 | IndexedDB | key 由 `identity` 与种类组成；恢复后暂停，不自动播放 |
+| 头像、自定义歌单封面 | 确认迁移后 SQLite；localStorage 缓存：`tooku-profiles` | 本地按 `api.identity`，服务端按已验证 owner；处理后的 data URL 不上传 Navidrome |
+| 文件夹、歌单位置/混排、曲库视图与选中库 | 确认迁移后 SQLite；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
+| 明暗、主题色、布局、列宽、歌词和快捷键偏好 | SQLite 账号文档 / IndexedDB sync；`tooku-preferences` 作为当前偏好与设备回退 | 切号还原设备回退，账号修改存在各自 sync 缓存 |
+| 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
+| 同步基线、未上传数据、导入前副本 | IndexedDB `profiles` 中 `sync` / `before-import` | 原数据保留；清除本机播放快照不清迁移基线 |
 | 查询结果 | TanStack Query 内存 | 按身份与相关库隔离，不等于持久化服务端数据 |
 | 登录密码、token/salt | 会话内存 | 刷新/热更新整页重载后需重新登录；不写入上述存储 |
 
@@ -103,11 +107,11 @@ React 页面 / 通用控件
 
 Navidrome 的 `getPlaylists` 返回账号可见的歌单。每库归属是 Tooku 的 `placements`，不能把它误当成协议天然返回的每库独立歌单集合。`getArtist` 可能聚合多个曲库，当前有专辑边界过滤，不能为了少发请求直接删除。
 
-清理站点数据、更换浏览器/设备、访问 origin 变化会影响本机数据；IndexedDB 也受此限制。当前没有导出/迁移流程、Tooku 服务端备份或跨设备同步，文案与交付不得承诺这些能力。
+清理站点数据、更换浏览器/设备、访问 origin 变化会影响本机数据；IndexedDB 也受此限制。已确认上传的数据可经同一 Tooku 部署、同一固定上游账号恢复。首次差异需预览选择；自动保存遇到冲突停止，不做字段合并。设置支持账号 JSON 导出/恢复，管理员使用 `npm.cmd run backup -- <新文件>` 做完整 SQLite 在线备份。详细边界见 [服务端持久化](13-server-persistence.md)。
 
-### 下一阶段持久化的设计约束
+### 持久化的维护约束
 
-已讨论的优先方向是 Tooku 轻量后端、SQLite 元数据与服务端图片目录，后续再完善部署。实际实现应在对应任务中决定，并遵守：
+现有轻量后端将图片与元数据一起存入受限 SQLite 版本文档，以同一事务替换并回收旧图；没有独立图片目录。后续演进继续遵守：
 
 1. 先定义哪些数据继续归 Navidrome、哪些归 Tooku；不复制一套可独立修改的服务器歌单真相。
 2. 保留现有本地数据，提供迁移预览/导入、冲突处理、失败重试及备份恢复，不静默覆盖或清空。
@@ -168,6 +172,8 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 菜单、提示、焦点 | `tests/interactions.test.tsx` |
 | 专辑播放入口 | `tests/albums.test.tsx` |
 | Windows 端口回退 | `tests/startup.test.mjs` |
+| 服务端身份、SQLite、限额、备份、重启 | `tests/user-data.test.ts` |
+| 迁移确认、离线、冲突、账号偏好隔离 | `tests/user-sync.test.ts` |
 
 隔离测试服务：`node tests/fixtures/server.mjs`，仅本机 44534；登录地址填 `http://127.0.0.1:44534`，用户名 `fixture`，密码任意非空测试文本。它是简化的内存 fixture，不代理真实 Navidrome，也不保证覆盖后续增加的全部接口字段；测试新能力时先检查 fixture 是否支持。
 
