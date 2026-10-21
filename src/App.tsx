@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { Disc3, Mic2, Heart, Clock3, X } from 'lucide-react';
+import { Disc3, Mic2, Heart, Clock3, X, Sparkles } from 'lucide-react';
+import { Recommendations } from './features/recommendations/Recommendations';
 import { queryClient, useSession } from './state/session';
 import { panelWidthCss, usePreferences } from './state/preferences';
 import { player, usePlayer } from './features/player/engine';
@@ -28,6 +29,7 @@ import { ScrollArea } from './components/ScrollArea';
 const navigation = [
   { to: '/albums', name: '专辑', icon: Disc3 }, { to: '/artists', name: '歌手', icon: Mic2 },
   { to: '/favorites', name: '收藏', icon: Heart }, { to: '/history', name: '最近在听', icon: Clock3 },
+  { to: '/recommendations', name: '推荐', icon: Sparkles },
 ];
 export default function App() {
   const api = useSession((s) => s.api); const notice = useSession((s) => s.notice); const prefs = usePreferences(); const navigate = useNavigate();
@@ -83,6 +85,7 @@ export default function App() {
     </aside>{menu && <button className="menu-scrim" aria-label="关闭导航遮罩" onClick={() => setMenu(false)} />}
     <div className="app-main" inert={mobile && menu || panelOverlay}><main id="workspace-content" ref={contentRef} className="content with-overlay-scrollbar" key={library.libraryId}><Routes>
       <Route path="/" element={<Home />} /><Route path="/songs" element={<Navigate to="/search?type=songs" replace />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Settings logout={() => logout(false)} />} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
+      <Route path="/recommendations" element={<Recommendations />} />
     </Routes></main><ContentScrollbar viewport={contentRef} scope={JSON.stringify([location.key, library.libraryId])} /></div>
     {!compactPanel && prefs.sidePanel && <PanelResizeHandle />}{panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
     {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel view={queue ? 'queue' : 'now'} onViewChange={(view) => setQueue(view === 'queue')} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}

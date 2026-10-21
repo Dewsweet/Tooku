@@ -5,7 +5,7 @@ import { chooseUserData, displacedLocalData, exportUserBackup, localUserData, pr
 
 function Summary({ data }: { data: UserData | null }) {
   if (!data) return <p>暂无数据</p>;
-  return <p>{data.profile.avatar ? '有头像 · ' : ''}{Object.keys(data.profile.playlistCovers).length} 张歌单封面 · {Object.keys(data.profile.artistCovers ?? {}).length} 张歌手图片 · {data.organization.folders.length} 个文件夹 · {data.queue?.entries.length ?? 0} 首队列 · {data.history.length} 条历史</p>;
+  return <p>{data.profile.avatar ? '有头像 · ' : ''}{Object.keys(data.profile.playlistCovers).length} 张歌单封面 · {Object.keys(data.profile.artistCovers ?? {}).length} 张歌手图片 · {data.organization.folders.length} 个文件夹 · {data.queue?.entries.length ?? 0} 首队列 · {data.history.length} 条历史{data.recommendations ? ` · 推荐设置 / ${data.recommendations.batch?.songs.length ?? 0} 首推荐` : ''}</p>;
 }
 export function UserDataSettings() {
   const state = useUserSync(); const input = useRef<HTMLInputElement>(null);
@@ -33,6 +33,7 @@ export function UserDataSettings() {
       if (!state.remote) throw new Error('请先重新连接并读取服务器版本。');
       setPreview({ title: '从备份恢复', data: backup.data, source: 'local' });
     }); }} />
+    <p className="settings-note">备份包含推荐设置与最近结果，恢复旧备份会重置它们；服务密钥不进入备份。</p>
     {error && <p className="form-error" role="alert">{error}</p>}
     {preview && <Modal title={preview.title} onClose={() => !busy && setPreview(null)}><Summary data={preview.data} /><p>将替换头像、封面、目录、外观及播放快照。此设备原数据保留为导入前副本，服务器保留最近两个旧版本。</p><p>此操作不修改 Navidrome 的音乐、歌单或收藏。</p>{error && <p className="form-error" role="alert">{error}</p>}<div className="button-row"><button className="subtle-button" disabled={busy} onClick={() => setPreview(null)}>取消</button><button className="primary-button" disabled={busy} onClick={() => void run(async () => { await chooseUserData(preview.source, preview.source === 'local' ? preview.data : undefined); setPreview(null); })}>{busy ? '正在保存…' : '确认使用'}</button></div></Modal>}
   </section>;
