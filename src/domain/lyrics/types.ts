@@ -11,7 +11,7 @@ export interface LyricChoice { mode: LyricMode; bindings?: Partial<Record<Provid
 export interface LyricsSettings { enabled: boolean; order: ProviderId[]; tracks: Record<string, LyricChoice> }
 export const defaultLyricsSettings: LyricsSettings = { enabled: true, order: ['netease', 'qq'], tracks: {} };
 export interface TrackDescriptor { title: string; artists: string[]; album?: string; durationMs?: number }
-export interface LyricCandidate { provider: ProviderId; id: string; title: string; artists: string[]; album?: string; durationMs?: number; score?: number; confident?: boolean }
+export interface LyricCandidate { provider: ProviderId; id: string; title: string; artists: string[]; artistAliases?: string[]; album?: string; durationMs?: number; score?: number; confident?: boolean }
 export type SourceError = 'timeout' | 'rate-limited' | 'login-required' | 'unavailable' | 'protocol' | 'disabled';
 export interface ProviderObservation { checkedAt?: number; successAt?: number; elapsedMs?: number; error?: SourceError }
 export interface ProviderStatus { id: ProviderId; search: ProviderObservation; lyrics: ProviderObservation; retryAt?: number }
@@ -29,7 +29,7 @@ export function isDescriptor(v: unknown): v is TrackDescriptor {
   return record(v) && keys(v, ['title', 'artists', 'album', 'durationMs']) && text(v.title, 512) && !!v.title.trim() && Array.isArray(v.artists) && v.artists.length <= 20 && v.artists.every((a) => text(a, 256)) && (v.album === undefined || text(v.album, 512)) && (v.durationMs === undefined || number(v.durationMs, 0, 86400000));
 }
 export function isCandidate(v: unknown): v is LyricCandidate {
-  return record(v) && isProvider(v.provider) && opaqueId(v.id) && text(v.title, 512) && !!v.title.trim() && Array.isArray(v.artists) && v.artists.length <= 20 && v.artists.every((a) => text(a, 256)) && (v.album === undefined || text(v.album, 512)) && (v.durationMs === undefined || number(v.durationMs, 0, 86400000)) && (v.score === undefined || number(v.score, 0, 1)) && (v.confident === undefined || typeof v.confident === 'boolean');
+  return record(v) && isProvider(v.provider) && opaqueId(v.id) && text(v.title, 512) && !!v.title.trim() && Array.isArray(v.artists) && v.artists.length <= 20 && v.artists.every((a) => text(a, 256)) && (v.artistAliases === undefined || Array.isArray(v.artistAliases) && v.artistAliases.length <= 20 && v.artistAliases.every((a) => text(a, 256))) && (v.album === undefined || text(v.album, 512)) && (v.durationMs === undefined || number(v.durationMs, 0, 86400000)) && (v.score === undefined || number(v.score, 0, 1)) && (v.confident === undefined || typeof v.confident === 'boolean');
 }
 export function isLyricDocument(v: unknown): v is LyricDocument {
   return record(v) && v.version === 1 && (v.source === 'local' || isProvider(v.source)) && opaqueId(v.recordId) && (v.instrumental === undefined || typeof v.instrumental === 'boolean') && Array.isArray(v.tracks) && v.tracks.length <= 12 && v.tracks.every((t) => record(t) && ['original', 'translation', 'romanization'].includes(String(t.role)) && (t.text === undefined || text(t.text, 262144)) && (t.lang === undefined || text(t.lang, 32)) && (t.offsetMs === undefined || number(t.offsetMs, -600000, 600000)) && (t.lines === undefined || Array.isArray(t.lines) && t.lines.length <= 10000 && t.lines.every((l) => record(l) && text(l.text) && (l.startMs === undefined || number(l.startMs, 0, 86400000)))));

@@ -228,7 +228,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 
 [独立歌词组件方案与实现](15-lyrics-service-design.md) 描述当前接口与维护边界。Tooku 自己维护网络检索、匹配、缓存、状态与共用双语整理；Navidrome 仅为现有本地输入渠道。来源仅本地、网易云和 QQ，默认本地优先、明确缺失时自动联网并采用相近版本，允许事后修正；本地只有外语原文时仍保留本地，不自动替换成网络版本。纯音乐、占位或最终无正文统一显示“该音乐没有歌词，请欣赏”，网络真实错误仍保留在服务状态。
 
-`MusicApi.lyrics` 保留结构化多轨与普通 LRC 原文；`normalizeLyrics` 负责毫秒时间轴、Unicode 多语言、结构化字段换行和四类双语格式；`domain/lyrics/matching.ts` 为前后端共用的匹配规则，比较歌手前兼容多人分隔与括号别名，保留歌名、时长、演出版本约束；修改决策规则时更新前端网络查询代次，避免复用旧空结果，不清个人绑定或原始平台缓存。`useLyrics` 复用 Provider / QueryClient，按账号、曲目、元数据、来源、绑定和刷新代次隔离查询；歌词正文共享，两个视口独立滚动。切源与切歌取消过期前端请求，迟到结果不覆盖新曲目，不操作音频。
+`MusicApi.lyrics` 保留结构化多轨与普通 LRC 原文；`normalizeLyrics` 负责毫秒时间轴、Unicode 多语言、结构化字段换行和四类双语格式；`domain/lyrics/matching.ts` 为前后端共用的匹配规则，比较歌手前兼容多人分隔、括号及平台 `artistAliases` 别名，保留歌名、时长、演出版本约束；网易云在既有搜索预算内最多补读两位歌手的固定 ID 译名，内存缓存 40 位 / 1 小时，失败保留候选；修改决策规则时更新前端网络查询代次，避免复用旧空结果，不清个人绑定或原始平台缓存。`useLyrics` 复用 Provider / QueryClient，按账号、曲目、元数据、来源、绑定和刷新代次隔离查询；歌词正文共享，两个视口独立滚动。切源与切歌取消过期前端请求，迟到结果不覆盖新曲目，不操作音频。
 
 网络客户端只访问同源 `/api/lyrics/{health,status,search,fetch,check}`，开发/生产使用同一 handler。服务无需 Navidrome 登录；同源检查不等于身份认证，不返回个人绑定。平台域名、ID、大小和速率受限，部署总开关为 `TOOKU_LYRICS_ENABLED=false`。设置开关是当前账号的策略，服务状态不在后台频繁探测。
 

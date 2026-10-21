@@ -86,6 +86,15 @@ it('skips a different performer in the first result and reads the matching artis
   await waitFor(() => expect(view.result.current.document?.recordId).toBe('123'));
   expect(network.lyrics).toHaveBeenCalledExactlyOnceWith('netease', '123', expect.any(AbortSignal), false);
 });
+it('automatically reads a bilingual song title when the platform supplies the localized artist name', async () => {
+  vi.mocked(network.search).mockResolvedValue({ version: 1, candidates: [
+    { provider: 'netease', id: '123', title: '風になる', artists: ['つじあやの'], artistAliases: ['辻亚弥乃'], durationMs: 276600 },
+  ], errors: [] });
+  const view = renderHook(() => useLyrics({ ...track, title: '風になる (幻化成风)', artist: '辻亚弥乃', duration: 276 }), { wrapper });
+  await waitFor(() => expect(view.result.current.document?.recordId).toBe('123'));
+  expect(view.result.current.lyrics?.lines[0].translation).toEqual(['你好']);
+  expect(network.search).toHaveBeenCalledTimes(1);
+});
 it('finishes with a quiet empty result when both providers return no data or fail', async () => {
   vi.mocked(network.search).mockResolvedValueOnce({ version: 1, candidates: [], errors: [] }).mockRejectedValueOnce(new Error('provider unavailable'));
   const view = renderHook(() => useLyrics(track), { wrapper });

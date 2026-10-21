@@ -5,6 +5,7 @@ import { createLyricsService } from '../server/lyrics/service';
 import { createLyricsApi } from '../server/lyrics/http';
 import { createProviders, LyricsError, type LyricProvider } from '../server/lyrics/providers';
 import type { LyricDocument } from '../src/domain/lyrics/types';
+import { normalizeLyrics } from '../src/domain/lyrics/normalize';
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.restoreAllMocks(); });
@@ -84,6 +85,60 @@ describe('independent lyrics service', () => {
 });
 
 describe('provider protocol adapters', () => {
+  it('loads platform artist aliases once per ID without changing the displayed performer name', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => new URL(String(url)).pathname.startsWith('/api/artist/')
+      ? Response.json({ code: 200, artist: { id: 17637, name: 'つじあやの', alias: ['Tsuji Ayano'], transNames: ['辻亚弥乃'], trans: '辻亚弥乃' } })
+      : Response.json({ code: 200, result: { songs: [{ id: 123, name: '風になる', artists: [{ id: 17637, name: 'つじあやの' }], duration: 276600 }] } }));
+    const provider = createProviders(fetcher)[0]; const signal = new AbortController().signal;
+    const songs = await provider.search('風になる (幻化成风) 辻亚弥乃', signal);
+    expect(songs[0]).toMatchObject({ artists: ['つじあやの'], artistAliases: ['辻亚弥乃', 'Tsuji Ayano'] });
+    await provider.search('別の曲 辻亚弥乃', signal);
+    expect(fetcher.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith('/api/artist/'))).toHaveLength(1);
+  });
+  it('preserves search results when optional artist details fail or return another ID', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ code: 200, result: { songs: [{ id: 123, name: '風になる', artists: [{ id: 17637, name: 'つじあやの' }] }] } }))
+      .mockResolvedValueOnce(Response.json({ code: 200, artist: { id: 999, trans: '辻亚弥乃' } }))
+      .mockResolvedValueOnce(Response.json({ code: 200, result: { songs: [{ id: 123, name: '風になる', artists: [{ id: 17637, name: 'つじあやの' }] }] } }))
+      .mockRejectedValueOnce(new Error('unavailable'));
+    const provider = createProviders(fetcher)[0]; const signal = new AbortController().signal;
+    for (let i = 0; i < 2; i++) expect(await provider.search('風になる 辻亚弥乃', signal)).toMatchObject([{ id: '123', artistAliases: [] }]);
+  });
+  it('bounds optional artist lookups and uses aliases already present in the search response', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.startsWith('/api/artist/')) return Response.json({ code: 200, artist: { id: Number(path.split('/').at(-1)), trans: '平台译名' } });
+      return Response.json({ code: 200, result: { songs: [
+        { id: 1, name: '曲名', artists: [{ id: 1, name: '名前', trans: '已有译名' }] },
+        ...[2, 3, 4].map((id) => ({ id, name: '曲名', artists: [{ id, name: `Artist ${id}` }] })),
+      ] } });
+    });
+    const songs = await createProviders(fetcher)[0].search('曲名', new AbortController().signal);
+    expect(songs[0].artistAliases).toEqual(['已有译名']);
+    expect(songs[3].artistAliases).toEqual([]); expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it('honors rate limits from optional name lookup and stops further platform requests', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ code: 200, result: { songs: [{ id: 123, name: '風になる', artists: [{ id: 17637, name: 'つじあやの' }] }] } }))
+      .mockResolvedValueOnce(new Response('', { status: 429 }));
+    const service = createLyricsService({ providers: createProviders(fetcher), filename: ':memory:', intervalMs: 0 });
+    cleanups.push(() => service.close());
+    const track = { title: '風になる', artists: ['辻亚弥乃'] };
+    expect((await service.search(track, ['netease'])).errors).toEqual([{ provider: 'netease', code: 'rate-limited' }]);
+    await service.search(track, ['netease']); expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it.each([false, true])('retains QQ translations from plain and base64 responses (%s)', async (encoded) => {
+    const original = '[00:01]A foreign line\n[00:02]Another line';
+    const translation = '[00:01]第一句译文\n[00:02]第二句译文';
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 0, lyric: encoded ? Buffer.from(original).toString('base64') : original, trans: encoded ? Buffer.from(translation).toString('base64') : translation }));
+    const result = normalizeLyrics(await createProviders(fetcher)[1].lyrics('qq123', new AbortController().signal));
+    expect(result.lines.map((line) => line.translation)).toEqual([['第一句译文'], ['第二句译文']]);
+  });
+  it('keeps QQ original lyrics usable when the platform returns no translation', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 0, lyric: '[00:01]A foreign line', trans: '' }));
+    const result = normalizeLyrics(await createProviders(fetcher)[1].lyrics('qq123', new AbortController().signal));
+    expect(result.lines[0]).toMatchObject({ text: 'A foreign line' }); expect(result.lines[0].translation).toBeUndefined();
+  });
   it('converts both providers independently and restricts requests to fixed HTTPS hosts', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ code: 200, result: { songs: [{ id: 123, name: 'Song', artists: [{ name: 'Artist' }], album: { name: 'Album' }, duration: 180000 }] } }))
       .mockResolvedValueOnce(Response.json({ code: 200, lrc: { lyric: '[00:01]hello' }, tlyric: { lyric: '[00:01]你好' } }))

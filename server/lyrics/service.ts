@@ -54,7 +54,7 @@ export function createLyricsService(options: { providers?: LyricProvider[]; file
     if (!enabled || root.signal.aborted) throw new LyricsError('disabled');
     const result: SearchResult = { version: 1, candidates: [], errors: [] };
     for (const id of ids) {
-      const query = keyword?.trim() || `${track.title} ${track.artists.join(' ')}`.trim(); const key = `search:v1:${id}:${query}`;
+      const query = keyword?.trim() || `${track.title} ${track.artists.join(' ')}`.trim(); const key = `search:v2:${id}:${query}`;
       const saved = !refresh && cache.get(key, now());
       try {
         let candidates: import('../../src/domain/lyrics/types.ts').LyricCandidate[];

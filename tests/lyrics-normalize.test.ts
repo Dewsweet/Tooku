@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeLyrics, parseLyricTrack } from '../src/domain/lyrics/normalize';
-import { isLyricsSettings, defaultLyricsSettings, type LyricDocument, type LyricLayout } from '../src/domain/lyrics/types';
+import { isCandidate, isLyricsSettings, defaultLyricsSettings, type LyricDocument, type LyricLayout } from '../src/domain/lyrics/types';
 import { rankCandidates } from '../server/lyrics/matching';
 
 const document = (text: string): LyricDocument => ({ version: 1, source: 'local', recordId: 'song', tracks: [{ role: 'original', text }] });
@@ -124,5 +124,18 @@ describe('matching and persisted choices', () => {
     const local = { ...track, artists: ['AC/DC'] };
     expect(rankCandidates(local, [{ ...candidate, artists: ['AC/DC'] }])[0].confident).toBe(true);
     for (const artists of [['AC'], ['DC'], ['Other']]) expect(rankCandidates(local, [{ ...candidate, artists }])[0].confident).toBe(false);
+  });
+  it.each(['風になる (幻化成风)', '風になる（幻化成风）'])('matches a translated title and a platform-provided localized artist alias (%s)', (title) => {
+    const local = { title, artists: ['辻亚弥乃'], durationMs: 276000 };
+    const remote = { ...candidate, title: '風になる', artists: ['つじあやの'], durationMs: 276600 };
+    expect(rankCandidates(local, [remote])[0].confident).toBe(false);
+    expect(rankCandidates(local, [{ ...remote, artistAliases: ['Tsuji Ayano', '辻亚弥乃'] }])[0].confident).toBe(true);
+    expect(rankCandidates(local, [{ ...remote, artistAliases: ['另一个歌手'] }])[0].confident).toBe(false);
+    expect(rankCandidates(local, [{ ...remote, artistAliases: ['辻亚弥乃'], title: '風になる (Live)' }])[0].confident).toBe(false);
+  });
+  it('validates the optional platform alias field without requiring it from older responses', () => {
+    expect(isCandidate(candidate)).toBe(true);
+    expect(isCandidate({ ...candidate, artistAliases: ['别名'] })).toBe(true);
+    for (const artistAliases of ['别名', [123], ['x'.repeat(257)], Array(21).fill('别名')]) expect(isCandidate({ ...candidate, artistAliases })).toBe(false);
   });
 });

@@ -10,6 +10,8 @@ const list = (v: unknown): Record<string, unknown>[] => Array.isArray(v) ? v.fil
 const string = (v: unknown) => typeof v === 'string' ? v : '';
 const duration = (v: unknown, multiplier = 1) => typeof v === 'number' && Number.isFinite(v) && v > 0 ? v * multiplier : undefined;
 export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] {
+  const artistCache = new Map<string, { names: string[]; expires: number }>();
+  const aliases = (artist: Record<string, unknown>) => [...new Set([string(artist.trans), ...[artist.alias, artist.transNames].flatMap((value) => Array.isArray(value) ? value.map(string) : [])].filter((name) => name.trim() && name.length <= 256))].slice(0, 20);
   async function request(host: 'music.163.com' | 'c.y.qq.com', path: string, params: Record<string, string>, signal: AbortSignal) {
     const url = new URL(path, `https://${host}`); url.search = new URLSearchParams(params).toString();
     let response: Response;
@@ -38,7 +40,33 @@ export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] 
     async search(keyword, signal) {
       const data = await request('music.163.com', '/api/search/get', { s: keyword, type: '1', limit: '10', offset: '0' }, signal); check(data, 200);
       const result = object(data.result); if (!Array.isArray(result.songs) && result.songCount !== 0) throw new LyricsError('protocol');
-      return list(result.songs).map((s) => ({ provider: 'netease', id: String(s.id), title: string(s.name), artists: list(s.artists ?? s.ar).map((a) => string(a.name)), album: string(object(s.album ?? s.al).name), durationMs: duration(s.duration ?? s.dt) }));
+      const songs = list(result.songs).slice(0, 10);
+      // Local Chinese names may correspond to a Japanese/Korean/Latin platform name.
+      // Use only aliases supplied for that exact artist ID, within the search deadline.
+      const foreignArtists = songs.flatMap((song) => list(song.artists ?? song.ar)).filter((artist) =>
+        /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Latin}]/u.test(string(artist.name)) && !aliases(artist).length);
+      const ids = /\p{Script=Han}/u.test(keyword)
+        ? [...new Set(foreignArtists.map((artist) => String(artist.id)).filter((id) => /^\d{1,20}$/.test(id)))].slice(0, 2)
+        : [];
+      for (const id of ids) {
+        if (signal.aborted) break;
+        if ((artistCache.get(id)?.expires ?? 0) > Date.now()) continue;
+        try {
+          const detail = await request('music.163.com', `/api/artist/${id}`, {}, signal); check(detail, 200);
+          const artist = object(detail.artist);
+          if (String(artist.id) !== id) continue;
+          artistCache.delete(id); artistCache.set(id, { names: aliases(artist), expires: Date.now() + 3600000 });
+          while (artistCache.size > 40) artistCache.delete(artistCache.keys().next().value!);
+        } catch (error) {
+          if (error instanceof LyricsError && error.code === 'rate-limited') throw error;
+          // Optional name enrichment must preserve usable song search results.
+        }
+      }
+      return songs.map((s) => {
+        const artists = list(s.artists ?? s.ar);
+        const artistAliases = [...new Set(artists.flatMap((artist) => [...aliases(artist), ...(artistCache.get(String(artist.id))?.names ?? [])]))].slice(0, 20);
+        return { provider: 'netease', id: String(s.id), title: string(s.name), artists: artists.map((a) => string(a.name)), artistAliases, album: string(object(s.album ?? s.al).name), durationMs: duration(s.duration ?? s.dt) };
+      });
     },
     async lyrics(id, signal) {
       const data = await request('music.163.com', '/api/song/lyric', { id, lv: '-1', tv: '-1', rv: '-1' }, signal); check(data, 200);

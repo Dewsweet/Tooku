@@ -25,7 +25,7 @@ function artistNames(artists: string[]) {
 }
 function comparison(track: TrackDescriptor, candidate: LyricCandidate) {
   const base = (title: string) => title.replace(/\([^)]*\)|（[^）]*）|\[[^\]]*\]/g, '').trim();
-  const artists = artistNames(track.artists); const otherArtists = artistNames(candidate.artists);
+  const artists = artistNames(track.artists); const otherArtists = artistNames([...candidate.artists, ...(candidate.artistAliases ?? [])]);
   let artist = 0;
   for (const name of artists) for (const other of otherArtists) artist = Math.max(artist, similarity(name, other));
   return {
