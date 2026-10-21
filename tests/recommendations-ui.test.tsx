@@ -45,12 +45,13 @@ it('generates only on click, retains results across navigation and provides all 
   configure(); const attach = vi.spyOn(player, 'attach'); const replace = vi.spyOn(player, 'replace').mockImplementation(() => {});
   const view = surface(<Recommendations />); fireEvent.click(screen.getByRole('button', { name: '生成推荐' }));
   await screen.findByText('New song'); expect(recommendationsApi.generate).toHaveBeenCalledOnce();
-  expect(recommendationsApi.links).not.toHaveBeenCalled();
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' }));
   expect(screen.getAllByRole('menuitem').filter((item) => item instanceof HTMLAnchorElement)).toHaveLength(4);
   expect(screen.getByRole('menuitem', { name: 'Apple Music · 搜索' })).toHaveAttribute('href', expect.stringContaining('music.apple.com/cn/search'));
   expect(attach).not.toHaveBeenCalled(); expect(replace).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(23);
   view.unmount(); surface(<Recommendations />); await screen.findByText('New song'); expect(recommendationsApi.generate).toHaveBeenCalledOnce();
+  expect(recommendationsApi.links).toHaveBeenCalledOnce();
   expect(screen.getByRole('button', { name: '换一批' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: /本库播放/ })).not.toBeInTheDocument();
   expect(api.search).not.toHaveBeenCalled(); expect(replace).not.toHaveBeenCalled();
@@ -87,18 +88,24 @@ it('uses external platform links and preserves the current audio without library
   expect(replace).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(23);
 });
 
-it('shares the current batch with home without generating or prefetching links, and shows four rows', async () => {
+it('shows a compact home entry without song rows, generation or link requests', async () => {
   const songs = Array.from({ length: 30 }, (_, index) => ({ ...batch.songs[0], id: `song-${index}`, title: `Discover ${index}` }));
   useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch: { ...batch, songs } }));
   const view = surface(<HomeRecommendations />);
   expect(screen.getByRole('region', { name: '为你推荐' })).toBeInTheDocument();
-  expect(within(screen.getByRole('table', { name: '主页推荐歌曲' })).getAllByRole('row')).toHaveLength(5);
-  expect(screen.getByRole('link', { name: '查看全部' })).toHaveAttribute('href', '/recommendations');
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.getByText('30 首音乐，沿着最近的聆听继续探索。')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /查看推荐/ })).toHaveAttribute('href', '/recommendations');
   expect(recommendationsApi.links).not.toHaveBeenCalled();
   expect(recommendationsApi.generate).not.toHaveBeenCalled();
   view.unmount(); surface(<Recommendations />);
   expect(within(screen.getByRole('table', { name: '推荐歌曲' })).getAllByRole('row')).toHaveLength(31);
-  expect(recommendationsApi.links).not.toHaveBeenCalled(); expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  expect(vi.mocked(recommendationsApi.links).mock.calls[0][0]).toHaveLength(30);
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  expect(screen.queryByText('本次推荐')).not.toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: '歌手' })).toBeInTheDocument();
 });
 
 it('updates a song menu with direct links and real metadata without stealing focus or requesting covers', async () => {
@@ -106,13 +113,15 @@ it('updates a song menu with direct links and real metadata without stealing foc
   let resolve!: (value: Awaited<ReturnType<typeof recommendationsApi.links>>) => void;
   vi.mocked(recommendationsApi.links).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
   surface(<Recommendations />);
-  expect(recommendationsApi.links).not.toHaveBeenCalled();
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' }));
   const qq = screen.getByRole('menuitem', { name: 'QQ 音乐 · 搜索' }); qq.focus();
+  expect(screen.getByRole('menuitem', { name: '正在核实歌曲链接…' })).toBeInTheDocument();
   await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
   expect(vi.mocked(recommendationsApi.links).mock.calls[0][0]).toHaveLength(1);
   await act(async () => resolve([{ id: 'song-one', album: 'Real record', durationMs: 235000, releaseDate: '2003-03', links: [{ platform: 'netease', kind: 'direct', status: 'matched', url: 'https://music.163.com/#/song?id=123' }] }]));
-  expect(screen.getByRole('menuitem', { name: '网易云音乐' })).toHaveAttribute('href', 'https://music.163.com/#/song?id=123');
+  expect(await screen.findByRole('menuitem', { name: '网易云音乐' })).toHaveAttribute('href', 'https://music.163.com/#/song?id=123');
+  expect(screen.queryByText('正在核实歌曲链接…')).not.toBeInTheDocument();
   expect(qq).toHaveFocus(); expect(screen.getByText('2003-03')).toBeInTheDocument(); expect(screen.getByText('3:55')).toBeInTheDocument(); expect(screen.getByText('Real record')).toBeInTheDocument();
   expect(screen.queryByRole('img')).not.toBeInTheDocument();
   fireEvent.keyDown(qq, { key: 'Escape' }); expect(screen.getByRole('button', { name: '选择收听平台：New song' })).toHaveFocus();
@@ -126,6 +135,42 @@ it('does not reopen a dismissed menu when a late lookup finishes', async () => {
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
   await act(async () => resolve([{ id: 'song-one', links: [] }]));
   expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});
+
+it('verifies the entire batch upfront and updates completed groups while other songs remain pending', async () => {
+  const songs = [batch.songs[0], { ...batch.songs[0], id: 'second', title: 'Second song' }];
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch: { ...batch, songs } }));
+  let resolve!: (value: Awaited<ReturnType<typeof recommendationsApi.links>>) => void;
+  vi.mocked(recommendationsApi.links).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  surface(<Recommendations />);
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  const call = vi.mocked(recommendationsApi.links).mock.calls[0]; expect(call[0]).toEqual(songs);
+  fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' }));
+  expect(screen.getByText('正在核实歌曲链接…')).toBeInTheDocument();
+  const first = { id: songs[0].id, links: [{ platform: 'netease' as const, kind: 'direct' as const, status: 'matched' as const, url: 'https://music.163.com/#/song?id=123' }] };
+  act(() => call[4]?.([first]));
+  expect(screen.getByRole('menuitem', { name: '网易云音乐' })).toHaveAttribute('href', first.links[0].url);
+  expect(screen.queryByText('正在核实歌曲链接…')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '选择收听平台：Second song' }));
+  expect(screen.getByText('正在核实歌曲链接…')).toBeInTheDocument();
+  await act(async () => resolve([first, { id: 'second', links: [] }]));
+  await waitFor(() => expect(screen.queryByText('正在核实歌曲链接…')).not.toBeInTheDocument());
+  expect(recommendationsApi.links).toHaveBeenCalledOnce();
+});
+
+it('cancels an entire batch lookup on account change and ignores its late progress', async () => {
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
+  let resolve!: (value: Awaited<ReturnType<typeof recommendationsApi.links>>) => void;
+  vi.mocked(recommendationsApi.links).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  surface(<Recommendations />);
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  const call = vi.mocked(recommendationsApi.links).mock.calls[0];
+  const next = new MusicApi('http://example.test', 'other', crypto.randomUUID()); vi.spyOn(next, 'libraries').mockResolvedValue([]);
+  act(() => useSession.getState().setSession(next));
+  expect(call[3]?.aborted).toBe(true);
+  await act(async () => { const late = [{ id: 'song-one', album: 'Late metadata', links: [] }]; call[4]?.(late); resolve(late); });
+  expect(screen.queryByText('Late metadata')).not.toBeInTheDocument(); expect(screen.queryByText('New song')).not.toBeInTheDocument();
+  next.dispose();
 });
 
 it('stores the requested count, exposes all listening references and excludes more than the last batch', async () => {
@@ -158,8 +203,11 @@ it('resolves thirty platform-link results in bounded groups and keeps successful
     if (data.songs[0].id === 'song-6') throw new Error('fixture failure');
     return data.songs.map((item) => ({ id: item.id, links: [{ platform: 'spotify', url: platformSearchLink('spotify', item), kind: 'search', status: 'not-found' }] }));
   });
-  const result = await isolated.links(songs, settings, emptyRecommendationCredentials);
+  const progress = vi.fn();
+  const result = await isolated.links(songs, settings, emptyRecommendationCredentials, undefined, progress);
   expect(request).toHaveBeenCalledTimes(5); expect(maximum).toBe(2); expect(result).toHaveLength(30);
+  expect(progress).toHaveBeenCalledTimes(5);
+  expect(progress.mock.calls.flatMap(([group]) => group)).toHaveLength(30);
   expect(result[6].links.every((link) => link.status === 'unavailable')).toBe(true);
   expect(result[12].links[0].status).toBe('not-found');
 });

@@ -24,7 +24,7 @@ export function createRecommendationsApi(service = createRecommendationService()
       if (size > 262144) throw new RecommendationError('请求过大', 413);
       let body: unknown; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RecommendationError('JSON 格式无效', 400); }
       if (!recommendationRecord(body) || !isRecommendationSettings(body.settings) || !isRecommendationCredentials(body.credentials)) throw new RecommendationError('推荐配置无效', 400);
-      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(path.endsWith('/generate') ? 150000 : path.endsWith('/check') ? 50000 : 20000)]);
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(path.endsWith('/generate') ? 300000 : path.endsWith('/check') ? 50000 : 20000)]);
       if (path.endsWith('/generate')) {
         if (!Array.isArray(body.seeds) || !body.seeds.length || body.seeds.length > body.settings.sampleSize || !body.seeds.every(isListeningSeed)
           || !Array.isArray(body.excluded) || body.excluded.length > 300 || !body.excluded.every((id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new RecommendationError('收听样本无效', 400);

@@ -1,10 +1,10 @@
-import { isRecommendationBatch, isResolvedSong, recommendationRecord, emptyRecommendationCredentials, defaultRecommendationSettings, platformSearchLink, type ListeningSeed, type RecommendationCredentials, type RecommendationMemory, type RecommendationSettings, type RecommendationSong } from '../domain/recommendations';
+import { isRecommendationBatch, isResolvedSong, recommendationRecord, emptyRecommendationCredentials, defaultRecommendationSettings, platformSearchLink, type ListeningSeed, type RecommendationCredentials, type RecommendationMemory, type RecommendationSettings, type RecommendationSong, type ResolvedSong } from '../domain/recommendations';
 
 export class RecommendationsApi {
   async request(path: 'generate' | 'links' | 'check', data: unknown, signal?: AbortSignal): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(`/api/recommendations/${path}`, { method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(path === 'generate' ? 155000 : path === 'check' ? 55000 : 25000)]) });
+      response = await fetch(`/api/recommendations/${path}`, { method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(path === 'generate' ? 305000 : path === 'check' ? 55000 : 25000)]) });
     } catch { if (signal?.aborted) throw signal.reason; throw new Error('推荐服务未完成，请检查连接或稍后重试'); }
     const result: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new Error(recommendationRecord(result) && typeof result.error === 'string' && result.error.length <= 180 ? result.error : '推荐服务暂不可用');
@@ -15,7 +15,7 @@ export class RecommendationsApi {
     if (!isRecommendationBatch(result)) throw new Error('推荐结果格式无效');
     return result;
   }
-  async links(songs: RecommendationSong[], settings: RecommendationSettings, credentials: RecommendationCredentials, signal?: AbortSignal) {
+  async links(songs: RecommendationSong[], settings: RecommendationSettings, credentials: RecommendationCredentials, signal?: AbortSignal, onGroup?: (songs: ResolvedSong[]) => void) {
     const resolve = async (group: RecommendationSong[]) => {
       const result = await this.request('links', { songs: group, settings, credentials: { ...emptyRecommendationCredentials, appleToken: credentials.appleToken.trim(), spotifyClientId: credentials.spotifyClientId.trim(), spotifyClientSecret: credentials.spotifyClientSecret.trim() } }, signal);
       if (!Array.isArray(result) || result.length !== group.length || !result.every(isResolvedSong) || new Set(result.map((song) => song.id)).size !== group.length || result.some((song) => !group.some((input) => input.id === song.id))) throw new Error('平台链接格式无效');
@@ -32,6 +32,8 @@ export class RecommendationsApi {
           if (signal?.aborted) throw error;
           errors.push(error); results[index] = groups[index].map((song) => ({ id: song.id, links: settings.platforms.map((platform) => ({ platform, url: platformSearchLink(platform, song, settings), kind: 'search', status: 'unavailable' })) }));
         }
+        signal?.throwIfAborted();
+        onGroup?.(results[index]);
       }
     }));
     if (groups.length && errors.length === groups.length) throw errors[0];

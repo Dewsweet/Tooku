@@ -142,7 +142,7 @@ it('lets hybrid AI nominate verified discoveries beyond Last.fm while supplying 
   const complete = vi.fn<typeof modelCompletion>(async (_base, _key, payload) => {
     const messages = object(payload).messages; if (!Array.isArray(messages)) throw new Error('Missing prompt');
     const input = object(JSON.parse(text(object(messages[1]).content)));
-    expect(input.seeds).toHaveLength(40); expect(input.variation).toEqual(expect.any(String)); expect(input.avoid).toEqual([{ title: 'Already recommended', artists: ['Other artist'] }]);
+    expect(input.seeds).toHaveLength(40); expect(input.variation).toEqual(expect.any(String)); expect(input.avoid).toEqual(expect.arrayContaining([{ title: 'Already recommended', artists: ['Other artist'] }]));
     return { choices: [{ message: { content: JSON.stringify({ ids: ['c1'], songs: [{ title: 'Beyond the pool', artists: ['New discovery'], basedOn: [40] }] }) } }] };
   });
   const result = await createRecommendationService({ fetcher, complete }).generate(seeds, { ...settings, aiBaseUrl: 'https://example.com/v1', model: 'fixture' }, credentials, [], new AbortController().signal, [{ id: 'older-result', title: 'Already recommended', artists: ['Other artist'] }]);
@@ -223,7 +223,7 @@ it('uses compact ranking ids and sufficient JSON output with thinking disabled o
     expect(candidates[0].id).toBe('c1'); expect(candidates.every((candidate) => /^c\d+$/.test(text(candidate.id)))).toBe(true);
     return { choices: [{ message: { content: JSON.stringify({ ids: candidates.map((candidate) => candidate.id).reverse() }) }, finish_reason: 'stop' }] };
   });
-  const service = createRecommendationService({ fetcher, complete }); const deepseek = { ...settings, aiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' };
+  const service = createRecommendationService({ fetcher, complete }); const deepseek = { ...settings, resultCount: 20 as const, aiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' };
   expect(await service.check('ai', deepseek, credentials, new AbortController().signal)).toMatchObject({ ok: true });
   const result = await service.generate([seed], deepseek, credentials, [], new AbortController().signal);
   expect(result.mode).toBe('hybrid'); expect(result.songs[0].title).toBe('Found 19');
@@ -286,6 +286,63 @@ it('accepts an AI ordering only for real candidates and never places credential 
   expect(result.mode).toBe('hybrid'); expect(result.songs[0].title).toBe('Found 14');
   const prompt = JSON.stringify(vi.mocked(complete).mock.calls[0][2]);
   for (const value of Object.values(credentials)) expect(prompt).not.toContain(value);
+});
+
+const discovery = (index: number) => ({ title: `Discovery ${index}`, artists: [`Performer ${index}`], album: `Record ${index}` });
+const modelSongs = (songs: ReturnType<typeof discovery>[]) => ({ choices: [{ message: { content: JSON.stringify({ songs }) } }] });
+const discoveryCatalog = (count: number) => vi.fn<typeof fetch>(async (input) => {
+  const url = new URL(String(input)); const query = url.searchParams.get('s');
+  if (url.hostname !== 'music.163.com') return json({ code: 0, data: { song: { list: [] } } });
+  const index = Array.from({ length: count }, (_, i) => i).find((i) => query === `${discovery(i).title} ${discovery(i).artists[0]}`);
+  return json({ code: 200, result: { songs: index === undefined ? [] : [{ id: index + 100, name: discovery(index).title, artists: [{ name: discovery(index).artists[0] }], album: { name: discovery(index).album }, duration: 180000 }] } });
+});
+const aiSettings = { ...settings, mode: 'ai' as const, aiBaseUrl: 'https://example.com/v1', model: 'fixture' };
+
+it.each([10, 20, 30] as const)('fills skipped AI candidates to the requested %i songs without rechecking old proposals', async (count) => {
+  const half = count / 2; const fetcher = discoveryCatalog(count);
+  const complete = vi.fn<typeof modelCompletion>()
+    .mockResolvedValueOnce(modelSongs([...Array.from({ length: half }, (_, i) => discovery(i)), discovery(999)]))
+    .mockResolvedValueOnce(modelSongs([discovery(0), discovery(999), ...Array.from({ length: half }, (_, i) => discovery(half + i))]));
+  const result = await createRecommendationService({ fetcher, complete }).generate([seed], { ...aiSettings, resultCount: count }, { ...credentials, appleToken: '' }, [], new AbortController().signal);
+  expect(result.songs).toHaveLength(count); expect(new Set(result.songs.map((song) => song.id)).size).toBe(count);
+  expect(result.songs.every((song) => song.title !== 'Discovery 999')).toBe(true);
+  expect(complete).toHaveBeenCalledTimes(2); expect(result.mode).toBe('ai'); expect(result.notices).toEqual([]);
+  const prompt = object(complete.mock.calls[1][2]); const messages = Array.isArray(prompt.messages) ? prompt.messages : [];
+  const input = object(JSON.parse(text(object(messages[1]).content)));
+  expect(input.missing).toBe(half); expect(input.accepted).toHaveLength(half);
+  expect(input.avoid).toEqual(expect.arrayContaining([{ title: 'Discovery 999', artists: ['Performer 999'] }]));
+  expect(input.candidates).toBeUndefined();
+  const queries = fetcher.mock.calls.map(([url]) => new URL(String(url))).filter((url) => url.hostname === 'music.163.com').map((url) => url.searchParams.get('s'));
+  expect(queries.filter((query) => query === 'Discovery 0 Performer 0')).toHaveLength(1);
+  expect(queries.filter((query) => query === 'Discovery 999 Performer 999')).toHaveLength(1);
+});
+
+it('can recover from a fully skipped initial AI response and stops after two supplemental rounds', async () => {
+  const fetcher = discoveryCatalog(10);
+  const complete = vi.fn<typeof modelCompletion>()
+    .mockResolvedValueOnce(modelSongs([discovery(999)]))
+    .mockResolvedValueOnce(modelSongs(Array.from({ length: 5 }, (_, i) => discovery(i))))
+    .mockResolvedValueOnce(modelSongs(Array.from({ length: 5 }, (_, i) => discovery(i + 5))));
+  const result = await createRecommendationService({ fetcher, complete }).generate([seed], { ...aiSettings, resultCount: 10 }, { ...credentials, appleToken: '' }, [], new AbortController().signal);
+  expect(result.songs).toHaveLength(10); expect(complete).toHaveBeenCalledTimes(3); expect(result.notices).toEqual([]);
+  complete.mockReset().mockResolvedValue(modelSongs([discovery(0), discovery(999)]));
+  const short = await createRecommendationService({ fetcher, complete }).generate([seed], { ...aiSettings, resultCount: 10 }, { ...credentials, appleToken: '' }, [], new AbortController().signal);
+  expect(short.songs).toHaveLength(1); expect(complete).toHaveBeenCalledTimes(3);
+  expect(short.notices).toContain('本批目标 10 首，仍缺 9 首；请稍后换一批补充');
+});
+
+it('keeps verified results when a supplemental model request fails without retrying that request', async () => {
+  const complete = vi.fn<typeof modelCompletion>().mockResolvedValueOnce(modelSongs([discovery(0)])).mockRejectedValue(new RecommendationError('模型请求超时，请稍后重试'));
+  const result = await createRecommendationService({ fetcher: discoveryCatalog(1), complete }).generate([seed], { ...aiSettings, resultCount: 10 }, credentials, [], new AbortController().signal);
+  expect(result.songs.map((song) => song.title)).toEqual(['Discovery 0']); expect(complete).toHaveBeenCalledTimes(2);
+  expect(result.notices).toContain('补充推荐未完成：模型请求超时，请稍后重试；已保留可用结果');
+});
+
+it('cancels AI verification and does not make supplemental requests after cancellation', async () => {
+  const controller = new AbortController(); const fetcher = discoveryCatalog(10);
+  const complete = vi.fn<typeof modelCompletion>(async () => { controller.abort(); return modelSongs([discovery(0)]); });
+  await expect(createRecommendationService({ fetcher, complete }).generate([seed], aiSettings, credentials, [], controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  expect(complete).toHaveBeenCalledOnce(); expect(fetcher).not.toHaveBeenCalled();
 });
 
 it('resolves four real song links, checks versions and tolerates one failed platform', async () => {
