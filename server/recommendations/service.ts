@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { canUseLyricCandidate } from '../../src/domain/lyrics/matching.ts';
-import { isRecommendationSong, recommendationCount, songKey, type ListeningSeed, type RecommendationBatch, type RecommendationCredentials, type RecommendationMemory, type RecommendationSettings, type RecommendationSong } from '../../src/domain/recommendations.ts';
+import { isRecommendationSong, modelEndpoint, recommendationCount, songKey, type ListeningSeed, type RecommendationBatch, type RecommendationCredentials, type RecommendationMemory, type RecommendationSettings, type RecommendationSong } from '../../src/domain/recommendations.ts';
 import { createCatalog, mapLimit, object, text } from './catalog.ts';
 import { modelCompletion, RecommendationError, recommendationFailure } from './network.ts';
 import { balancedSeeds, candidatePool, selectRecommendations, type Candidate } from './ranking.ts';
@@ -13,9 +13,13 @@ export function modelCompatibility(base: string) {
 }
 export function readModelJson(result: unknown) {
   const choices = object(result).choices; const choice = object(Array.isArray(choices) ? choices[0] : undefined); const message = object(choice.message);
+  if (!Array.isArray(choices) || !choices.length || !choice.message) throw new RecommendationError('模型接口响应缺少 choices/message，请检查 Chat Completions 兼容性');
   if (choice.finish_reason === 'length') throw new RecommendationError('模型输出被截断，请使用非思考模式或更换模型后重试');
-  if (!text(message.content).trim() && text(message.reasoning_content).trim()) throw new RecommendationError('模型只返回了思考内容，请使用非思考模式或更换模型');
-  const content = text(message.content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  if (choice.finish_reason === 'content_filter' || text(message.refusal)) throw new RecommendationError('模型拒绝了本次请求，请调整输入后重试');
+  const raw = Array.isArray(message.content) ? message.content.map((part) => object(part).type === 'text' ? text(object(part).text) : '').join('') : text(message.content);
+  if (!raw.trim() && text(message.reasoning_content).trim()) throw new RecommendationError('模型只返回了思考内容，请使用非思考模式或更换模型');
+  if (!raw.trim()) throw new RecommendationError('模型已连通，但返回了空内容，请重新检测或稍后重试');
+  const content = raw.replace(/^\uFEFF/, '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   try { const parsed: unknown = JSON.parse(content); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); return object(parsed); }
   catch { throw new RecommendationError('模型未返回有效 JSON 数据，请检查接口兼容性或更换模型'); }
 }
@@ -53,8 +57,8 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
       `提名最多 ${proposals} 首，不输出输入歌曲、链接、凭据、虚构数据或编造的小众统计。`,
       '只返回 JSON：{"ids":[候选id],"songs":[{"title":"原文歌名","artists":["歌手"],"album":"专辑","basedOn":[参考种子序号]}]}。每首可给 1-3 个 basedOn，种子序号从 1 开始。',
     ].join('');
-    const result = await complete(settings.aiBaseUrl, credentials.aiKey, {
-      model: settings.model.trim(), temperature: .85, max_tokens: 8192, ...modelCompatibility(settings.aiBaseUrl),
+    const result = await complete(modelEndpoint(settings.aiBaseUrl).href, credentials.aiKey, {
+      model: settings.model.trim(), stream: false, temperature: .85, max_tokens: 8192, ...modelCompatibility(settings.aiBaseUrl),
       messages: [
         { role: 'system', content: instructions },
         { role: 'user', content: JSON.stringify({ seeds: seeds.map((seed, index) => ({ ...seed, index: index + 1 })), avoid: recentSongs.map(({ title, artists }) => ({ title, artists })), variation: randomUUID(), ...(ranking ? { candidates: candidates.slice(0, 120).map(({ song }, index) => ({ id: `c${index + 1}`, title: song.title, artists: song.artists, album: song.album })) } : {}) }) },
@@ -127,7 +131,7 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
   async function check(target: string, settings: RecommendationSettings, credentials: RecommendationCredentials, signal: AbortSignal) {
     if (target === 'ai') {
       if (!settings.model || !settings.aiBaseUrl || !credentials.aiKey) throw new RecommendationError('请填写完整模型配置', 400);
-      const data = readModelJson(await complete(settings.aiBaseUrl, credentials.aiKey, { model: settings.model.trim(), max_tokens: 256, ...modelCompatibility(settings.aiBaseUrl), messages: [{ role: 'user', content: '只返回 JSON：{"ok":true}，不输出其他内容。' }] }, AbortSignal.any([signal, AbortSignal.timeout(45000)])));
+      const data = readModelJson(await complete(modelEndpoint(settings.aiBaseUrl).href, credentials.aiKey, { model: settings.model.trim(), stream: false, max_tokens: 1024, ...modelCompatibility(settings.aiBaseUrl), messages: [{ role: 'system', content: '你是 API 结构化输出检测助手。只返回一个有效的 JSON 对象，不输出说明或思考过程。' }, { role: 'user', content: '请原样返回这个 JSON 对象：{"ok":true}' }] }, AbortSignal.any([signal, AbortSignal.timeout(45000)])));
       if (data.ok !== true) throw new RecommendationError('模型未按要求返回检测数据，请检查接口兼容性');
     } else if (target === 'lastfm') {
       if (!credentials.lastfmKey) throw new RecommendationError('请填写 Last.fm API Key', 400);
@@ -140,7 +144,7 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
       if (!credentials.appleToken) throw new RecommendationError('请填写 Apple Music Developer Token', 400);
       await catalog.search('apple', { title: 'Believe', artists: ['Cher'] }, settings, credentials, signal);
     } else throw new RecommendationError('检测来源无效', 400);
-    return { ok: true, message: '连接成功', checkedAt: Date.now() };
+    return { ok: true, message: target === 'ai' ? '连接成功，JSON 输出正常' : '连接成功', checkedAt: Date.now() };
   }
   return { generate, links: catalog.links, check };
 }

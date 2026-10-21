@@ -14,8 +14,9 @@ export function createRecommendationsApi(service = createRecommendationService()
       if (req.headers['sec-fetch-site'] === 'cross-site' || req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) throw new RecommendationError('仅允许同源访问', 403);
       if (req.method !== 'POST' || !['generate', 'links', 'check'].some((action) => path === `/api/recommendations/${action}`)) throw new RecommendationError('接口不存在', 404);
       const now = Date.now(); for (const [ip, value] of rates) if (value.until < now) rates.delete(ip);
-      const ip = req.socket.remoteAddress ?? ''; const rate = rates.get(ip) ?? { until: now + 60000, count: 0 }; rates.set(ip, rate);
-      if (++rate.count > 16 || rates.size > 10000 || controllers.size >= 4) throw new RecommendationError('推荐请求过于频繁，请稍后再试', 429);
+      const ip = req.socket.remoteAddress ?? ''; const linksRequest = path.endsWith('/links'); const bucket = `${ip}|${linksRequest ? 'links' : 'work'}`;
+      const rate = rates.get(bucket) ?? { until: now + 60000, count: 0 }; rates.set(bucket, rate);
+      if (++rate.count > (linksRequest ? 60 : 16) || rates.size > 10000 || controllers.size >= 4) throw new RecommendationError('推荐请求过于频繁，请稍后再试', 429);
       if (!req.headers['content-type']?.startsWith('application/json')) throw new RecommendationError('请求需要 JSON', 415);
       controllers.add(controller); res.on('close', disconnect);
       const chunks: Buffer[] = []; let size = 0;

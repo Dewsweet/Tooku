@@ -2,11 +2,12 @@ import { createProviders } from '../lyrics/providers.ts';
 import { canUseLyricCandidate, rankCandidates } from '../../src/domain/lyrics/matching.ts';
 import { isDirectPlatformUrl, platformSearchLink, recommendationRecord, safeArtwork, type MusicPlatform, type PlatformLink, type RecommendationCredentials, type RecommendationSettings, type RecommendationSong, type ResolvedSong } from '../../src/domain/recommendations.ts';
 import { limitedJson, RecommendationError } from './network.ts';
+import { catalogReleaseDate } from '../../src/domain/musicMetadata.ts';
 
 export const object = (v: unknown): Record<string, unknown> => recommendationRecord(v) ? v : {};
 export const text = (v: unknown) => typeof v === 'string' ? v : '';
 const array = (v: unknown) => Array.isArray(v) ? v.map(object) : [];
-interface CatalogSong { title: string; artists: string[]; album?: string; durationMs?: number; url: string; artwork?: string; artistAliases?: string[] }
+interface CatalogSong { title: string; artists: string[]; album?: string; durationMs?: number; releaseDate?: string; url: string; artwork?: string; artistAliases?: string[] }
 export async function mapLimit<T, R>(items: T[], count: number, action: (item: T, index: number) => Promise<R>) {
   const results: R[] = new Array(items.length); let index = 0;
   await Promise.all(Array.from({ length: Math.min(count, items.length) }, async () => { while (index < items.length) { const current = index++; results[current] = await action(items[current], current); } }));
@@ -43,7 +44,7 @@ export function createCatalog(fetcher: typeof fetch = fetch) {
       if (!Array.isArray(object(object(data.results).songs).data)) throw new RecommendationError('Apple Music 目录响应格式无效');
       return array(object(object(data.results).songs).data).map((entry) => {
         const a = object(entry.attributes); const artwork = text(object(a.artwork).url).replace(/\{w\}|\{h\}/g, '240').replace(/\{f\}/g, 'jpg');
-        return { title: text(a.name), artists: [text(a.artistName)], album: text(a.albumName), durationMs: typeof a.durationInMillis === 'number' ? a.durationInMillis : undefined, url: text(a.url), ...(safeArtwork(artwork) ? { artwork } : {}) };
+        return { title: text(a.name), artists: [text(a.artistName)], album: text(a.albumName), durationMs: typeof a.durationInMillis === 'number' ? a.durationInMillis : undefined, releaseDate: catalogReleaseDate(a.releaseDate), url: text(a.url), ...(safeArtwork(artwork) ? { artwork } : {}) };
       });
     }
     if (!token) throw new RecommendationError('Spotify 尚未配置');
@@ -52,7 +53,7 @@ export function createCatalog(fetcher: typeof fetch = fetch) {
     if (!Array.isArray(object(data.tracks).items)) throw new RecommendationError('Spotify 目录响应格式无效');
     return array(object(data.tracks).items).map((entry) => {
       const album = object(entry.album); const artwork = text(array(album.images)[0]?.url);
-      return { title: text(entry.name), artists: array(entry.artists).map((a) => text(a.name)), album: text(album.name), durationMs: typeof entry.duration_ms === 'number' ? entry.duration_ms : undefined, url: text(object(entry.external_urls).spotify), ...(safeArtwork(artwork) ? { artwork } : {}) };
+      return { title: text(entry.name), artists: array(entry.artists).map((a) => text(a.name)), album: text(album.name), durationMs: typeof entry.duration_ms === 'number' ? entry.duration_ms : undefined, releaseDate: catalogReleaseDate(album.release_date), url: text(object(entry.external_urls).spotify), ...(safeArtwork(artwork) ? { artwork } : {}) };
     });
   }
   async function verify(song: RecommendationSong, settings: RecommendationSettings, credentials: RecommendationCredentials, signal: AbortSignal) {
@@ -62,7 +63,7 @@ export function createCatalog(fetcher: typeof fetch = fetch) {
       signal.throwIfAborted();
       try {
         const match = rankCandidates(song, await search(platform, song, settings, credentials, signal)).find((candidate) => canUseLyricCandidate(song, candidate));
-        if (match) return { ...song, title: match.title.slice(0, 256), artists: match.artists.slice(0, 5).map((artist) => artist.slice(0, 120)), ...(match.album ? { album: match.album.slice(0, 256) } : {}), ...(match.durationMs ? { durationMs: match.durationMs } : {}) };
+        if (match) return { ...song, title: match.title.slice(0, 256), artists: match.artists.slice(0, 5).map((artist) => artist.slice(0, 120)), ...(match.album ? { album: match.album.slice(0, 256) } : {}), ...(match.durationMs ? { durationMs: match.durationMs } : {}), ...(match.releaseDate ? { releaseDate: match.releaseDate } : {}) };
       } catch { if (signal.aborted) break; }
     }
     return undefined;
@@ -71,6 +72,7 @@ export function createCatalog(fetcher: typeof fetch = fetch) {
     let token: string | undefined;
     if (settings.platforms.includes('spotify') && credentials.spotifyClientId && credentials.spotifyClientSecret) { try { token = await spotifyToken(credentials, signal); } catch { /* Other platforms keep working. */ } }
     const results: ResolvedSong[] = songs.map((song) => ({ id: song.id, links: [] }));
+    const metadata: Partial<Record<MusicPlatform, CatalogSong>>[] = songs.map(() => ({}));
     await mapLimit(songs.flatMap((song, index) => settings.platforms.map((platform) => ({ song, index, platform }))), 4, async ({ song, index, platform }) => {
       const fallback: PlatformLink = { platform, url: platformSearchLink(platform, song, settings), kind: 'search', status: 'not-found' };
       const configured = platform === 'apple' ? Boolean(credentials.appleToken) : platform === 'spotify' ? Boolean(credentials.spotifyClientId && credentials.spotifyClientSecret) : true;
@@ -78,11 +80,15 @@ export function createCatalog(fetcher: typeof fetch = fetch) {
       else try {
         signal.throwIfAborted();
         const found = rankCandidates(song, await search(platform, song, settings, credentials, signal, token)).find((candidate) => canUseLyricCandidate(song, candidate) && isDirectPlatformUrl(candidate.url, platform));
-        if (found) { fallback.url = found.url; fallback.kind = 'direct'; fallback.status = 'matched'; if (found.artwork && !results[index].artwork) results[index].artwork = found.artwork; }
+        if (found) { fallback.url = found.url; fallback.kind = 'direct'; fallback.status = 'matched'; metadata[index][platform] = found; }
       } catch { fallback.status = 'unavailable'; }
       results[index].links.push(fallback);
     });
-    for (const result of results) result.links.sort((a, b) => settings.platforms.indexOf(a.platform) - settings.platforms.indexOf(b.platform));
+    for (const [index, result] of results.entries()) {
+      result.links.sort((a, b) => settings.platforms.indexOf(a.platform) - settings.platforms.indexOf(b.platform));
+      const match = settings.platforms.map((platform) => metadata[index][platform]).find(Boolean);
+      if (match) { if (match.album) result.album = match.album.slice(0, 256); if (match.durationMs) result.durationMs = match.durationMs; if (match.releaseDate) result.releaseDate = match.releaseDate; }
+    }
     return results;
   }
   return { json, search, verify, links, spotifyToken };

@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import { Interactions } from '../src/components/Interactions';
 import { MusicApi } from '../src/api/client';
 import { RecommendationsApi, recommendationsApi } from '../src/api/recommendations';
 import { Recommendations } from '../src/features/recommendations/Recommendations';
@@ -28,7 +29,7 @@ beforeEach(() => {
   vi.spyOn(recommendationsApi, 'check').mockResolvedValue('连接成功');
 });
 afterEach(() => { cleanup(); client.clear(); api.dispose(); useSession.getState().setSession(null); usePlayer.setState(usePlayer.getInitialState()); useRecommendationProfiles.setState({ profiles: {} }); vi.restoreAllMocks(); });
-const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}>{child}</QueryClientProvider>);
+const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}><MemoryRouter><Interactions>{child}</Interactions></MemoryRouter></QueryClientProvider>);
 const configure = () => useRecommendationSecrets.getState().update(api.identity, { lastfmKey: crypto.randomUUID() });
 
 it('requires listening data and configuration, and does not generate automatically', async () => {
@@ -44,7 +45,10 @@ it('generates only on click, retains results across navigation and provides all 
   configure(); const attach = vi.spyOn(player, 'attach'); const replace = vi.spyOn(player, 'replace').mockImplementation(() => {});
   const view = surface(<Recommendations />); fireEvent.click(screen.getByRole('button', { name: '生成推荐' }));
   await screen.findByText('New song'); expect(recommendationsApi.generate).toHaveBeenCalledOnce();
-  expect(screen.getAllByRole('link')).toHaveLength(4); expect(screen.getByRole('link', { name: '搜索Apple Music：New song' })).toHaveAttribute('href', expect.stringContaining('music.apple.com/cn/search'));
+  expect(recommendationsApi.links).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' }));
+  expect(screen.getAllByRole('menuitem').filter((item) => item instanceof HTMLAnchorElement)).toHaveLength(4);
+  expect(screen.getByRole('menuitem', { name: 'Apple Music · 搜索' })).toHaveAttribute('href', expect.stringContaining('music.apple.com/cn/search'));
   expect(attach).not.toHaveBeenCalled(); expect(replace).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(23);
   view.unmount(); surface(<Recommendations />); await screen.findByText('New song'); expect(recommendationsApi.generate).toHaveBeenCalledOnce();
   expect(screen.getByRole('button', { name: '换一批' })).toBeEnabled();
@@ -77,24 +81,51 @@ it('cancels late generations on account change and clears all session credential
 it('uses external platform links and preserves the current audio without library lookup', async () => {
   configure(); useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
   const replace = vi.spyOn(player, 'replace').mockImplementation(() => {});
-  surface(<Recommendations />); const link = screen.getByRole('link', { name: '搜索Spotify：New song' });
+  surface(<Recommendations />); fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' })); const link = screen.getByRole('menuitem', { name: 'Spotify · 搜索' });
   expect(link).toHaveAttribute('target', '_blank'); expect(api.search).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: /本库播放/ })).not.toBeInTheDocument();
   expect(replace).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(23);
 });
 
-it('shares the current batch with home without generating, and shows only four preview cards', async () => {
+it('shares the current batch with home without generating or prefetching links, and shows four rows', async () => {
   const songs = Array.from({ length: 30 }, (_, index) => ({ ...batch.songs[0], id: `song-${index}`, title: `Discover ${index}` }));
   useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch: { ...batch, songs } }));
-  const view = surface(<MemoryRouter><HomeRecommendations /></MemoryRouter>);
+  const view = surface(<HomeRecommendations />);
   expect(screen.getByRole('region', { name: '为你推荐' })).toBeInTheDocument();
-  expect(screen.getAllByRole('article')).toHaveLength(4);
+  expect(within(screen.getByRole('table', { name: '主页推荐歌曲' })).getAllByRole('row')).toHaveLength(5);
   expect(screen.getByRole('link', { name: '查看全部' })).toHaveAttribute('href', '/recommendations');
-  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  expect(recommendationsApi.links).not.toHaveBeenCalled();
   expect(recommendationsApi.generate).not.toHaveBeenCalled();
   view.unmount(); surface(<Recommendations />);
-  expect(screen.getAllByRole('article')).toHaveLength(30);
-  expect(recommendationsApi.links).toHaveBeenCalledOnce();
+  expect(within(screen.getByRole('table', { name: '推荐歌曲' })).getAllByRole('row')).toHaveLength(31);
+  expect(recommendationsApi.links).not.toHaveBeenCalled(); expect(screen.queryByRole('img')).not.toBeInTheDocument();
+});
+
+it('updates a song menu with direct links and real metadata without stealing focus or requesting covers', async () => {
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
+  let resolve!: (value: Awaited<ReturnType<typeof recommendationsApi.links>>) => void;
+  vi.mocked(recommendationsApi.links).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  surface(<Recommendations />);
+  expect(recommendationsApi.links).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' }));
+  const qq = screen.getByRole('menuitem', { name: 'QQ 音乐 · 搜索' }); qq.focus();
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  expect(vi.mocked(recommendationsApi.links).mock.calls[0][0]).toHaveLength(1);
+  await act(async () => resolve([{ id: 'song-one', album: 'Real record', durationMs: 235000, releaseDate: '2003-03', links: [{ platform: 'netease', kind: 'direct', status: 'matched', url: 'https://music.163.com/#/song?id=123' }] }]));
+  expect(screen.getByRole('menuitem', { name: '网易云音乐' })).toHaveAttribute('href', 'https://music.163.com/#/song?id=123');
+  expect(qq).toHaveFocus(); expect(screen.getByText('2003-03')).toBeInTheDocument(); expect(screen.getByText('3:55')).toBeInTheDocument(); expect(screen.getByText('Real record')).toBeInTheDocument();
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  fireEvent.keyDown(qq, { key: 'Escape' }); expect(screen.getByRole('button', { name: '选择收听平台：New song' })).toHaveFocus();
+});
+
+it('does not reopen a dismissed menu when a late lookup finishes', async () => {
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
+  let resolve!: (value: Awaited<ReturnType<typeof recommendationsApi.links>>) => void;
+  vi.mocked(recommendationsApi.links).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  surface(<Recommendations />); fireEvent.click(screen.getByRole('button', { name: '选择收听平台：New song' }));
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+  await act(async () => resolve([{ id: 'song-one', links: [] }]));
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });
 
 it('stores the requested count, exposes all listening references and excludes more than the last batch', async () => {

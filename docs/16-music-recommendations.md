@@ -6,7 +6,7 @@
 
 左栏“最近在听”下方为“为你推荐”，路由 `/recommendations`；主页“全部”展示最近一批前四首，无结果时提供入口。从头像进入设置，在“音乐推荐”中配置服务。推荐页与设置均可选择 10/20/30 首，默认 30。只有“生成推荐 / 换一批”才发起推荐，不自动生成；模型连接检测另发一次短请求。保留最近一批，失败或没有新候选时保留旧结果。平台链接核实独立进行，核实前可搜索歌曲。
 
-推荐页与主页共用自适应卡片：歌名、歌手、可用专辑、推荐依据、封面与四个平台外部入口；缺封面使用音乐图标。移除“本库播放”和对应曲库查询，不操作 Tooku 音频。推荐页可展开“收听参考”，明确展示本次将使用的全部样本；旧批次只显示上次提交数量，不将当前历史冒充旧批次快照。
+推荐页与主页共用一首一行的文字表格：标题/歌手、专辑、发行日期与时长，不显示封面或占位图标；窄容器依次隐藏日期、专辑列。点击歌曲或行内空白、右键、键盘激活标题均打开统一平台菜单，提供原生外部链接。菜单先给搜索入口，再按需核实当前一首歌曲并原位更新直达链接；不预取整批链接或图片。更新不抢焦点，已关闭或切到其他歌曲的菜单不会被迟到结果重新打开。移除“本库播放”，不操作 Tooku 音频。结果标明实际使用的算法/AI/混合模式；展开“收听参考”可查看将提交的样本。
 
 ## 模块
 
@@ -15,7 +15,8 @@
 | `src/domain/recommendations.ts` | 类型、运行时白名单、历史整理和平台 URL 校验 |
 | `src/state/recommendations.ts` | 按账号持久化设置/批次；独立会话密钥内存状态 |
 | `src/api/recommendations.ts` | 同源请求、取消、输出校验；密钥不进入查询 key |
-| `src/features/recommendations/` | 推荐页、主页预览、共用卡片与平台链接缓存 |
+| `src/features/recommendations/` | 推荐页、主页预览、共用文字表格与按需平台菜单 |
+| `src/domain/musicMetadata.ts` | 校验目录发行日期，保留年/月/日原始精度 |
 | `src/features/settings/RecommendationSettings.tsx` | 偏好、凭据、模型与分别检测 |
 | `server/recommendations/service.ts` | Last.fm / AI 候选、核实、筛选和降级 |
 | `server/recommendations/ranking.ts` | 样本交错、来源均衡的候选池、避重与多样性选择 |
@@ -35,7 +36,9 @@ AI 模式与混合模式均可提名池外新歌，最多为目标数的两倍�
 
 支持兼容 Chat Completions 的公网 HTTPS 接口：基址自动追加 `/chat/completions`，也可填完整地址；请求使用 `model`、`messages`、`temperature`、`max_tokens`。要求返回 JSON，兼容 Markdown JSON 代码块。不同模型的参数和响应能力需分别检测。
 
-DeepSeek 官方主机 `api.deepseek.com` 的生成与检测均显式设置 `thinking: { type: "disabled" }` 和 JSON 输出格式；其他兼容主机不附加这些专用参数。模型名按用户填写，不自动改写。生成输出额度 8192 tokens；检测使用 256 tokens 并核对 `{"ok":true}`。截断、只有思考内容、无效 JSON 和 HTTP 认证/余额/模型配置等故障分别提示；有候选时保留算法回退，不以歌曲数量判断 AI 成功。
+DeepSeek 官方根地址、`/v1` 与旧 `/chat/completions` 均经共享 `modelEndpoint` 统一为 `https://api.deepseek.com/v1/chat/completions`，设置推荐填写 `https://api.deepseek.com/v1`；其他兼容主机保留自己的前缀。检测与生成使用同一 transport、非流式响应、官方非思考模式和 JSON 输出格式，不自动改模型名。生成额度 8192 tokens，检测额度 1024 tokens，带 system/user 提示并核对 `{"ok":true}`；检测成功提示 JSON 输出正常。兼容文本 parts、BOM 和 JSON 代码块，分别识别空内容、截断、只有思考、拒绝、缺少 choices/message、无效内容 JSON、HTTP 非 JSON/代理拦截及认证/余额错误，不提取任意文本中的花括号或把思考当答案。有候选时仍可回退算法，不以歌曲数量判断 AI 成功。官方 JSON 模式也可能返回空内容，参见 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/)。
+
+模型独立 HTTPS Agent 同时采用 Node 默认和操作系统已信任的 CA，显式保持 `rejectUnauthorized: true`，保留域名校验、全部 DNS 结果公网检查和连接 IP 固定，不安装证书或修改系统信任。CA 在服务启动时读取，系统信任变化后需正常重启。本机无密钥检查复现过一个 DeepSeek 解析地址用默认 CA 报 `SELF_SIGNED_CERT_IN_CHAIN`，加入系统信任后两个地址均返回 401；修复后根地址、/v1 和完整地址也均返回 401。这只验证 TLS/路由，没有验证真实账户模型调用。
 
 过滤当前样本和最近推荐过的最多 300 个 ID。同一歌手（含合作歌手）、已知同名专辑最多一首；没有专辑元数据时不能推断专辑归属。默认新账号探索比例 70%，旧设置保留；先预留新歌手目标，再以关联分、参考来源覆盖和专辑惩罚贪心补足，每多选同一来源会降低后续优先级。算法模式对关联分轻微扰动，混合模式保留模型排序。宁可少推荐，也不放松歌手/专辑限制。没有客观流行度或完整音频风格数据，不能保证“小众”或精确相关性，也不显示伪造的热门度标签。Spotify 目录仅在推荐后用于链接核实，返回内容不输入模型。
 
@@ -53,15 +56,17 @@ Last.fm 填写 API key，不填写 Shared secret。各服务的检测按钮旁�
 
 使用歌名、歌手（含来源别名）、专辑、时长、Live/翻唱等版本信息匹配。直达链接限定固定 HTTPS 平台主机和歌曲路径，拒绝任意 URL 和认证查询参数。未配置、限流、故障、无匹配时显示带“搜索”标记的入口。目录命中不保证该地区的播放权限。
 
+日期、时长和专辑只使用已匹配目录元数据：网易云 publishTime、QQ time_public、Apple releaseDate、Spotify release_date 等现有搜索返回字段，不追加专辑详情查询，不让 AI 生成日期或时长。只到年的日期不补月日，无效/缺失显示“—”。AI 核实时已有数据随批次保存；算法歌曲在点击查链接时可补齐行内信息。多个平台元数据按配置顺序选择首个匹配版本，避免并发返回顺序决定显示内容。
+
 ## HTTP、凭据与限制
 
 | POST 路径 | 输入 | 输出 |
 | --- | --- | --- |
 | `/api/recommendations/generate` | `settings, credentials, seeds, excluded, recentSongs?` | `RecommendationBatch` |
-| `/api/recommendations/links` | `settings, credentials, songs` | 每首的链接和可用封面 |
+| `/api/recommendations/links` | `settings, credentials, songs` | 每首的链接及已匹配的专辑/发行日期/时长 |
 | `/api/recommendations/check` | `settings, credentials, target` | 当次连接结果 |
 
-输入最多 256 KB（覆盖多语言样本和有限避重元数据）、上游响应读取最多 1 MB；每 IP 每分钟最多 16 次操作，全服务最多 4 个在途操作。Last.fm 并发 4，服务实例按至少 250 毫秒间隔发起请求；目录并发 4。Last.fm 单次预算 10 秒、整个阶段 60 秒；其他来源 6 秒、模型 45 秒、AI 核实 35 秒。服务端生成总计 150 秒、检测 50 秒、单组链接 20 秒，客户端分别多留 5 秒。平台链接按六首一组、客户端并发两组核实；部分组失败保留成功结果，失败项提供搜索，全部失败才显示重试。不会自动重试生成；客户端断开或服务退出取消在途工作。主页与推荐页复用链接缓存。
+输入最多 256 KB（覆盖多语言样本和有限避重元数据）、上游响应读取最多 1 MB；每 IP 每分钟生成/检测共 16 次、按需链接另计 60 次，避免浏览 30 首占用模型限额；全服务最多 4 个在途操作。Last.fm 并发 4，服务实例按至少 250 毫秒间隔发起请求；目录并发 4。Last.fm 单次预算 10 秒、整个阶段 60 秒；其他来源 6 秒、模型 45 秒、AI 核实 35 秒。服务端生成总计 150 秒、检测 50 秒、链接 20 秒，客户端分别多留 5 秒。当前 UI 只在打开歌曲菜单时核实一首；通用客户端仍支持六首分组、两组并发。不会自动重试生成；客户端断开或服务退出取消在途工作。主页与推荐页按账号、歌曲版本、平台/地区、凭据代次复用五分钟缓存，切账号/配置和卸载取消在途请求。
 
 密钥、Client Secret、Developer Token 和 Spotify 临时令牌仅会话/请求内存，不写 localStorage、IndexedDB、SQLite、备份、日志或查询 key。切换 MusicApi 会话时清除密钥，页面卸载取消工作，迟到结果不能写入其他账号。模型调用仅携带模型密钥，平台凭据仅发往对应固定主机；上游错误采用固定文案，不返回原始响应。
 
@@ -71,7 +76,7 @@ Last.fm 填写 API key，不填写 Shared secret。各服务的检测按钮旁�
 
 ## 保存与兼容
 
-账号文档 v1 的可选 `recommendations` 保存 settings、batch，以及可选 seenIds（最多 300 个 ID）、recentSongs（最多 90 首 ID/标题/歌手）。`settings.resultCount` 可选，旧配置缺省按 30；兼容旧 settings/batch 文档、10 首旧结果及无推荐字段的备份，不清空存储、不升级 SQLite schema。普通设置、最近结果和避重元数据随既有账号文档同步、备份和 revision 冲突处理；密钥不在白名单。模型地址不能夹带认证信息。平台返回的 URL、目录正文、封面与临时令牌不进入账号文档；平台查询结果仅缓存 5 分钟。
+账号文档 v1 的可选 `recommendations` 保存 settings、batch，以及可选 seenIds（最多 300 个 ID）、recentSongs（最多 90 首 ID/标题/歌手）。批次歌曲可包含经目录核实的可选 releaseDate，缺省仍可读；菜单查询补齐的信息仅在查询缓存。`settings.resultCount` 可选，旧配置缺省按 30；兼容旧 settings/batch 文档、10 首旧结果及无推荐字段的备份，不清空存储、不升级 SQLite schema。普通设置、最近结果和避重元数据随既有账号文档同步、备份和 revision 冲突处理；密钥不在白名单。模型地址不能夹带认证信息。平台返回的 URL、目录正文、封面与临时令牌不进入账号文档；平台查询结果仅缓存 5 分钟。
 
 本机 `tooku-recommendations` 按旧 `api.identity` 保存回退，读取时验证。默认状态不创建空账号记录。旧文档/备份继续有效，明确恢复旧备份会重置当前账号推荐数据，保留其他账号。无 SQLite schema 或文档版本升级，不清空旧存储。保存失败时会话保留可见状态并提示核实同步或导出备份；同步/恢复不操作音频。
 
@@ -81,6 +86,7 @@ Last.fm 填写 API key，不填写 Shared secret。各服务的检测按钮旁�
 
 - [Last.fm track.getSimilar](https://www.last.fm/api/show/track.getSimilar)
 - [DeepSeek 接入说明](https://api-docs.deepseek.com/quick_start)、[Chat Completions 参数](https://api-docs.deepseek.com/api/create-chat-completion/)、[错误码](https://api-docs.deepseek.com/quick_start/error_codes/)
+- [Node TLS 信任库](https://nodejs.org/download/release/latest-v24.x/docs/api/tls.html#tlsgetcacertificatestype)
 - [Apple Music 请求与响应](https://developer.apple.com/documentation/applemusicapi/handling-requests-and-responses)
 - [Spotify Client Credentials](https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow)、[Search](https://developer.spotify.com/documentation/web-api/reference/search)、[Developer Policy](https://developer.spotify.com/policy)
 - 国内固定目录沿用 [歌词组件维护记录](15-lyrics-service-design.md) 的自行实现与许可边界。

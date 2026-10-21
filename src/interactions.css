@@ -2,8 +2,8 @@
 .context-menu, .app-tooltip { position: fixed; inset: auto; margin: 0; box-sizing: border-box; color: var(--text); border: 1px solid var(--line); background: var(--bg); z-index: 1000; }
 .context-menu { min-width: 210px; max-width: min(320px,calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 6px; border-radius: 12px; box-shadow: 0 12px 44px #11152229,0 2px 7px #1115220d; }
 .context-menu:popover-open { animation: surface-enter .12s ease both; }
-.context-menu > button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; color: var(--text); padding: 11px 12px; border-radius: 6px; font-size: 13px; min-height: 39px; }
-.context-menu > button:hover, .context-menu > button:focus-visible { background: var(--surface); outline: none; }
+.context-menu > :is(button, a) { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; color: var(--text); padding: 11px 12px; border-radius: 6px; font-size: 13px; min-height: 39px; }
+.context-menu > :is(button, a):hover, .context-menu > :is(button, a):focus-visible { background: var(--surface); outline: none; }
 .context-menu > button:disabled { opacity: .4; cursor: default; }
 .context-menu .menu-divider { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 14px; border-radius: 0 0 6px 6px; }
 .context-menu .menu-danger { color: var(--accent); }

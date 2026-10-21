@@ -2,12 +2,14 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { spawnSync } from 'node:child_process';
+import { getCACertificates } from 'node:tls';
+import { catalogReleaseDate } from '../src/domain/musicMetadata';
 import { listeningSeeds, defaultRecommendationSettings as settings, emptyRecommendationCredentials, isRecommendationProfile, isRecommendationBatch, recommendationCount, recommendationContext, rememberRecommendationBatch, isResolvedSong, isDirectPlatformUrl, songKey, type RecommendationSong, type ListeningSeed } from '../src/domain/recommendations';
 import { balancedSeeds, candidatePool } from '../server/recommendations/ranking';
 import { selectRecommendations, createRecommendationService as createService, modelCompatibility, readModelJson } from '../server/recommendations/service';
 import { createCatalog, object, text } from '../server/recommendations/catalog';
 import { createRecommendationsApi } from '../server/recommendations/http';
-import { limitedJson, publicAddress, resolveModelEndpoint, modelHttpError, RecommendationError, type modelCompletion } from '../server/recommendations/network';
+import { limitedJson, publicAddress, resolveModelEndpoint, modelCertificateAuthorities, modelHttpError, RecommendationError, type modelCompletion } from '../server/recommendations/network';
 
 const credentials = { ...emptyRecommendationCredentials, lastfmKey: crypto.randomUUID(), aiKey: crypto.randomUUID(), spotifyClientId: crypto.randomUUID(), spotifyClientSecret: crypto.randomUUID(), appleToken: crypto.randomUUID() };
 const seed: ListeningSeed = { title: 'Seed', artists: ['Artist'], plays: 1, weight: 1 };
@@ -167,6 +169,38 @@ it('loads the production service in the native Node TypeScript runtime', () => {
   expect(result.status, result.stderr).toBe(0);
 });
 
+it('normalizes official DeepSeek URLs for checks and generation and retains system trust roots', async () => {
+  const resolver = async () => [{ address: '1.1.1.1', family: 4 }];
+  for (const base of ['https://api.deepseek.com', 'https://api.deepseek.com/', 'https://api.deepseek.com/v1', 'https://api.deepseek.com/chat/completions', 'https://api.deepseek.com/v1/chat/completions/']) {
+    expect((await resolveModelEndpoint(base, resolver)).url.href).toBe('https://api.deepseek.com/v1/chat/completions');
+  }
+  const authorities = new Set(modelCertificateAuthorities());
+  expect(getCACertificates('default').every((ca) => authorities.has(ca))).toBe(true);
+  expect(getCACertificates('system').every((ca) => authorities.has(ca))).toBe(true);
+  expect((await resolveModelEndpoint('https://other.example.com/custom/v1', resolver)).url.href).toBe('https://other.example.com/custom/v1/chat/completions');
+});
+
+it('distinguishes empty model content from invalid JSON and supports text parts, fences and BOM', () => {
+  expect(() => readModelJson({ choices: [{ message: { content: '  ' }, finish_reason: 'stop' }] })).toThrow('模型已连通，但返回了空内容');
+  expect(() => readModelJson({ data: '<html>proxy</html>' })).toThrow('缺少 choices/message');
+  expect(() => readModelJson({ choices: [{ message: { content: '' }, finish_reason: 'content_filter' }] })).toThrow('拒绝');
+  expect(readModelJson({ choices: [{ message: { content: '\uFEFF```json\n{"ok":true}\n```' } }] })).toEqual({ ok: true });
+  expect(readModelJson({ choices: [{ message: { content: [{ type: 'text', text: '{"ok":' }, { type: 'text', text: 'true}' }] } }] })).toEqual({ ok: true });
+});
+
+it('uses release metadata only when returned by a matching catalog and preserves its precision', async () => {
+  expect(catalogReleaseDate('2003')).toBe('2003'); expect(catalogReleaseDate('2003-03')).toBe('2003-03');
+  expect(catalogReleaseDate('2003-02-30')).toBeUndefined(); expect(catalogReleaseDate(0)).toBeUndefined();
+  expect(catalogReleaseDate(Date.UTC(1963, 0, 1))).toBe('1963-01-01');
+  const fetcher = vi.fn<typeof fetch>(async () => json({ code: 200, result: { songs: [{ id: 123, name: song.title, artists: [{ name: 'Artist' }], duration: 180000, publishTime: Date.UTC(2003, 2, 1), album: { name: 'Record' } }] } }));
+  const catalog = createCatalog(fetcher); const config = { ...settings, platforms: ['netease'] as const };
+  const result = await catalog.verify(song, { ...config, platforms: [...config.platforms] }, credentials, new AbortController().signal);
+  expect(result).toMatchObject({ album: 'Record', durationMs: 180000, releaseDate: '2003-03-01' });
+  const [resolved] = await catalog.links([song], { ...config, platforms: [...config.platforms] }, credentials, new AbortController().signal);
+  expect(resolved).toMatchObject({ album: 'Record', durationMs: 180000, releaseDate: '2003-03-01' }); expect(isResolvedSong(resolved)).toBe(true);
+  expect(isResolvedSong({ ...resolved, releaseDate: '2003-02-30' })).toBe(false);
+});
+
 it('falls back to algorithm results when model ranking fails, without returning secrets or provider errors', async () => {
   const fetcher = vi.fn<typeof fetch>(async () => json({ similartracks: { track: Array.from({ length: 15 }, (_, i) => ({ name: `Found ${i}`, artist: { name: `Singer ${i}` }, match: .9 })) } }));
   const complete = vi.fn<typeof modelCompletion>(async () => { throw new Error(credentials.aiKey); });
@@ -181,7 +215,8 @@ it('uses compact ranking ids and sufficient JSON output with thinking disabled o
   const fetcher = vi.fn<typeof fetch>(async () => json({ similartracks: { track: Array.from({ length: 20 }, (_, i) => ({ name: `Found ${i}`, artist: { name: `Singer ${i}` }, match: .9 })) } }));
   const complete = vi.fn<typeof modelCompletion>(async (_base, _key, payload) => {
     const data = object(payload); expect(data.thinking).toEqual({ type: 'disabled' }); expect(data.response_format).toEqual({ type: 'json_object' });
-    if (data.max_tokens === 256) return { choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }] };
+    expect(_base).toBe('https://api.deepseek.com/v1/chat/completions'); expect(data.stream).toBe(false);
+    if (data.max_tokens === 1024) return { choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }] };
     expect(Number(data.max_tokens)).toBeGreaterThanOrEqual(2048);
     const messages = Array.isArray(data.messages) ? data.messages : []; const prompt = object(JSON.parse(text(object(messages[1]).content)));
     const candidates = Array.isArray(prompt.candidates) ? prompt.candidates.map(object) : [];
@@ -304,6 +339,10 @@ it('bounds HTTP requests, rejects cross-origin work and redacts unexpected upstr
   expect((await post({ ...payload, excluded: Array.from({ length: 301 }, (_, index) => `seen${index}`) })).status).toBe(400);
   expect((await post({ ...payload, recentSongs: [{ id: 'x', title: 'Song', artists: ['Artist'], token: 'invalid' }] })).status).toBe(400);
   const failed = await post(payload); expect(failed.status).toBe(502); expect(await failed.text()).not.toContain(credentials.aiKey);
+  vi.spyOn(service, 'links').mockResolvedValue([]);
+  for (let i = 0; i < 60; i++) expect((await fetch(`${base}links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings, credentials, songs: [] }) })).status).toBe(200);
+  expect((await fetch(`${base}links`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings, credentials, songs: [] }) })).status).toBe(429);
+  expect((await post(payload)).status).toBe(502);
   for (let i = 0; i < 16; i++) await post(payload);
   expect((await post(payload)).status).toBe(429);
 });

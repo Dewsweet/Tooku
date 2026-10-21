@@ -1,7 +1,14 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { request } from 'node:https';
-import { validModelBase } from '../../src/domain/recommendations.ts';
+import { Agent, request } from 'node:https';
+import { getCACertificates } from 'node:tls';
+import { modelEndpoint, validModelBase } from '../../src/domain/recommendations.ts';
+
+export function modelCertificateAuthorities() {
+  return [...new Set([...getCACertificates('default'), ...getCACertificates('system')])];
+}
+// Respect locally trusted proxy/enterprise roots without disabling chain or hostname validation.
+const modelAgent = new Agent({ ca: modelCertificateAuthorities(), rejectUnauthorized: true, keepAlive: true, maxSockets: 4 });
 
 export class RecommendationError extends Error {
   readonly status: number;
@@ -18,7 +25,7 @@ function modelTransportError(error: unknown, signal: AbortSignal) {
   if (error instanceof RecommendationError) return error;
   if (signal.aborted) return new RecommendationError(signal.reason instanceof Error && signal.reason.name === 'TimeoutError' ? '模型请求超时，请稍后重试' : '模型请求已取消');
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-  return new RecommendationError(['ENOTFOUND', 'EAI_AGAIN'].includes(code) ? '模型域名解析失败，请检查服务地址和网络' : /CERT|VERIFY|SELF_SIGNED/.test(code) ? '模型 TLS 证书验证失败，请检查网络和接口配置' : '模型网络连接失败，请检查服务地址或稍后重试');
+  return new RecommendationError(['ENOTFOUND', 'EAI_AGAIN'].includes(code) ? '模型域名解析失败，请检查服务地址和网络' : /CERT|VERIFY|SELF_SIGNED/.test(code) ? '模型 TLS 证书验证失败，请检查代理证书是否受系统信任；信任变更后重启 Tooku' : '模型网络连接失败，请检查服务地址或稍后重试');
 }
 export async function limitedJson(response: Response): Promise<unknown> {
   if (!response.ok) throw new RecommendationError(response.status === 429 ? '来源请求过于频繁，请稍后再试' : [401, 403].includes(response.status) ? '来源认证未通过，请检查凭据或权限' : '来源暂时不可用');
@@ -44,10 +51,8 @@ export function publicAddress(address: string): boolean {
 }
 export async function resolveModelEndpoint(base: string, resolver: (hostname: string, options: { all: true; verbatim: true }) => Promise<{ address: string; family: number }[]> = lookup) {
   if (!base || !validModelBase(base)) throw new RecommendationError('模型地址需为不含凭据或查询参数的 HTTPS 地址', 400);
-  const url = new URL(base);
+  const url = modelEndpoint(base);
   if (url.port && url.port !== '443') throw new RecommendationError('模型地址仅支持 HTTPS 默认端口', 400);
-  const path = url.pathname.replace(/\/+$/, '');
-  url.pathname = path.endsWith('/chat/completions') ? path : `${path}/chat/completions`;
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await resolver(hostname, { all: true, verbatim: true });
   if (!addresses.length || addresses.some((item) => !publicAddress(item.address))) throw new RecommendationError('模型地址需解析到公网地址', 400);
@@ -64,15 +69,16 @@ export async function modelCompletion(base: string, key: string, payload: unknow
   const body = JSON.stringify(payload);
   return new Promise((resolve, reject) => {
     const fail = (error: unknown) => reject(modelTransportError(error, signal));
-    const req = request(url, { method: 'POST', signal,
+    const req = request(url, { method: 'POST', signal, agent: modelAgent,
       lookup: (_hostname, options, callback) => options.all ? callback(null, [address]) : callback(null, address.address, address.family),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'Content-Length': Buffer.byteLength(body) },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Encoding': 'identity', Authorization: `Bearer ${key}`, 'Content-Length': Buffer.byteLength(body) },
     }, (response) => {
+      response.on('error', fail);
       if (response.statusCode !== 200) { response.resume(); reject(modelHttpError(response.statusCode ?? 502)); return; }
+      if (!String(response.headers['content-type'] ?? '').toLowerCase().includes('application/json')) { response.resume(); reject(new RecommendationError('模型接口未返回 JSON 响应，请检查地址或代理是否拦截请求')); return; }
       const chunks: Buffer[] = []; let size = 0;
       response.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 1048576) req.destroy(new RecommendationError('模型响应超过大小限制')); else chunks.push(chunk); });
-      response.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new RecommendationError('模型响应格式无效')); } });
-      response.on('error', fail);
+      response.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '').trim())); } catch { reject(new RecommendationError('模型 HTTP 响应不是有效 JSON，请检查代理或接口兼容性')); } });
     });
     req.setTimeout(45000, () => req.destroy(new RecommendationError('模型请求超时，请稍后重试'))); req.on('error', fail); req.end(body);
   });

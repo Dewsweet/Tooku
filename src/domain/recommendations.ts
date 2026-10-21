@@ -1,4 +1,5 @@
 import type { HistoryEntry } from './models.ts';
+import { catalogReleaseDate } from './musicMetadata.ts';
 
 export const musicPlatforms = ['netease', 'qq', 'apple', 'spotify'] as const;
 export type MusicPlatform = typeof musicPlatforms[number];
@@ -14,7 +15,7 @@ export const defaultRecommendationSettings: RecommendationSettings = {
 };
 export interface RecommendationCredentials { lastfmKey: string; aiKey: string; appleToken: string; spotifyClientId: string; spotifyClientSecret: string }
 export const emptyRecommendationCredentials: RecommendationCredentials = { lastfmKey: '', aiKey: '', appleToken: '', spotifyClientId: '', spotifyClientSecret: '' };
-export interface RecommendationSong { id: string; title: string; artists: string[]; album?: string; durationMs?: number; reason: string; origin: 'lastfm' | 'ai' }
+export interface RecommendationSong { id: string; title: string; artists: string[]; album?: string; durationMs?: number; releaseDate?: string; reason: string; origin: 'lastfm' | 'ai' }
 export interface ListeningSeed { title: string; artists: string[]; album?: string; durationMs?: number; weight: number; plays: number }
 export interface RecommendationBatch { id: string; createdAt: number; sampleCount: number; mode: 'algorithm' | 'ai' | 'hybrid'; songs: RecommendationSong[]; notices: string[] }
 export type RecommendationMemory = Pick<RecommendationSong, 'id' | 'title' | 'artists'>;
@@ -30,7 +31,7 @@ export function rememberRecommendationBatch(profile: RecommendationProfile, batc
   return { ...profile, batch, seenIds, recentSongs };
 }
 export interface PlatformLink { platform: MusicPlatform; url: string; kind: 'direct' | 'search'; status: 'matched' | 'unconfigured' | 'not-found' | 'unavailable' }
-export interface ResolvedSong { id: string; links: PlatformLink[]; artwork?: string }
+export interface ResolvedSong { id: string; links: PlatformLink[]; artwork?: string; album?: string; durationMs?: number; releaseDate?: string }
 export const recommendationRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every((key) => allowed.includes(key));
 const text = (v: unknown, max = 512): v is string => typeof v === 'string' && v.length <= max;
@@ -40,6 +41,14 @@ export function validModelBase(value: unknown): value is string {
   if (!text(value, 512)) return false;
   if (!value) return true;
   try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash; } catch { return false; }
+}
+export function modelEndpoint(base: string): URL {
+  if (!base || !validModelBase(base)) throw new Error('模型地址无效');
+  const url = new URL(base.trim()); const path = url.pathname.replace(/\/+$/, '');
+  // Keep official DeepSeek checks and generations on one endpoint, including old root settings.
+  url.pathname = url.hostname === 'api.deepseek.com' && ['', '/v1', '/chat/completions', '/v1/chat/completions'].includes(path)
+    ? '/v1/chat/completions' : path.endsWith('/chat/completions') ? path : `${path}/chat/completions`;
+  return url;
 }
 export function isRecommendationSettings(v: unknown): v is RecommendationSettings {
   return recommendationRecord(v) && keys(v, ['mode', 'sampleSize', 'resultCount', 'exploration', 'platforms', 'aiBaseUrl', 'model', 'appleStorefront', 'spotifyMarket'])
@@ -54,7 +63,7 @@ export function isRecommendationCredentials(v: unknown): v is RecommendationCred
 const metadata = (v: Record<string, unknown>) => text(v.title, 256) && !!v.title.trim() && Array.isArray(v.artists) && v.artists.length > 0 && v.artists.length <= 5 && v.artists.every((a) => text(a, 120) && a.trim())
   && (v.album === undefined || text(v.album, 256)) && (v.durationMs === undefined || finite(v.durationMs, 0, 86400000));
 export function isListeningSeed(v: unknown): v is ListeningSeed { return recommendationRecord(v) && keys(v, ['title', 'artists', 'album', 'durationMs', 'weight', 'plays']) && metadata(v) && finite(v.weight, 0, 10) && Number.isInteger(v.plays) && finite(v.plays, 1, 200); }
-export function isRecommendationSong(v: unknown): v is RecommendationSong { return recommendationRecord(v) && keys(v, ['id', 'title', 'artists', 'album', 'durationMs', 'reason', 'origin']) && text(v.id, 80) && /^[a-zA-Z0-9_-]+$/.test(v.id) && metadata(v) && text(v.reason, 180) && ['lastfm', 'ai'].includes(String(v.origin)); }
+export function isRecommendationSong(v: unknown): v is RecommendationSong { return recommendationRecord(v) && keys(v, ['id', 'title', 'artists', 'album', 'durationMs', 'releaseDate', 'reason', 'origin']) && text(v.id, 80) && /^[a-zA-Z0-9_-]+$/.test(v.id) && metadata(v) && (v.releaseDate === undefined || typeof v.releaseDate === 'string' && catalogReleaseDate(v.releaseDate) === v.releaseDate) && text(v.reason, 180) && ['lastfm', 'ai'].includes(String(v.origin)); }
 export function isRecommendationBatch(v: unknown): v is RecommendationBatch {
   return recommendationRecord(v) && keys(v, ['id', 'createdAt', 'sampleCount', 'mode', 'songs', 'notices']) && text(v.id, 80) && /^[a-zA-Z0-9_-]+$/.test(v.id)
     && finite(v.createdAt, 0, 1e16) && Number.isInteger(v.sampleCount) && finite(v.sampleCount, 1, 50) && ['algorithm', 'ai', 'hybrid'].includes(String(v.mode))
@@ -98,7 +107,8 @@ export function isDirectPlatformUrl(value: unknown, platform: MusicPlatform) {
 }
 export function isResolvedSong(v: unknown): v is ResolvedSong {
   return recommendationRecord(v) && text(v.id, 80) && Array.isArray(v.links) && v.links.length <= 4 && v.links.every((link) => recommendationRecord(link) && isMusicPlatform(link.platform) && isPlatformUrl(link.url, link.platform) && ['direct', 'search'].includes(String(link.kind)) && (link.kind !== 'direct' || isDirectPlatformUrl(link.url, link.platform)) && ['matched', 'unconfigured', 'not-found', 'unavailable'].includes(String(link.status)))
-    && new Set(v.links.map((link) => link.platform)).size === v.links.length && (v.artwork === undefined || safeArtwork(v.artwork));
+    && new Set(v.links.map((link) => link.platform)).size === v.links.length && (v.artwork === undefined || safeArtwork(v.artwork))
+    && (v.album === undefined || text(v.album, 256)) && (v.durationMs === undefined || finite(v.durationMs, 0, 86400000)) && (v.releaseDate === undefined || typeof v.releaseDate === 'string' && catalogReleaseDate(v.releaseDate) === v.releaseDate);
 }
 export function safeArtwork(value: unknown): value is string {
   if (!text(value, 2048)) return false;

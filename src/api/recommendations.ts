@@ -49,7 +49,7 @@ export class RecommendationsApi {
     if (target === 'spotify') config.spotifyMarket = settings.spotifyMarket;
     const result = await this.request('check', { target, settings: config, credentials: selected }, signal);
     if (!recommendationRecord(result) || result.ok !== true) throw new Error('服务检测未完成');
-    return '连接成功';
+    return typeof result.message === 'string' && result.message.length <= 180 ? result.message : '连接成功';
   }
 }
 export const recommendationsApi = new RecommendationsApi();

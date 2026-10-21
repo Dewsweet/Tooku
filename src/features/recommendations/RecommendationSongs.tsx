@@ -1,26 +1,45 @@
-import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, Music2 } from 'lucide-react';
-import { useApi } from '../../components/Common';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Clock3, ExternalLink } from 'lucide-react';
+import { formatTime, useApi } from '../../components/Common';
+import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { recommendationsApi } from '../../api/recommendations';
-import { emptyRecommendationCredentials, platformNames, platformSearchLink, type RecommendationBatch, type RecommendationSettings, type RecommendationSong, type ResolvedSong } from '../../domain/recommendations';
+import { emptyRecommendationCredentials, platformNames, platformSearchLink, type RecommendationSettings, type RecommendationSong, type ResolvedSong } from '../../domain/recommendations';
 import { useRecommendationSecrets } from '../../state/recommendations';
 
-export function useRecommendationLinks(batch: RecommendationBatch | undefined, settings: RecommendationSettings) {
+export function RecommendationSongTable({ songs, settings, label = '推荐歌曲' }: { songs: RecommendationSong[]; settings: RecommendationSettings; label?: string }) {
   const api = useApi(); const secrets = useRecommendationSecrets();
-  const credentials = secrets.identity === api.identity ? secrets.credentials : emptyRecommendationCredentials;
-  return useQuery({ queryKey: [api.identity, 'recommendation-links-v2', batch?.id, settings.platforms, settings.appleStorefront, settings.spotifyMarket, secrets.revision], enabled: Boolean(batch?.songs.length), staleTime: 300000, gcTime: 300000, retry: false,
-    queryFn: ({ signal }) => recommendationsApi.links(batch!.songs, settings, credentials, signal),
-  });
+  // Remount ephemeral row data on account/credential/platform changes, without touching playback.
+  return <SongTableView key={JSON.stringify([api.identity, secrets.revision, settings.platforms, settings.appleStorefront, settings.spotifyMarket])} songs={songs} settings={settings} label={label} />;
 }
-
-export function RecommendationSongCard({ song, index, resolved, settings }: { song: RecommendationSong; index: number; resolved?: ResolvedSong; settings: RecommendationSettings }) {
-  return <article className="recommendation-card" aria-label={`${index + 1}. ${song.title}`}>
-    <div className="recommendation-art" aria-hidden="true"><Music2 size={28} />{resolved?.artwork && <img key={resolved.artwork} src={resolved.artwork} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}</div>
-    <div className="recommendation-copy"><div className="recommendation-song-heading"><span className="recommendation-number">{String(index + 1).padStart(2, '0')}</span><h3>{song.title}</h3></div><p className="recommendation-artist">{song.artists.join(' / ')}</p>{song.album && <p className="recommendation-album">{song.album}</p>}</div>
-    <p className="recommendation-reason">{song.reason}</p>
-    <div className="recommendation-links">{settings.platforms.map((platform) => {
-      const link = resolved?.links.find((item) => item.platform === platform); const direct = link?.kind === 'direct';
-      return <a href={link?.url ?? platformSearchLink(platform, song, settings)} key={platform} target="_blank" rel="noreferrer" data-direct={direct || undefined} aria-label={`${direct ? '打开' : '搜索'}${platformNames[platform]}：${song.title}`}>{platformNames[platform]}{!direct && <span>搜索</span>}<ExternalLink size={12} aria-hidden="true" /></a>;
-    })}</div>
-  </article>;
+function SongTableView({ songs, settings, label }: { songs: RecommendationSong[]; settings: RecommendationSettings; label: string }) {
+  const api = useApi(); const client = useQueryClient(); const menu = useContextMenu(); const secrets = useRecommendationSecrets();
+  const credentials = secrets.identity === api.identity ? secrets.credentials : emptyRecommendationCredentials;
+  const [resolved, setResolved] = useState<Record<string, ResolvedSong>>({}); const requests = useRef(new Set<AbortController>());
+  useEffect(() => { const active = requests.current; return () => { active.forEach((request) => request.abort()); }; }, []);
+  const key = (song: RecommendationSong) => [api.identity, 'recommendation-song-links-v3', song.id, song.album, song.durationMs, settings.platforms, settings.appleStorefront, settings.spotifyMarket, secrets.revision];
+  const items = (song: RecommendationSong, result?: ResolvedSong, pending = false): MenuItem[] => [
+    ...settings.platforms.map((platform) => {
+      const link = result?.links.find((entry) => entry.platform === platform);
+      return { label: `${platformNames[platform]}${link?.kind === 'direct' ? '' : ' · 搜索'}`, href: link?.url ?? platformSearchLink(platform, song, settings), icon: <ExternalLink size={16} />, action: () => {} };
+    }),
+    ...(pending ? [{ label: '正在核实歌曲链接…', disabled: true, action: () => {} }] : []),
+  ];
+  async function open(event: MouseEvent<HTMLElement>, song: RecommendationSong) {
+    const button = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : event.currentTarget.querySelector('button'); button?.focus();
+    const state = client.getQueryState<ResolvedSong>(key(song)); const cached = state && Date.now() - state.dataUpdatedAt < 300000 ? state.data : undefined;
+    const handle = menu(event, items(song, cached, !cached));
+    if (cached) { setResolved((current) => ({ ...current, [song.id]: cached })); return; }
+    const controller = new AbortController(); requests.current.add(controller);
+    try {
+      const result = await client.fetchQuery({ queryKey: key(song), staleTime: 300000, gcTime: 300000, retry: false, queryFn: async ({ signal }) => (await recommendationsApi.links([song], settings, credentials, AbortSignal.any([signal, controller.signal])))[0] });
+      if (controller.signal.aborted) return;
+      setResolved((current) => ({ ...current, [song.id]: result })); handle.update(items(song, result));
+    } catch { if (!controller.signal.aborted) handle.update(items(song)); }
+    finally { requests.current.delete(controller); }
+  }
+  return <div className="recommendation-table-wrap"><table className="recommendation-table" aria-label={label}><thead><tr><th className="recommendation-position">#</th><th>标题</th><th className="recommendation-album-column">专辑</th><th className="recommendation-date-column">发行日期</th><th className="recommendation-time-column"><Clock3 size={16} aria-label="时长" /></th></tr></thead><tbody>{songs.map((song, index) => {
+    const detail = resolved[song.id] ?? client.getQueryData<ResolvedSong>(key(song)); const duration = detail?.durationMs ?? song.durationMs; const date = detail?.releaseDate ?? song.releaseDate;
+    return <tr key={song.id} onClick={(event) => { void open(event, song); }} onContextMenu={(event) => { void open(event, song); }}><td className="recommendation-position">{index + 1}</td><td><button className="recommendation-song-trigger" aria-label={`选择收听平台：${song.title}`} aria-haspopup="menu" onClick={(event) => { event.stopPropagation(); void open(event, song); }}><strong>{song.title}</strong><span>{song.artists.join(' / ')}</span></button></td><td className="recommendation-album-column">{detail?.album || song.album || '—'}</td><td className="recommendation-date-column">{date ? <time dateTime={date}>{date}</time> : '—'}</td><td className="recommendation-time-column">{duration ? formatTime(duration / 1000) : '—'}</td></tr>;
+  })}</tbody></table></div>;
 }

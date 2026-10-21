@@ -1,4 +1,5 @@
 import { isLyricDocument, record, type LyricCandidate, type LyricDocument, type ProviderId, type SourceError } from '../../src/domain/lyrics/types.ts';
+import { catalogReleaseDate } from '../../src/domain/musicMetadata.ts';
 
 export class LyricsError extends Error {
   code: SourceError;
@@ -63,7 +64,7 @@ export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] 
       return songs.map((s) => {
         const artists = list(s.artists ?? s.ar);
         const artistAliases = [...new Set(artists.flatMap((artist) => [...aliases(artist), ...(artistCache.get(String(artist.id))?.names ?? [])]))].slice(0, 20);
-        return { provider: 'netease', id: String(s.id), title: string(s.name), artists: artists.map((a) => string(a.name)).slice(0, 20), artistAliases, album: string(object(s.album ?? s.al).name), durationMs: duration(s.duration ?? s.dt) };
+        return { provider: 'netease', id: String(s.id), title: string(s.name), artists: artists.map((a) => string(a.name)).slice(0, 20), artistAliases, album: string(object(s.album ?? s.al).name), durationMs: duration(s.duration ?? s.dt), releaseDate: catalogReleaseDate(s.publishTime ?? object(s.album ?? s.al).publishTime) };
       });
     },
     async lyrics(id, signal) {
@@ -77,7 +78,7 @@ export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] 
     async search(keyword, signal) {
       const data = await request('c.y.qq.com', '/soso/fcgi-bin/client_search_cp', { format: 'json', w: keyword, p: '1', n: '10', cr: '1', t: '0' }, signal); check(data, 0);
       const songs = object(object(data.data).song); if (!Array.isArray(songs.list)) throw new LyricsError('protocol');
-      return list(songs.list).map((s) => ({ provider: 'qq', id: string(s.songmid ?? s.mid), title: string(s.songname ?? s.name), artists: list(s.singer).map((a) => string(a.name)).slice(0, 20), album: string(s.albumname ?? object(s.album).name), durationMs: duration(s.interval, 1000) }));
+      return list(songs.list).map((s) => ({ provider: 'qq', id: string(s.songmid ?? s.mid), title: string(s.songname ?? s.name), artists: list(s.singer).map((a) => string(a.name)).slice(0, 20), album: string(s.albumname ?? object(s.album).name), durationMs: duration(s.interval, 1000), releaseDate: catalogReleaseDate(s.time_public) }));
     },
     async lyrics(id, signal) {
       try {

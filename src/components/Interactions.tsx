@@ -4,22 +4,24 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Copy, Home, Search, ListMusic, Scissors, ClipboardPaste, TextSelect } from 'lucide-react';
 import { useSession, errorMessage } from '../state/session';
 
-export interface MenuItem { label: string; icon?: ReactNode; action: () => void | Promise<unknown>; disabled?: boolean; danger?: boolean; divider?: boolean }
-type OpenMenu = (event: Pick<MouseEvent, 'preventDefault' | 'stopPropagation' | 'clientX' | 'clientY' | 'currentTarget'> & { target?: EventTarget | null }, items: MenuItem[]) => void;
-const MenuContext = createContext<OpenMenu>(() => {});
+export interface MenuItem { label: string; icon?: ReactNode; action: () => void | Promise<unknown>; href?: string; disabled?: boolean; danger?: boolean; divider?: boolean }
+type OpenMenu = (event: Pick<MouseEvent, 'preventDefault' | 'stopPropagation' | 'clientX' | 'clientY' | 'currentTarget'> & { target?: EventTarget | null }, items: MenuItem[]) => { update: (items: MenuItem[]) => void };
+const MenuContext = createContext<OpenMenu>(() => ({ update: () => {} }));
 export const useContextMenu = () => useContext(MenuContext);
 
 export function Interactions({ children }: { children: ReactNode }) {
-  const navigate = useNavigate(); const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[]; host: HTMLElement } | null>(null); const previousFocus = useRef<HTMLElement | null>(null);
+  const navigate = useNavigate(); const [menu, setMenu] = useState<{ id: number; x: number; y: number; items: MenuItem[]; host: HTMLElement } | null>(null); const previousFocus = useRef<HTMLElement | null>(null);
+  const sequence = useRef(0); const positioned = useRef<number | null>(null);
   const ref = useRef<HTMLDivElement>(null); const tooltip = useRef<HTMLDivElement>(null); const [hint, setHint] = useState<{ text: string; target: HTMLElement } | null>(null);
-  const open = useCallback<OpenMenu>((event, items) => { event.preventDefault(); event.stopPropagation(); setHint(null); const element = event.currentTarget instanceof Element ? event.currentTarget : null; const source = event.target instanceof Element ? event.target : element; const bounds = element?.getBoundingClientRect(); previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setMenu({ x: event.clientX || bounds?.left || 12, y: event.clientY || bounds?.top || 12, items, host: source?.closest('dialog') ?? document.body }); }, []);
+  const open = useCallback<OpenMenu>((event, items) => { event.preventDefault(); event.stopPropagation(); setHint(null); const element = event.currentTarget instanceof Element ? event.currentTarget : null; const source = event.target instanceof Element ? event.target : element; const bounds = element?.getBoundingClientRect(); previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; const id = ++sequence.current; setMenu({ id, x: event.clientX || bounds?.left || 12, y: event.clientY || bounds?.top || 12, items, host: source?.closest('dialog') ?? document.body }); return { update: (next) => setMenu((current) => current?.id === id ? { ...current, items: next } : current) }; }, []);
   const dismiss = useCallback(() => { setMenu(null); previousFocus.current?.focus({ preventScroll: true }); }, []);
   useLayoutEffect(() => {
-    const node = ref.current; if (!menu || !node) return;
+    const node = ref.current; if (!menu || !node) { positioned.current = null; return; }
+    if (positioned.current === menu.id) return; positioned.current = menu.id;
     node.showPopover?.();
     node.style.left = `${Math.max(8, Math.min(menu.x, window.innerWidth - node.offsetWidth - 8))}px`;
     node.style.top = `${Math.max(8, Math.min(menu.y, window.innerHeight - node.offsetHeight - 8))}px`;
-    node.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+    node.querySelector<HTMLElement>('button:not(:disabled), a[href]')?.focus({ preventScroll: true });
   }, [menu]);
   useEffect(() => {
     if (!menu) return;
@@ -73,6 +75,6 @@ export function Interactions({ children }: { children: ReactNode }) {
   }
   return <MenuContext value={open}><div className="interaction-root" onContextMenu={globalMenu}>{children}</div>{menu && createPortal(<div ref={ref} className="context-menu" role="menu" aria-label="快捷菜单" popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined} onContextMenu={(e) => e.preventDefault()} onKeyDown={(e) => {
     if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); dismiss(); }
-    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const buttons = [...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement); buttons[e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length]?.focus(); }
-  }}>{menu.items.map((item, index) => <button key={index} role="menuitem" type="button" className={`${item.divider ? 'menu-divider' : ''} ${item.danger ? 'menu-danger' : ''}`} disabled={item.disabled} onClick={() => { dismiss(); Promise.resolve().then(item.action).catch((e) => useSession.getState().notify(errorMessage(e))); }}>{item.icon ?? <span className="menu-icon-space" />}<span>{item.label}</span></button>)}</div>, menu.host)}{hint && createPortal(<div ref={tooltip} className="app-tooltip" role="tooltip" popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined}>{hint.text}</div>, hint.target.closest('dialog') ?? document.body)}</MenuContext>;
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const buttons = [...ref.current!.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]')]; const index = buttons.indexOf(document.activeElement as HTMLElement); buttons[e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length]?.focus(); }
+  }}>{menu.items.map((item, index) => item.href && !item.disabled ? <a key={index} role="menuitem" href={item.href} target="_blank" rel="noreferrer" className={item.divider ? 'menu-divider' : ''} onClick={dismiss}>{item.icon ?? <span className="menu-icon-space" />}<span>{item.label}</span></a> : <button key={index} role="menuitem" type="button" className={`${item.divider ? 'menu-divider' : ''} ${item.danger ? 'menu-danger' : ''}`} disabled={item.disabled} onClick={() => { dismiss(); Promise.resolve().then(item.action).catch((e) => useSession.getState().notify(errorMessage(e))); }}>{item.icon ?? <span className="menu-icon-space" />}<span>{item.label}</span></button>)}</div>, menu.host)}{hint && createPortal(<div ref={tooltip} className="app-tooltip" role="tooltip" popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined}>{hint.text}</div>, hint.target.closest('dialog') ?? document.body)}</MenuContext>;
 }

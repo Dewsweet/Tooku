@@ -7,7 +7,7 @@ import { defaultRecommendationSettings, emptyRecommendationCredentials, listenin
 import { useRecommendationProfiles, useRecommendationSecrets } from '../../state/recommendations';
 import { useSession } from '../../state/session';
 import { usePlayer } from '../player/engine';
-import { RecommendationSongCard, useRecommendationLinks } from './RecommendationSongs';
+import { RecommendationSongTable } from './RecommendationSongs';
 import './recommendations.css';
 
 export function Recommendations() { const api = useApi(); return <RecommendationsView key={api.identity} />; }
@@ -19,7 +19,6 @@ function RecommendationsView() {
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [showSources, setShowSources] = useState(false);
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => { request.current?.abort(); }, [api, settings]);
-  const links = useRecommendationLinks(batch, settings);
   async function generate() {
     if (request.current && !request.current.signal.aborted && busy) return;
     const controller = new AbortController(); request.current = controller; setBusy(true); setError('');
@@ -46,13 +45,11 @@ function RecommendationsView() {
         <button className="primary-button" disabled={busy || !seeds.length || !ready} onClick={() => { void generate(); }}>{busy ? <LoaderCircle size={17} className="spin" /> : batch?.songs.length ? <RefreshCw size={17} /> : <Sparkles size={17} />}{busy ? '正在推荐…' : batch?.songs.length ? '换一批' : '生成推荐'}</button></div>
     </header>
     {!ready && <p className="recommendation-status" role="status">请从头像进入账户与设置，配置音乐推荐服务。密钥刷新后需重新填写。</p>}
-    <div className="recommendation-section-heading"><div><h2>{batch?.songs.length ? '本次推荐' : '从最近的聆听开始'}</h2>{batch && <p>{batch.songs.length} 首 · {new Date(batch.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}生成</p>}</div>{!!seeds.length && <button className="text-button" aria-expanded={showSources} aria-controls="recommendation-listening-sources" onClick={() => setShowSources(!showSources)}>收听参考 · {seeds.length} 首</button>}</div>
+    <div className="recommendation-section-heading"><div><h2>{batch?.songs.length ? '本次推荐' : '从最近的聆听开始'}</h2>{batch && <p>{batch.songs.length} 首 · {({ algorithm: '算法推荐', ai: 'AI 推荐', hybrid: '混合推荐' })[batch.mode]} · {new Date(batch.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}生成</p>}</div>{!!seeds.length && <button className="text-button" aria-expanded={showSources} aria-controls="recommendation-listening-sources" onClick={() => setShowSources(!showSources)}>收听参考 · {seeds.length} 首</button>}</div>
     {showSources && <div className="recommendation-sources" id="recommendation-listening-sources"><p>以下是本次生成将使用的收听记录{batch ? `；上次提交了 ${batch.sampleCount} 首` : ''}。</p><ul>{seeds.map((seed) => <li key={JSON.stringify([seed.title, seed.artists])}><strong>{seed.title}</strong><span>{seed.artists.join(' / ')}</span></li>)}</ul></div>}
     {error && <p className="form-error" role="alert">{error}</p>}
     {busy && <p className="recommendation-status" role="status">正在综合收听记录、寻找新歌手并核实歌曲，可能需要一两分钟…</p>}
     {!!batch?.notices.length && <div className="recommendation-notices">{batch.notices.map((notice) => <p className="recommendation-status" key={notice}>{notice}</p>)}</div>}
-    {links.isFetching && <p className="recommendation-status" role="status">正在核实平台链接…</p>}
-    {links.error && <p className="recommendation-status" role="status">平台链接暂未核实，仍可搜索歌曲。<button className="text-button" disabled={links.isFetching} onClick={() => { void links.refetch(); }}>重新核实</button></p>}
-    {batch?.songs.length ? <div className="recommendation-grid">{batch.songs.map((song, index) => <RecommendationSongCard key={song.id} song={song} index={index} resolved={links.data?.find((item) => item.id === song.id)} settings={settings} />)}</div> : <Empty title={!seeds.length ? '听些音乐，再来发现新歌' : busy ? '正在寻找适合你的音乐' : '下一首喜欢的歌，等你发现'}>{!seeds.length ? '达到收听阈值后，会使用最近的收听记录生成推荐。' : '配置服务后，点击生成推荐。'}</Empty>}
+    {batch?.songs.length ? <RecommendationSongTable key={batch.id} songs={batch.songs} settings={settings} /> : <Empty title={!seeds.length ? '听些音乐，再来发现新歌' : busy ? '正在寻找适合你的音乐' : '下一首喜欢的歌，等你发现'}>{!seeds.length ? '达到收听阈值后，会使用最近的收听记录生成推荐。' : '配置服务后，点击生成推荐。'}</Empty>}
   </div>;
 }
