@@ -43,12 +43,13 @@ describe('user data migration and sync', () => {
     const attach = vi.spyOn(player, 'attach'); const before = usePlayer.getState();
     await connectUserSync(api); const legacy = structuredClone(localUserData()!);
     const secret = crypto.randomUUID(); useRecommendationSecrets.getState().update(api.identity, { aiKey: secret });
-    useRecommendationProfiles.getState().update(api.identity, () => ({ settings: { ...defaultRecommendationSettings, model: 'fixture' } }));
+    useRecommendationProfiles.getState().update(api.identity, () => ({ settings: { ...defaultRecommendationSettings, model: 'fixture', resultCount: 20 }, seenIds: ['older-result'], recentSongs: [{ id: 'older-result', title: 'Song', artists: ['Artist'] }] }));
     await vi.advanceTimersByTimeAsync(900);
     expect(remote.data?.recommendations?.settings.model).toBe('fixture');
-    const backup = await exportUserBackup(); expect(backup.data.recommendations?.settings.model).toBe('fixture'); expect(JSON.stringify(backup)).not.toContain(secret);
+    const backup = await exportUserBackup(); expect(backup.data.recommendations?.settings.model).toBe('fixture'); expect(backup.data.recommendations?.settings.resultCount).toBe(20); expect(backup.data.recommendations?.seenIds).toEqual(['older-result']); expect(JSON.stringify(backup)).not.toContain(secret);
+    expect(backup.data.recommendations?.recentSongs?.[0].title).toBe('Song');
     disconnectUserSync(); memory.clear(); useRecommendationProfiles.setState({ profiles: {} });
-    await connectUserSync(api); expect(useRecommendationProfiles.getState().profiles[api.identity].settings.model).toBe('fixture');
+    await connectUserSync(api); expect(useRecommendationProfiles.getState().profiles[api.identity].settings.model).toBe('fixture'); expect(useRecommendationProfiles.getState().profiles[api.identity].seenIds).toEqual(['older-result']);
     useRecommendationProfiles.getState().update('other-account', () => ({ settings: defaultRecommendationSettings }));
     await chooseUserData('local', legacy);
     expect(useRecommendationProfiles.getState().profiles[api.identity]).toBeUndefined(); expect(useRecommendationProfiles.getState().profiles['other-account']).toBeDefined();

@@ -1,10 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { MusicApi } from '../src/api/client';
 import { RecommendationsApi, recommendationsApi } from '../src/api/recommendations';
 import { Recommendations } from '../src/features/recommendations/Recommendations';
 import { RecommendationSettings } from '../src/features/settings/RecommendationSettings';
+import { HomeRecommendations } from '../src/features/recommendations/HomeRecommendations';
 import { defaultRecommendationSettings as settings, emptyRecommendationCredentials, platformSearchLink, type RecommendationBatch } from '../src/domain/recommendations';
 import { useRecommendationProfiles, useRecommendationSecrets } from '../src/state/recommendations';
 import { useSession } from '../src/state/session';
@@ -46,10 +48,8 @@ it('generates only on click, retains results across navigation and provides all 
   expect(attach).not.toHaveBeenCalled(); expect(replace).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(23);
   view.unmount(); surface(<Recommendations />); await screen.findByText('New song'); expect(recommendationsApi.generate).toHaveBeenCalledOnce();
   expect(screen.getByRole('button', { name: '换一批' })).toBeEnabled();
-  await waitFor(() => expect(screen.getByRole('button', { name: '在本库播放：New song' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: '在本库播放：New song' }));
-  await waitFor(() => expect(replace).toHaveBeenCalledOnce());
-  expect(replace).toHaveBeenCalledWith([expect.objectContaining({ id: 'local-one' })], 0, { source: { kind: 'collection', id: 'recommendations-batch-one', libraryId: 'music' } });
+  expect(screen.queryByRole('button', { name: /本库播放/ })).not.toBeInTheDocument();
+  expect(api.search).not.toHaveBeenCalled(); expect(replace).not.toHaveBeenCalled();
 });
 
 it('keeps the existing batch when a new generation fails or has no usable songs', async () => {
@@ -74,14 +74,63 @@ it('cancels late generations on account change and clears all session credential
   expect(useRecommendationSecrets.getState().credentials.lastfmKey).toBe(''); expect(screen.queryByText('New song')).not.toBeInTheDocument(); next.dispose();
 });
 
-it('does not play a different library version and preserves the current audio on lookup failure', async () => {
+it('uses external platform links and preserves the current audio without library lookup', async () => {
   configure(); useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
-  vi.mocked(api.search).mockResolvedValue({ songs: [{ id: 'live', title: 'New song (Live)', artist: 'Artist', duration: 180 }], artists: [], albums: [] });
   const replace = vi.spyOn(player, 'replace').mockImplementation(() => {});
-  surface(<Recommendations />); await waitFor(() => expect(screen.getByRole('button', { name: '在本库播放：New song' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: '在本库播放：New song' }));
-  await waitFor(() => expect(useSession.getState().notice).toContain('本库未找到'));
+  surface(<Recommendations />); const link = screen.getByRole('link', { name: '搜索Spotify：New song' });
+  expect(link).toHaveAttribute('target', '_blank'); expect(api.search).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: /本库播放/ })).not.toBeInTheDocument();
   expect(replace).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(23);
+});
+
+it('shares the current batch with home without generating, and shows only four preview cards', async () => {
+  const songs = Array.from({ length: 30 }, (_, index) => ({ ...batch.songs[0], id: `song-${index}`, title: `Discover ${index}` }));
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch: { ...batch, songs } }));
+  const view = surface(<MemoryRouter><HomeRecommendations /></MemoryRouter>);
+  expect(screen.getByRole('region', { name: '为你推荐' })).toBeInTheDocument();
+  expect(screen.getAllByRole('article')).toHaveLength(4);
+  expect(screen.getByRole('link', { name: '查看全部' })).toHaveAttribute('href', '/recommendations');
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  expect(recommendationsApi.generate).not.toHaveBeenCalled();
+  view.unmount(); surface(<Recommendations />);
+  expect(screen.getAllByRole('article')).toHaveLength(30);
+  expect(recommendationsApi.links).toHaveBeenCalledOnce();
+});
+
+it('stores the requested count, exposes all listening references and excludes more than the last batch', async () => {
+  configure();
+  const history = Array.from({ length: 50 }, (_, index) => ({ occurrenceId: `listen${index}`, track: { id: `track${index}`, title: `Recent ${index}`, artist: `Artist ${index}` }, listenedAt: Date.now() - index * 1000, submitted: true }));
+  usePlayer.setState({ history });
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch, seenIds: ['older-result'] }));
+  surface(<Recommendations />);
+  fireEvent.click(screen.getByRole('combobox', { name: '推荐数量' }));
+  fireEvent.click(screen.getByRole('option', { name: '20 首' }));
+  expect(useRecommendationProfiles.getState().profiles[api.identity].settings.resultCount).toBe(20);
+  fireEvent.click(screen.getByRole('button', { name: '收听参考 · 50 首' }));
+  expect(screen.getByText('Recent 49')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '换一批' }));
+  await waitFor(() => expect(recommendationsApi.generate).toHaveBeenCalledOnce());
+  const input = vi.mocked(recommendationsApi.generate).mock.calls[0];
+  expect(input[0]).toHaveLength(50); expect(input[1].resultCount).toBe(20); expect(input[3]).toEqual(['older-result', 'song-one']);
+  expect(input[5]).toEqual([{ id: 'song-one', title: 'New song', artists: ['Artist'] }]);
+  await waitFor(() => expect(useRecommendationProfiles.getState().profiles[api.identity].seenIds).toEqual(['older-result', 'song-one']));
+});
+
+it('resolves thirty platform-link results in bounded groups and keeps successful groups on partial failure', async () => {
+  const isolated = new RecommendationsApi(); const songs = Array.from({ length: 30 }, (_, index) => ({ ...batch.songs[0], id: `song-${index}` }));
+  let active = 0; let maximum = 0;
+  const request = vi.spyOn(isolated, 'request').mockImplementation(async (_path, payload) => {
+    active++; maximum = Math.max(maximum, active);
+    await new Promise((done) => setTimeout(done, 1)); active--;
+    const data = payload as { songs: typeof songs };
+    expect(data.songs.length).toBeLessThanOrEqual(6);
+    if (data.songs[0].id === 'song-6') throw new Error('fixture failure');
+    return data.songs.map((item) => ({ id: item.id, links: [{ platform: 'spotify', url: platformSearchLink('spotify', item), kind: 'search', status: 'not-found' }] }));
+  });
+  const result = await isolated.links(songs, settings, emptyRecommendationCredentials);
+  expect(request).toHaveBeenCalledTimes(5); expect(maximum).toBe(2); expect(result).toHaveLength(30);
+  expect(result[6].links.every((link) => link.status === 'unavailable')).toBe(true);
+  expect(result[12].links[0].status).toBe('not-found');
 });
 
 it('stores ordinary settings while keeping credentials out of localStorage and clears them at logout', async () => {

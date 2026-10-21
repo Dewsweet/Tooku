@@ -28,7 +28,7 @@ async function listening(server: Server) {
 }
 describe('versioned user storage', () => {
   it('accepts optional recommendation data, retains legacy data and rejects credential-bearing profiles', () => {
-    const legacy = sampleData(); const data = { ...legacy, recommendations: { settings: defaultRecommendationSettings } };
+    const legacy = sampleData(); const data = { ...legacy, recommendations: { settings: { ...defaultRecommendationSettings, resultCount: 30 }, seenIds: ['older-result'], recentSongs: [{ id: 'older-result', title: 'Song', artists: ['Artist'] }] } };
     expect(isUserData(legacy)).toBe(true); expect(isUserData(data)).toBe(true);
     const store = new UserStore(':memory:'); cleanups.push(() => store.close()); store.write('alice', 0, data);
     expect(store.read('alice').data?.recommendations).toEqual(data.recommendations); expect(store.read('bob').data).toBeNull();

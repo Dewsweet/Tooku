@@ -5,11 +5,11 @@ export type MusicPlatform = typeof musicPlatforms[number];
 export const platformNames: Record<MusicPlatform, string> = { netease: '网易云音乐', qq: 'QQ 音乐', apple: 'Apple Music', spotify: 'Spotify' };
 export type RecommendationMode = 'algorithm' | 'ai' | 'hybrid';
 export interface RecommendationSettings {
-  mode: RecommendationMode; sampleSize: number; exploration: number; platforms: MusicPlatform[];
+  mode: RecommendationMode; sampleSize: number; resultCount?: number; exploration: number; platforms: MusicPlatform[];
   aiBaseUrl: string; model: string; appleStorefront: string; spotifyMarket: string;
 }
 export const defaultRecommendationSettings: RecommendationSettings = {
-  mode: 'hybrid', sampleSize: 50, exploration: .3, platforms: [...musicPlatforms],
+  mode: 'hybrid', sampleSize: 50, resultCount: 30, exploration: .7, platforms: [...musicPlatforms],
   aiBaseUrl: '', model: '', appleStorefront: 'cn', spotifyMarket: 'US',
 };
 export interface RecommendationCredentials { lastfmKey: string; aiKey: string; appleToken: string; spotifyClientId: string; spotifyClientSecret: string }
@@ -17,7 +17,18 @@ export const emptyRecommendationCredentials: RecommendationCredentials = { lastf
 export interface RecommendationSong { id: string; title: string; artists: string[]; album?: string; durationMs?: number; reason: string; origin: 'lastfm' | 'ai' }
 export interface ListeningSeed { title: string; artists: string[]; album?: string; durationMs?: number; weight: number; plays: number }
 export interface RecommendationBatch { id: string; createdAt: number; sampleCount: number; mode: 'algorithm' | 'ai' | 'hybrid'; songs: RecommendationSong[]; notices: string[] }
-export interface RecommendationProfile { settings: RecommendationSettings; batch?: RecommendationBatch }
+export type RecommendationMemory = Pick<RecommendationSong, 'id' | 'title' | 'artists'>;
+export interface RecommendationProfile { settings: RecommendationSettings; batch?: RecommendationBatch; seenIds?: string[]; recentSongs?: RecommendationMemory[] }
+export const recommendationCount = (settings: RecommendationSettings) => settings.resultCount ?? 30;
+export function recommendationContext(profile?: RecommendationProfile): RecommendationMemory[] {
+  const songs = [...(profile?.recentSongs ?? []), ...(profile?.batch?.songs ?? [])];
+  return [...new Map(songs.map(({ id, title, artists }) => [id, { id, title, artists }])).values()].slice(-90);
+}
+export function rememberRecommendationBatch(profile: RecommendationProfile, batch: RecommendationBatch): RecommendationProfile {
+  const seenIds = [...new Set([...(profile.seenIds ?? []), ...(profile.batch?.songs.map((song) => song.id) ?? []), ...batch.songs.map((song) => song.id)])].slice(-300);
+  const recentSongs = recommendationContext({ ...profile, recentSongs: recommendationContext(profile), batch });
+  return { ...profile, batch, seenIds, recentSongs };
+}
 export interface PlatformLink { platform: MusicPlatform; url: string; kind: 'direct' | 'search'; status: 'matched' | 'unconfigured' | 'not-found' | 'unavailable' }
 export interface ResolvedSong { id: string; links: PlatformLink[]; artwork?: string }
 export const recommendationRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -31,8 +42,9 @@ export function validModelBase(value: unknown): value is string {
   try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash; } catch { return false; }
 }
 export function isRecommendationSettings(v: unknown): v is RecommendationSettings {
-  return recommendationRecord(v) && keys(v, ['mode', 'sampleSize', 'exploration', 'platforms', 'aiBaseUrl', 'model', 'appleStorefront', 'spotifyMarket'])
-    && ['algorithm', 'ai', 'hybrid'].includes(String(v.mode)) && Number.isInteger(v.sampleSize) && finite(v.sampleSize, 30, 50) && finite(v.exploration, 0, .5)
+  return recommendationRecord(v) && keys(v, ['mode', 'sampleSize', 'resultCount', 'exploration', 'platforms', 'aiBaseUrl', 'model', 'appleStorefront', 'spotifyMarket'])
+    && ['algorithm', 'ai', 'hybrid'].includes(String(v.mode)) && Number.isInteger(v.sampleSize) && finite(v.sampleSize, 30, 50) && finite(v.exploration, 0, 1)
+    && (v.resultCount === undefined || Number.isInteger(v.resultCount) && finite(v.resultCount, 10, 30))
     && Array.isArray(v.platforms) && v.platforms.length > 0 && v.platforms.length <= 4 && v.platforms.every(isMusicPlatform) && new Set(v.platforms).size === v.platforms.length
     && validModelBase(v.aiBaseUrl) && text(v.model, 120) && typeof v.appleStorefront === 'string' && /^[a-z]{2}$/.test(v.appleStorefront) && typeof v.spotifyMarket === 'string' && /^[A-Z]{2}$/.test(v.spotifyMarket);
 }
@@ -46,10 +58,16 @@ export function isRecommendationSong(v: unknown): v is RecommendationSong { retu
 export function isRecommendationBatch(v: unknown): v is RecommendationBatch {
   return recommendationRecord(v) && keys(v, ['id', 'createdAt', 'sampleCount', 'mode', 'songs', 'notices']) && text(v.id, 80) && /^[a-zA-Z0-9_-]+$/.test(v.id)
     && finite(v.createdAt, 0, 1e16) && Number.isInteger(v.sampleCount) && finite(v.sampleCount, 1, 50) && ['algorithm', 'ai', 'hybrid'].includes(String(v.mode))
-    && Array.isArray(v.songs) && v.songs.length <= 10 && v.songs.every(isRecommendationSong) && new Set(v.songs.map((song) => song.id)).size === v.songs.length
+    && Array.isArray(v.songs) && v.songs.length <= 30 && v.songs.every(isRecommendationSong) && new Set(v.songs.map((song) => song.id)).size === v.songs.length
     && Array.isArray(v.notices) && v.notices.length <= 8 && v.notices.every((n) => text(n, 180));
 }
-export function isRecommendationProfile(v: unknown): v is RecommendationProfile { return recommendationRecord(v) && keys(v, ['settings', 'batch']) && isRecommendationSettings(v.settings) && (v.batch === undefined || isRecommendationBatch(v.batch)); }
+export function isRecommendationMemory(v: unknown): v is RecommendationMemory { return recommendationRecord(v) && keys(v, ['id', 'title', 'artists']) && text(v.id, 80) && /^[a-zA-Z0-9_-]+$/.test(v.id) && metadata(v); }
+export function isRecommendationProfile(v: unknown): v is RecommendationProfile {
+  return recommendationRecord(v) && keys(v, ['settings', 'batch', 'seenIds', 'recentSongs']) && isRecommendationSettings(v.settings)
+    && (v.batch === undefined || isRecommendationBatch(v.batch))
+    && (v.seenIds === undefined || Array.isArray(v.seenIds) && v.seenIds.length <= 300 && v.seenIds.every((id) => text(id, 80) && /^[a-zA-Z0-9_-]+$/.test(id)) && new Set(v.seenIds).size === v.seenIds.length)
+    && (v.recentSongs === undefined || Array.isArray(v.recentSongs) && v.recentSongs.length <= 90 && v.recentSongs.every(isRecommendationMemory) && new Set(v.recentSongs.map((song) => song.id)).size === v.recentSongs.length);
+}
 export const songKey = (title: string, artists: string[]) => [title, ...artists].map((part) => part.normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')).join('|');
 
 export function listeningSeeds(history: HistoryEntry[], size = 50, now = Date.now()): ListeningSeed[] {

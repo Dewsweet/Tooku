@@ -29,7 +29,7 @@ import { ScrollArea } from './components/ScrollArea';
 const navigation = [
   { to: '/albums', name: '专辑', icon: Disc3 }, { to: '/artists', name: '歌手', icon: Mic2 },
   { to: '/favorites', name: '收藏', icon: Heart }, { to: '/history', name: '最近在听', icon: Clock3 },
-  { to: '/recommendations', name: '推荐', icon: Sparkles },
+  { to: '/recommendations', name: '为你推荐', icon: Sparkles },
 ];
 export default function App() {
   const api = useSession((s) => s.api); const notice = useSession((s) => s.notice); const prefs = usePreferences(); const navigate = useNavigate();

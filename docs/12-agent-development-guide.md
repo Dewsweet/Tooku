@@ -61,7 +61,7 @@ React 页面 / 通用控件
 | 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、按锚点对齐与首尾留白、空闲恢复和偏移换算 |
 | 歌词来源与双语整理 | `src/features/lyrics/`、`src/domain/lyrics/`、`src/api/lyrics.ts` | 本地优先；来源/绑定/按歌修正共用，滚动状态独立；本地错误不触发自动补齐 |
 | 网络歌词服务 | `server/lyrics/`、`NetworkLyricsSettings.tsx` | 同端口独立查询/检测、固定平台协议、受限缓存和真实观测；不依赖 Navidrome 会话 |
-| 音乐推荐 | `src/features/recommendations/`、`RecommendationSettings.tsx`、`server/recommendations/` | 左栏最近在听下方；Last.fm / AI 候选、四平台目录核实、显式本库播放；密钥仅内存，详见 [音乐推荐](16-music-recommendations.md) |
+| 音乐推荐 | `src/features/recommendations/`、`RecommendationSettings.tsx`、`server/recommendations/` | 左栏为你推荐与主页预览；Last.fm / AI 扩展候选、多样性筛选、四平台外链；密钥仅内存，详见 [音乐推荐](16-music-recommendations.md) |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
 | 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 空端自动迁移/恢复、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
 | 后端与共享格式 | `server/api.ts`、`store.ts`、`index.ts`、`src/domain/userData.ts` | 固定上游认证、SQLite 原子 revision、限额与白名单 |
@@ -82,7 +82,7 @@ React 页面 / 通用控件
 - 歌手列表保持圆形卡片；详情统一为柔化背景、方形前景图片、大号歌手名、播放/随机/收藏和专辑区。旧版私人图片仍优先展示；管理员原生会话可悬停/键盘聚焦显示“选择照片”，点击打开文件选择与共享裁剪弹窗。新图由 `MusicApi.saveArtistImage` 上传 Navidrome，读回核实后清除该歌手的旧私人覆盖；不批量迁移，不写 Tooku 账号文档。右键可恢复服务器默认、重新读取或移除旧私人图片。写入结果未知时停止写入，先“重新读取”再人工核实。歌手图使用 `getArtist` 明确返回的 `coverArt` 经 `MusicApi.coverUrl` 生成图片地址；缺图/图片失败依次尝试该歌手本库专辑封面、主题渐变；专辑封面以方形主体和柔化横幅展示，不作为真实歌手照。封面按稳定专辑 ID 选择，排除明确属于其他专辑歌手的记录，所有图片失败后停止重试。播放和专辑区使用纯色背景。所有路由的主浏览区隐藏原生滚动条，由 `ContentScrollbar` 在右缘叠加无箭头、透明轨道和 8 px 半透明滑块，贴边且悬停变亮，不占内容宽度，也不替换主滚动容器；左栏与播放侧栏复用 `ScrollArea`，弹窗、菜单、横向表格使用全站原生回退样式；支持轨道点击、拖动、方向键、翻页键及 Home/End。Navidrome 的图片源取决于服务端本地图与外部元数据设置，当前页面展示旧版私人图片与 Navidrome 图片，管理员可手动上传到 Navidrome，不存图片认证 URL；联网来源仅通过独立脚本试验，尚未自动接入页面。播放仅在主动点击后读取本库歌手专辑，全部成功后统一交给 `player`，切页/切库取消未完成操作。
 - 底栏可显示当前歌曲的小封面；左栏底部不再放独立的大封面或额外暂停按钮。右侧操作依次为队列、音量、桌面歌词、全屏，桌面歌词紧邻全屏按钮左侧；桌面歌词通过浏览器画中画置顶，复用来源、译文/罗马音开关与偏移，外语原文和已有中文译文上下显示。没有时间轴时手动滚动，不伪造同步。请求初始 480 × 180，默认位置与拖动后的记忆由浏览器决定，网页无法强制右下角；需文档画中画支持和安全上下文（本机地址或 HTTPS），不支持/失败显示应用提示。浮窗不持久化打开状态，切页/切库不关闭或重建音频，切账号/退出登录/卸载时关闭，迟到窗口也会关闭。
 - 右栏队列不是第二份播放状态；其“当前播放 / 接下来”应反映引擎真实队列。
-- 左栏“推荐”进入 `/recommendations`，手动生成或换一批，保留最近结果；配置从头像设置进入。取最近 30–50 首不同歌曲，输出最多 10 首，同一歌手最多两首。网易云、QQ、Apple Music、Spotify 链接区分直达/搜索，独立降级；本库播放先按当前 libraryId 查询匹配，不将外部目录歌曲当作本库歌曲入队。
+- 左栏“为你推荐”进入 `/recommendations`，主页“全部”共用卡片与平台链接缓存，预览最近一批前四首；两处都不自动生成。手动生成或换一批，数量可选 10/20/30（默认 30），保留最近结果。Last.fm 尝试查询全部 30–50 首不同歌曲，候选按来源平衡，不再仅查询最高权重八位歌手；混合模式排序并提名新歌曲，AI 新候选经目录核实。每位歌手、已知同名专辑最多一首，不为凑数量放松限制。平台入口区分直达/搜索，移除本库播放；推荐页可查看将提交的收听参考。
 - 推荐服务检测就地显示状态，只校验所选服务；编辑对应配置取消检测并清除旧结果。DeepSeek 官方主机显式使用非思考与 JSON 模式，候选排序使用短 ID；错误提示区分认证、余额、超时与响应格式，不暴露上游原文，详见 [音乐推荐](16-music-recommendations.md)。
 
 ### 列表、歌单与目录
@@ -131,7 +131,7 @@ Navidrome 的 `getPlaylists` 返回账号可见的歌单。每库归属是 Tooku
 
 ### 持久化的维护约束
 
-音乐推荐新增账号文档 v1 可选 `recommendations` 字段，包含普通设置与最近一批最少元数据；`tooku-recommendations` 按旧 identity 保存回退。旧文档不补写空字段，恢复旧备份重置当前账号推荐数据。密钥独立为会话状态，退出/切账号清空，平台链接与封面仅短时缓存，不进入备份；详见 [音乐推荐](16-music-recommendations.md)。
+音乐推荐在账号文档 v1 可选 `recommendations` 字段保存普通设置与最近一批最少元数据；可选 `settings.resultCount` 缺省按 30，`seenIds` 最多 300 个 ID，`recentSongs` 最多 90 首的 ID/标题/歌手供模型避重。旧版仅 settings/batch 的文档、备份和本地存储继续可读，不清空数据；`tooku-recommendations` 仍按旧 identity 回退，随现有同步与 revision 流程处理。恢复旧备份重置当前账号推荐数据，其他账号不变。密钥独立为会话状态，退出/切账号清空，平台链接与封面仅短时缓存，不进入备份；详见 [音乐推荐](16-music-recommendations.md)。
 
 现有轻量后端将图片与元数据一起存入受限 SQLite 版本文档，以同一事务替换并回收旧图；没有独立图片目录。后续演进继续遵守：
 
