@@ -11,6 +11,7 @@ import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
 import type { Track } from '../../domain/models';
 import { AlbumLink, ArtistLinks } from '../../components/TrackLinks';
 import { FullscreenButton } from './FullscreenButton';
+import { ScrollingText } from './ScrollingText';
 
 export function Progress({ context = 'dock' }: { context?: 'dock' | 'room' }) {
   const position = usePlaybackPosition(); const duration = usePlayer((s) => s.duration); const entryId = usePlayer((s) => s.currentId);
@@ -122,7 +123,7 @@ export function LyricsPlayer({ onClose, addToPlaylist }: { onClose: () => void; 
   }}>
     <div className="room-backdrop" aria-hidden="true"><Cover id={track?.coverArt} size={240} /></div>
     <div className="room-body"><section className="room-record" aria-label="当前歌曲"><div className="room-artwork-slot"><div key={track?.id} className="room-artwork"><Cover id={track?.coverArt} size={900} /><div className="artwork-sheen" /></div></div>
-      <div className="room-song"><div key={track?.id} className="room-song-copy"><h1>{track?.title ?? '选择一首喜欢的歌'}</h1><p>{track?.artist ?? 'Tooku'}</p></div><div className="room-song-actions"><Favorite track={track} /><IconButton label="当前歌曲更多选项" aria-haspopup="menu" disabled={!track} onClick={(event) => menu(event, items)}><Ellipsis size={22} /></IconButton></div></div>
+      <div className="room-song"><div key={track?.id} className="room-song-copy"><h1><ScrollingText text={track?.title ?? '选择一首喜欢的歌'} /></h1><p><ScrollingText text={track?.artist ?? 'Tooku'} /></p></div><div className="room-song-actions"><Favorite track={track} /><IconButton label="当前歌曲更多选项" aria-haspopup="menu" disabled={!track} onClick={(event) => menu(event, items)}><Ellipsis size={22} /></IconButton></div></div>
       <Progress context="room" /><Transport large />
       {state.status === 'blocked' && !state.error && <div className="room-error" role="status">点击播放以继续</div>}
       {state.error && <div className="room-error" role="alert"><p>{state.error}</p><button className="text-button" onClick={() => player.mode('compatible')}>使用兼容模式重试</button></div>}

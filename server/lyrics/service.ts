@@ -3,6 +3,7 @@ import { isCandidate, isLyricDocument, type FetchResult, type LyricsStatus, type
 import { createProviders, LyricsError, type LyricProvider } from './providers.ts';
 import { LyricsCache } from './cache.ts';
 import { rankCandidates } from './matching.ts';
+import { canUseLyricCandidate } from '../../src/domain/lyrics/matching.ts';
 
 export function createLyricsService(options: { providers?: LyricProvider[]; filename?: string; now?: () => number; enabled?: boolean; intervalMs?: number } = {}) {
   const providers = options.providers ?? createProviders(); const now = options.now ?? Date.now;
@@ -54,16 +55,30 @@ export function createLyricsService(options: { providers?: LyricProvider[]; file
     if (!enabled || root.signal.aborted) throw new LyricsError('disabled');
     const result: SearchResult = { version: 1, candidates: [], errors: [] };
     for (const id of ids) {
-      const query = keyword?.trim() || `${track.title} ${track.artists.join(' ')}`.trim(); const key = `search:v2:${id}:${query}`;
+      const query = keyword?.trim() || `${track.title} ${track.artists.join(' ')}`.trim();
+      const titleOnly = track.title.replace(/\([^)]*\)|（[^）]*）|\[[^\]]*\]/g, '').trim();
+      const key = `search:v3:${id}:${JSON.stringify([query, track])}`;
       const saved = !refresh && cache.get(key, now());
       try {
         let candidates: import('../../src/domain/lyrics/types.ts').LyricCandidate[];
         if (saved && !saved.stale && Array.isArray(saved.value) && saved.value.every(isCandidate)) candidates = saved.value;
         else candidates = await shared(key, async () => {
           const items = await operation(id, 'search', async (p, signal) => {
-            const found = await p.search(query, signal);
-            if (!found.every(isCandidate) || found.some((c) => c.provider !== id)) throw new LyricsError('protocol');
-            return found.slice(0, 10);
+            const read = async (text: string) => {
+              const found = await p.search(text, signal);
+              if (!found.every(isCandidate) || found.some((c) => c.provider !== id)) throw new LyricsError('protocol');
+              return found.slice(0, 10);
+            };
+            const found = await read(query);
+            if (id === 'netease' && titleOnly && titleOnly !== query && !found.some((candidate) => canUseLyricCandidate(track, candidate)) && !signal.aborted) {
+              try {
+                const extra = await read(titleOnly);
+                return rankCandidates(track, [...new Map([...found, ...extra].map((candidate) => [candidate.id, candidate])).values()]).slice(0, 10);
+              } catch (error) {
+                if (!found.length || error instanceof LyricsError && error.code === 'rate-limited') throw error;
+              }
+            }
+            return found;
           }, (items) => items.length > 0);
           cache.put(key, items, items.length ? 3600000 : 21600000, now()); return items;
         });
@@ -74,7 +89,7 @@ export function createLyricsService(options: { providers?: LyricProvider[]; file
   }
   async function lyrics(id: ProviderId, recordId: string, refresh = false): Promise<FetchResult> {
     if (!enabled || root.signal.aborted) throw new LyricsError('disabled');
-    const key = `lyrics:v1:${id}:${recordId}`; const saved = !refresh && cache.get(key, now());
+    const key = `lyrics:${id === 'qq' ? 'v2' : 'v1'}:${id}:${recordId}`; const saved = !refresh && cache.get(key, now());
     if (saved && isLyricDocument(saved.value) && saved.value.source === id && saved.value.recordId === recordId) {
       // Stale data stays available, but never updates the provider observation.
       if (!saved.stale || saved.value.tracks.some((t) => t.text?.trim()) || saved.value.instrumental) {

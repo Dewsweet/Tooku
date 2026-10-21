@@ -12,7 +12,7 @@ const duration = (v: unknown, multiplier = 1) => typeof v === 'number' && Number
 export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] {
   const artistCache = new Map<string, { names: string[]; expires: number }>();
   const aliases = (artist: Record<string, unknown>) => [...new Set([string(artist.trans), ...[artist.alias, artist.transNames].flatMap((value) => Array.isArray(value) ? value.map(string) : [])].filter((name) => name.trim() && name.length <= 256))].slice(0, 20);
-  async function request(host: 'music.163.com' | 'c.y.qq.com', path: string, params: Record<string, string>, signal: AbortSignal) {
+  async function request(host: 'music.163.com' | 'c.y.qq.com' | 'u.y.qq.com', path: string, params: Record<string, string>, signal: AbortSignal) {
     const url = new URL(path, `https://${host}`); url.search = new URLSearchParams(params).toString();
     let response: Response;
     try { response = await fetcher(url, { redirect: 'error', credentials: 'omit', headers: { 'User-Agent': 'Mozilla/5.0 Tooku/0.1', Referer: host === 'music.163.com' ? 'https://music.163.com/' : 'https://y.qq.com/' }, signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) }); }
@@ -45,9 +45,7 @@ export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] 
       // Use only aliases supplied for that exact artist ID, within the search deadline.
       const foreignArtists = songs.flatMap((song) => list(song.artists ?? song.ar)).filter((artist) =>
         /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Latin}]/u.test(string(artist.name)) && !aliases(artist).length);
-      const ids = /\p{Script=Han}/u.test(keyword)
-        ? [...new Set(foreignArtists.map((artist) => String(artist.id)).filter((id) => /^\d{1,20}$/.test(id)))].slice(0, 2)
-        : [];
+      const ids = [...new Set(foreignArtists.filter((artist) => /\p{Script=Han}/u.test(keyword) || /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(string(artist.name))).map((artist) => String(artist.id)).filter((id) => /^\d{1,20}$/.test(id)))].slice(0, 2);
       for (const id of ids) {
         if (signal.aborted) break;
         if ((artistCache.get(id)?.expires ?? 0) > Date.now()) continue;
@@ -65,7 +63,7 @@ export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] 
       return songs.map((s) => {
         const artists = list(s.artists ?? s.ar);
         const artistAliases = [...new Set(artists.flatMap((artist) => [...aliases(artist), ...(artistCache.get(String(artist.id))?.names ?? [])]))].slice(0, 20);
-        return { provider: 'netease', id: String(s.id), title: string(s.name), artists: artists.map((a) => string(a.name)), artistAliases, album: string(object(s.album ?? s.al).name), durationMs: duration(s.duration ?? s.dt) };
+        return { provider: 'netease', id: String(s.id), title: string(s.name), artists: artists.map((a) => string(a.name)).slice(0, 20), artistAliases, album: string(object(s.album ?? s.al).name), durationMs: duration(s.duration ?? s.dt) };
       });
     },
     async lyrics(id, signal) {
@@ -79,9 +77,24 @@ export function createProviders(fetcher: typeof fetch = fetch): LyricProvider[] 
     async search(keyword, signal) {
       const data = await request('c.y.qq.com', '/soso/fcgi-bin/client_search_cp', { format: 'json', w: keyword, p: '1', n: '10', cr: '1', t: '0' }, signal); check(data, 0);
       const songs = object(object(data.data).song); if (!Array.isArray(songs.list)) throw new LyricsError('protocol');
-      return list(songs.list).map((s) => ({ provider: 'qq', id: string(s.songmid ?? s.mid), title: string(s.songname ?? s.name), artists: list(s.singer).map((a) => string(a.name)), album: string(s.albumname ?? object(s.album).name), durationMs: duration(s.interval, 1000) }));
+      return list(songs.list).map((s) => ({ provider: 'qq', id: string(s.songmid ?? s.mid), title: string(s.songname ?? s.name), artists: list(s.singer).map((a) => string(a.name)).slice(0, 20), album: string(s.albumname ?? object(s.album).name), durationMs: duration(s.interval, 1000) }));
     },
     async lyrics(id, signal) {
+      try {
+        const result = await request('u.y.qq.com', '/cgi-bin/musicu.fcg', { format: 'json', data: JSON.stringify({
+          comm: { ct: 24, cv: 4747474, format: 'json' },
+          req_0: { module: 'music.musichallSong.PlayLyricInfo', method: 'GetPlayLyricInfo', param: { songMid: id, crypt: 0, lrc_t: 0, qrc: 0, qrc_t: 0, trans: 1, trans_t: 0, roma: 0, roma_t: 0, type: 1 } },
+        }) }, signal);
+        check(result, 0); const reply = object(result.req_0);
+        if (reply.code === 24001) return { version: 1, source: 'qq', recordId: id, tracks: [] };
+        check(reply, 0); const data = object(reply.data);
+        if (data.crypt !== 0 || typeof data.lyric !== 'string' || typeof data.trans !== 'string') throw new LyricsError('protocol');
+        const document: LyricDocument = { version: 1, source: 'qq', recordId: id, tracks: [{ role: 'original', text: decode(data.lyric) }, { role: 'translation', text: decode(data.trans), lang: 'zh' }] };
+        if (!isLyricDocument(document)) throw new LyricsError('protocol');
+        return document;
+      } catch (error) {
+        if (signal.aborted || error instanceof LyricsError && ['rate-limited', 'login-required'].includes(error.code)) throw error;
+      }
       const data = await request('c.y.qq.com', '/lyric/fcgi-bin/fcg_query_lyric_new.fcg', { songmid: id, format: 'json', nobase64: '1', g_tk: '5381', platform: 'yqq' }, signal); check(data, 0);
       if (typeof data.lyric !== 'string') throw new LyricsError('protocol');
       const document: LyricDocument = { version: 1, source: 'qq', recordId: id, tracks: [{ role: 'original', text: decode(data.lyric) }, { role: 'translation', text: decode(data.trans), lang: 'zh' }] };

@@ -16,7 +16,32 @@ function fixture(options: Parameters<typeof createLyricsService>[0] = {}) {
   cleanups.push(() => service.close()); return { provider, service };
 }
 const track = { title: 'Song', artists: ['Artist'], durationMs: 180000 };
+const qqReply = (lyric: string, trans = '') => ({ code: 0, req_0: { code: 0, data: { crypt: 0, lyric, trans } } });
 describe('independent lyrics service', () => {
+  it('retries a failed combined NetEase query once with the song title and keeps artist filtering', async () => {
+    const { provider, service } = fixture();
+    vi.mocked(provider.search).mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { provider: 'netease', id: 'wrong', title: 'おやすみパラドックス', artists: ['Other'], durationMs: 180000 },
+      { provider: 'netease', id: 'right', title: 'おやすみパラドックス', artists: ['やくしまるえつこ'], durationMs: 180000 },
+    ]);
+    const descriptor = { title: 'おやすみパラドックス', artists: ['やくしまるえつこ'], durationMs: 180000 };
+    const result = await service.search(descriptor, ['netease']);
+    expect(vi.mocked(provider.search).mock.calls.map(([query]) => query)).toEqual(['おやすみパラドックス やくしまるえつこ', 'おやすみパラドックス']);
+    expect(result.candidates.find((c) => c.id === 'right')?.confident).toBe(true);
+    expect(result.candidates.find((c) => c.id === 'wrong')?.confident).toBe(false);
+    await service.search(descriptor, ['netease']); expect(provider.search).toHaveBeenCalledTimes(2);
+  });
+  it('bounds and deduplicates fallback candidates and does not broaden queries on a rate limit', async () => {
+    const { provider, service } = fixture();
+    const candidates = Array.from({ length: 10 }, (_, i) => ({ provider: 'netease' as const, id: String(i), title: 'Other', artists: ['Artist'], durationMs: 180000 }));
+    vi.mocked(provider.search).mockResolvedValueOnce(candidates).mockResolvedValueOnce([...candidates.slice(1), { ...candidates[0], id: 'correct', title: 'Song' }]);
+    const result = await service.search(track, ['netease']);
+    expect(result.candidates).toHaveLength(10); expect(new Set(result.candidates.map((c) => c.id)).size).toBe(10);
+    expect(result.candidates[0].id).toBe('correct');
+    vi.mocked(provider.search).mockClear().mockRejectedValue(new LyricsError('rate-limited'));
+    expect((await service.search(track, ['netease'], true)).errors[0].code).toBe('rate-limited');
+    expect(provider.search).toHaveBeenCalledTimes(1);
+  });
   it('deduplicates concurrent work, caches across calls and does not fabricate health on cache hits', async () => {
     let time = 100000; const { provider, service } = fixture({ now: () => time });
     const results = await Promise.all([service.lyrics('netease', '123'), service.lyrics('netease', '123')]);
@@ -85,6 +110,16 @@ describe('independent lyrics service', () => {
 });
 
 describe('provider protocol adapters', () => {
+  it('bounds ensemble metadata so an unrelated result with 25 artists cannot reject the entire search', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ code: 200, result: { songs: [
+      { id: 123, name: 'Song', artists: [{ name: 'Artist' }], duration: 180000 },
+      { id: 456, name: 'Other', artists: Array.from({ length: 25 }, (_, i) => ({ name: `Singer ${i}` })) },
+    ] } }));
+    const { service } = fixture({ providers: createProviders(fetcher) });
+    const result = await service.search(track, ['netease']);
+    expect(result.errors).toEqual([]); expect(result.candidates).toHaveLength(2);
+    expect(result.candidates[0].confident).toBe(true); expect(result.candidates[1].artists).toHaveLength(20);
+  });
   it('loads platform artist aliases once per ID without changing the displayed performer name', async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => new URL(String(url)).pathname.startsWith('/api/artist/')
       ? Response.json({ code: 200, artist: { id: 17637, name: 'つじあやの', alias: ['Tsuji Ayano'], transNames: ['辻亚弥乃'], trans: '辻亚弥乃' } })
@@ -130,12 +165,16 @@ describe('provider protocol adapters', () => {
   it.each([false, true])('retains QQ translations from plain and base64 responses (%s)', async (encoded) => {
     const original = '[00:01]A foreign line\n[00:02]Another line';
     const translation = '[00:01]第一句译文\n[00:02]第二句译文';
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 0, lyric: encoded ? Buffer.from(original).toString('base64') : original, trans: encoded ? Buffer.from(translation).toString('base64') : translation }));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(qqReply(encoded ? Buffer.from(original).toString('base64') : original, encoded ? Buffer.from(translation).toString('base64') : translation)));
     const result = normalizeLyrics(await createProviders(fetcher)[1].lyrics('qq123', new AbortController().signal));
     expect(result.lines.map((line) => line.translation)).toEqual([['第一句译文'], ['第二句译文']]);
+    const request = new URL(String(fetcher.mock.calls[0][0]));
+    expect(request.host).toBe('u.y.qq.com');
+    expect(JSON.parse(request.searchParams.get('data')!).req_0.param).toMatchObject({ songMid: 'qq123', trans: 1, crypt: 0, qrc: 0 });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('keeps QQ original lyrics usable when the platform returns no translation', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 0, lyric: '[00:01]A foreign line', trans: '' }));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(qqReply('[00:01]A foreign line')));
     const result = normalizeLyrics(await createProviders(fetcher)[1].lyrics('qq123', new AbortController().signal));
     expect(result.lines[0]).toMatchObject({ text: 'A foreign line' }); expect(result.lines[0].translation).toBeUndefined();
   });
@@ -143,15 +182,29 @@ describe('provider protocol adapters', () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ code: 200, result: { songs: [{ id: 123, name: 'Song', artists: [{ name: 'Artist' }], album: { name: 'Album' }, duration: 180000 }] } }))
       .mockResolvedValueOnce(Response.json({ code: 200, lrc: { lyric: '[00:01]hello' }, tlyric: { lyric: '[00:01]你好' } }))
       .mockResolvedValueOnce(Response.json({ code: 0, data: { song: { list: [{ songmid: 'abc', songname: 'Song', singer: [{ name: 'Artist' }], interval: 180 }] } } }))
-      .mockResolvedValueOnce(Response.json({ code: 0, lyric: Buffer.from('[00:01]hello').toString('base64'), trans: '[00:01]你好' }))
-      .mockResolvedValueOnce(Response.json({ code: 0, lyric: 'hello', trans: '' }));
+      .mockResolvedValueOnce(Response.json(qqReply(Buffer.from('[00:01]hello').toString('base64'), '[00:01]你好')))
+      .mockResolvedValueOnce(Response.json(qqReply('hello')));
     const [netease, qq] = createProviders(fetcher); const signal = new AbortController().signal;
     expect((await netease.search('Song', signal))[0].durationMs).toBe(180000);
     expect((await netease.lyrics('123', signal)).tracks[1].role).toBe('translation');
     expect((await qq.search('Song', signal))[0].durationMs).toBe(180000);
     expect((await qq.lyrics('abc', signal)).tracks[0].text).toBe('[00:01]hello');
     expect((await qq.lyrics('plain', signal)).tracks[0].text).toBe('hello');
-    for (const [url, init] of fetcher.mock.calls) { expect(new URL(String(url)).protocol).toBe('https:'); expect(['music.163.com', 'c.y.qq.com']).toContain(new URL(String(url)).host); expect(init).toMatchObject({ credentials: 'omit', redirect: 'error' }); }
+    for (const [url, init] of fetcher.mock.calls) { expect(new URL(String(url)).protocol).toBe('https:'); expect(['music.163.com', 'c.y.qq.com', 'u.y.qq.com']).toContain(new URL(String(url)).host); expect(init).toMatchObject({ credentials: 'omit', redirect: 'error' }); }
+  });
+  it('falls back from the new QQ protocol to the legacy endpoint without treating ciphertext as lyrics', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ code: 0, req_0: { code: 0, data: { crypt: 1, lyric: 'abcdef012345', trans: '' } } }))
+      .mockResolvedValueOnce(Response.json({ code: 0, lyric: '[00:01]legacy original', trans: '[00:01]旧接口译文' }));
+    const result = normalizeLyrics(await createProviders(fetcher)[1].lyrics('qq123', new AbortController().signal));
+    expect(result.lines[0]).toMatchObject({ text: 'legacy original', translation: ['旧接口译文'] });
+    expect(new URL(String(fetcher.mock.calls[1][0])).host).toBe('c.y.qq.com');
+  });
+  it.each([24001, 2001])('does not call the legacy QQ endpoint for absence or rate limiting (%s)', async (code) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 0, req_0: { code } }));
+    const request = createProviders(fetcher)[1].lyrics('qq123', new AbortController().signal);
+    if (code === 24001) expect((await request).tracks).toEqual([]);
+    else await expect(request).rejects.toMatchObject({ code: 'rate-limited' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('rejects changed protocols, oversized responses and login gates instead of caching them as absent', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ code: 200, result: {} })).mockResolvedValueOnce(new Response('x'.repeat(524289))).mockResolvedValueOnce(new Response('', { status: 403 }));

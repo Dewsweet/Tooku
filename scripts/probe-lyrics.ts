@@ -17,6 +17,12 @@ try {
       report.push({ provider, operation: 'lyrics', lines: lyrics.lines.length, translations: lyrics.lines.filter((l) => l.translation?.length).length, synced: lyrics.synced });
     } catch (e) { report.push({ provider, operation: 'lyrics', error: e instanceof Error ? e.message : 'unavailable' }); }
   }
+  for (const [title, id] of [['Lemon', '000akynZ2Rbro5'], ['Shape of You', '0041gObR2QG98x'], ['風になる', '000iAGZa3Fz4sB']]) {
+    try {
+      const lyrics = normalizeLyrics((await service.lyrics('qq', id, true)).document);
+      report.push({ provider: 'qq', operation: 'foreign-lyrics', title, id, lines: lyrics.lines.length, translations: lyrics.lines.filter((line) => line.translation?.length).length });
+    } catch (e) { report.push({ provider: 'qq', operation: 'foreign-lyrics', title, error: e instanceof Error ? e.message : 'unavailable' }); }
+  }
   const folder = resolve('.local'); mkdirSync(folder, { recursive: true });
   const result = { checkedAt: new Date().toISOString(), status: service.status(), results: report };
   writeFileSync(resolve(folder, 'lyrics-probe.json'), JSON.stringify(result, null, 2));

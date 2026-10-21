@@ -11,6 +11,7 @@ import { player, usePlayer } from '../src/features/player/engine';
 import { LyricsPlayer, PlayerBar, Progress } from '../src/features/player/PlayerUI';
 import { Modal } from '../src/components/Modal';
 import { Interactions } from '../src/components/Interactions';
+import { ScrollingText } from '../src/features/player/ScrollingText';
 
 it('does not start dismissing a busy modal and can close again after saving fails', () => {
   const close = vi.fn();
@@ -51,6 +52,27 @@ afterEach(() => {
 });
 function RouteMarker() { const location = useLocation(); return <output data-testid="route-path">{location.pathname}</output>; }
 const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}><MemoryRouter><Interactions>{child}<RouteMarker /></Interactions></MemoryRouter></QueryClientProvider>);
+it('scrolls overflowing metadata only, updates on resize, and honors reduced motion', () => {
+  let resize = () => {}; const disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect = disconnect; });
+  try {
+    const text = 'THE IDOLM＠STER、中村繪里子、今井麻美、仁後真耶子、落合祐里香';
+    const view = render(<ScrollingText text={text} />);
+    const content = screen.getByText(text); const viewport = content.parentElement!;
+    let width = 260;
+    Object.defineProperty(viewport, 'clientWidth', { configurable: true, get: () => width });
+    Object.defineProperty(content, 'scrollWidth', { configurable: true, value: 900 });
+    act(() => resize());
+    expect(viewport).toHaveAttribute('data-overflow', 'true'); expect(viewport).toHaveAttribute('tabindex', '0');
+    expect(viewport).toHaveAttribute('data-animate', 'false');
+    act(() => usePreferences.setState({ reducedMotion: false })); expect(viewport).toHaveAttribute('data-animate', 'true');
+    expect(viewport.style.getPropertyValue('--text-distance')).toBe('-640px');
+    width = 1000; act(() => resize());
+    expect(viewport).toHaveAttribute('data-overflow', 'false'); expect(viewport).toHaveAttribute('data-animate', 'false');
+    expect(viewport).toHaveAttribute('tabindex', '-1');
+    view.unmount(); expect(disconnect).toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); }
+});
 function fullscreenFixture() {
   let element: Element | null = null;
   const set = (next: Element | null) => { element = next; document.dispatchEvent(new Event('fullscreenchange')); };

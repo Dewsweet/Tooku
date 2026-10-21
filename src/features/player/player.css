@@ -113,16 +113,22 @@ html:has(dialog[open]) { overflow: hidden; }
 .room-backdrop .cover { position: absolute; width: 140%; height: 140%; max-width: none; inset: -20%; object-fit: cover; filter: blur(100px) saturate(.65); opacity: .22; border: 0; }
 .room-backdrop::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 45%, transparent); }
 .room-body { width: 92%; max-width: 2880px; margin-inline: auto; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, .9fr) minmax(0, 1.1fr); grid-template-rows: minmax(0, 1fr); align-items: center; gap: clamp(48px, 6vw, 180px); padding: clamp(76px, 7dvh, 100px) 0 max(clamp(32px, 6dvh, 96px), env(safe-area-inset-bottom)); overflow: hidden; }
-.room-record { min-height: 0; width: 100%; max-width: clamp(480px, 30vw, 1040px); height: 100%; max-height: min(100%, calc(var(--room-cover-size) + 310px)); margin: auto; display: grid; grid-template-rows: minmax(0, 1fr) repeat(4, auto); overflow: hidden; }
+.room-record { min-width: 0; min-height: 0; width: 100%; max-width: clamp(480px, 30vw, 1040px); height: 100%; max-height: min(100%, calc(var(--room-cover-size) + 310px)); margin: auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) repeat(4, auto); overflow: hidden; }
 /* The cover fits the space left by the controls, even in a short window. */
 .room-artwork-slot { min-height: 0; container-type: size; display: grid; place-items: center; }
 .room-artwork { width: min(100cqw, 100cqh, var(--room-cover-size)); aspect-ratio: 1; position: relative; border-radius: 12px; animation: artwork-enter .65s cubic-bezier(.16, 1, .3, 1) both; }
 .room-artwork .cover { width: 100%; height: 100%; border-radius: inherit; border: 1px solid var(--line); box-shadow: 0 22px 48px -14px color-mix(in srgb, var(--text) 30%, transparent); }
 .artwork-sheen { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(145deg, #ffffff0e, transparent 50%); }
-.room-song { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: clamp(20px, 4dvh, 56px) 0 20px; }
-.room-song-copy { min-width: 0; flex: 1; animation: metadata-in .45s both; }
-.room-song h1 { font-size: clamp(24px, 2.2vw, 36px); font-weight: 650; line-height: 1.3; letter-spacing: -.7px; overflow-wrap: anywhere; margin-bottom: 6px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.room-song p { font-size: clamp(17px, 1.6vw, 25px); color: var(--muted); margin: 0; line-height: 1.4; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.room-song { min-width: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: clamp(20px, 4dvh, 56px) 0 20px; }
+.room-song-copy { min-width: 0; flex: 1 1 0; overflow: hidden; animation: metadata-in .45s both; }
+.room-song h1 { font-size: clamp(24px, 2.2vw, 36px); font-weight: 650; line-height: 1.3; letter-spacing: -.7px; margin-bottom: 6px; }
+.room-song p { font-size: clamp(17px, 1.6vw, 25px); color: var(--muted); margin: 0; line-height: 1.4; }
+.scrolling-text { display: block; width: 100%; min-width: 0; overflow: auto; white-space: nowrap; scrollbar-width: none; }
+.scrolling-text > span { display: block; width: max-content; }
+.scrolling-text[data-animate=true] > span { animation: text-pan var(--text-duration) linear infinite; }
+.scrolling-text:hover > span, .scrolling-text:focus > span { animation-play-state: paused; }
+.scrolling-text:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@keyframes text-pan { 0%, 10%, 100% { transform: translateX(0); } 45%, 55% { transform: translateX(var(--text-distance)); } 90% { transform: translateX(0); } }
 .room-song-actions { display: flex; gap: 10px; flex-shrink: 0; }
 .room-song-actions .icon-button { border-radius: 50%; width: 44px; height: 44px; background: color-mix(in srgb, var(--surface) 65%, transparent); }
 .seek-room { --seek-fill: var(--muted); display: grid; grid-template-columns: 1fr auto; gap: 2px; font-size: 13px; }
@@ -224,7 +230,7 @@ html:has(dialog[open]) { overflow: hidden; }
   .room-content { height: 100%; --lyric-anchor: .5; }
   .room-artwork { width: min(100cqw, 100cqh, 310px); }
   .room-song { margin: 12px 0 8px; gap: 10px; }
-  .room-song h1 { font-size: 20px; -webkit-line-clamp: 1; }
+  .room-song h1 { font-size: 20px; }
   .room-song p { font-size: 15px; }
   .room-song-actions { gap: 6px; }
   .modal-player .transport.large { margin: 6px 0 0; }

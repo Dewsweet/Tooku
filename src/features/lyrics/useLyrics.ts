@@ -24,7 +24,7 @@ export function useLyrics(track?: Track) {
   const needNetwork = Boolean(track && settings.enabled && (mode !== 'local' || local.isSuccess && !localLyrics?.instrumental && !localLyrics?.lines.some((line) => line.text.trim())));
   const providers: ProviderId[] = mode === 'local' ? settings.order : settings.order.filter((provider) => provider === mode);
   const remote = useQuery({
-    queryKey: [api.identity, 'network-lyrics', 'v4', track?.id, track && describeTrack(track), mode, providers, choice?.bindings, settings.enabled, refresh],
+    queryKey: [api.identity, 'network-lyrics', 'v5', track?.id, track && describeTrack(track), mode, providers, choice?.bindings, settings.enabled, refresh],
     enabled: needNetwork, staleTime: 300000, retry: false,
     queryFn: async ({ signal }) => {
       const budget = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
@@ -44,7 +44,7 @@ export function useLyrics(track?: Track) {
           for (const id of ids) {
             if (budget.aborted) break;
             try {
-              const result = await client.fetchQuery({ queryKey: [api.identity, 'tooku-lyrics', provider, id, refresh], staleTime: 300000, retry: false, queryFn: ({ signal: fetchSignal }) => network.lyrics(provider, id, AbortSignal.any([budget, fetchSignal]), refresh > 0) });
+              const result = await client.fetchQuery({ queryKey: [api.identity, 'tooku-lyrics', 'v2', provider, id, refresh], staleTime: 300000, retry: false, queryFn: ({ signal: fetchSignal }) => network.lyrics(provider, id, AbortSignal.any([budget, fetchSignal]), refresh > 0) });
               const normalized = normalizeLyrics(result.document);
               if (normalized.instrumental || normalized.lines.some((line) => line.text.trim())) return { ...result, candidates, errors };
             } catch (error) {
