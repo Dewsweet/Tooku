@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Check, Cloud, FileMusic, RotateCw, SlidersHorizontal } from 'lucide-react';
 import { QueryState, useApi } from '../../components/Common';
 import { usePreferences } from '../../state/preferences';
-import { lyricIndex } from '../../domain/queue';
+import { lyricTiming } from '../../domain/lyrics/timing';
 import type { Track } from '../../domain/models';
 import { player, usePlayer } from './engine';
 import { useReducedMotion } from './playback-hooks';
@@ -30,13 +30,12 @@ function LyricsView({ track, toolbarHost }: { track?: Track; toolbarHost?: HTMLE
   const ref = useRef<HTMLDivElement>(null); const [follow, setFollow] = useState(true); const following = useRef(true); const dragging = useRef(false);
   const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined); const frame = useRef(0);
   const anchor = useRef(.5);
-  const lyrics = data.lyrics; const delay = (lyrics?.offsetMs ?? 0) + preferences.lyricDelay + (data.edit?.delayMs ?? 0);
+  const lyrics = data.lyrics; const { delayMs: delay, index: active } = lyricTiming(lyrics, position, preferences.lyricDelay, data.edit);
   const saveEdit = (edit?: LyricEdit) => {
     if (!track || !data.document) return;
     const edits = { ...data.choice?.edits }; if (edit) edits[data.document.source] = edit; else delete edits[data.document.source];
     updateLyricChoice(api.identity, track.id, { edits }); setSettingsOpen(false);
   };
-  const active = lyrics?.synced ? lyricIndex(lyrics.lines.map((l) => l.startMs), position * 1000 - delay) : -1;
   const center = useCallback((instant = false) => {
     const container = ref.current; const line = container?.querySelector<HTMLElement>('[aria-current="true"]');
     if (!container || !line || !following.current) return;

@@ -22,6 +22,7 @@
 | 网络客户端 | `src/api/lyrics.ts` | 固定同源路径、DTO 校验、取消与错误转换 |
 | 来源协调 | `src/features/lyrics/useLyrics.ts` | 本地优先、绑定、搜索、候选决策与共享查询 |
 | 显示与操作 | `Lyrics.tsx`、`LyricsDialogs.tsx`、`lyrics.css` | 共用双语显示、来源、匹配与排版修正；视口独立滚动 |
+| 桌面歌词与时间换算 | `DesktopLyrics.tsx`、`desktop-lyrics.css`、`src/domain/lyrics/timing.ts` | 底栏打开置顶文档画中画；Portal 复用 `useLyrics`，时间偏移与主视图共用，当前时间点的多行不去重，静态歌词保留滚动 |
 | 设置 | `src/features/settings/NetworkLyricsSettings.tsx` | 开关、来源顺序、真实状态和主动检测 |
 | 独立服务 | `server/lyrics/service.ts` / `http.ts` | 调度、去重、状态、限流与 HTTP；不导入用户认证、MusicApi 或播放引擎 |
 | 来源适配 | `server/lyrics/providers.ts` | 独立维护的网易云 / QQ HTTPS 请求与转换；支持注入 fetch |
@@ -42,6 +43,8 @@ OpenSubsonic 正 offset 表示提前，适配时转换为负延迟。普通 LRC 
 显示时间 = 音频秒数 × 1000 − 全局延迟 − 当前来源用户延迟
 定位秒数 = (规范原文 startMs + 全局延迟 + 当前来源用户延迟) / 1000
 ```
+
+`timing.ts` 的 `lyricTiming` 统一主歌词与桌面歌词的秒/毫秒换算和延迟叠加。桌面歌词只展示当前时间点的原文、已有译文及按设置开启的罗马音；前奏使用音符，最终无歌词沿用统一空态，本地错误保留重试。无时间轴时展示可滚动正文，不按歌曲长度生成时间。浮窗用 Document Picture-in-Picture，不建立音频、队列或第二套查询缓存；切歌和显示修正即时更新，关闭不影响播放。应用主题 token 同步到独立文档，独立 CSS 不拷贝认证 URL 或整页 HTML；窗口事件、主题观察与迟到打开请求均清理，切账号关闭浮窗。窗口需用户点击打开，不保存为账号偏好；尺寸与位置由浏览器管理，不能保证固定在屏幕右下角。
 
 ## 本地双语整理
 

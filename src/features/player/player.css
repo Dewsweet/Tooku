@@ -2,7 +2,7 @@
 html:has(dialog[open]) { overflow: hidden; }
 .playback-dock {
   min-height: 106px;
-  grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.35fr) minmax(245px, 1fr);
+  grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.35fr) minmax(280px, 1fr);
   padding: 13px 27px;
   gap: 27px;
   background: color-mix(in srgb, var(--bg) 94%, transparent);
@@ -208,6 +208,7 @@ html:has(dialog[open]) { overflow: hidden; }
   .playback-dock .transport > .mode-button { display: none; }
   .playback-dock .player-right > .icon-button { display: none; }
   .playback-dock .player-right > .icon-button[aria-label^="播放队列"] { display: inline-flex; }
+  .playback-dock .player-right > .desktop-lyrics-button { display: inline-flex; }
   .playback-dock .seek-control { flex: 1; font-size: 9px; gap: 4px; }
   .seek-control .seek-track, .seek-control input[type=range] { height: 38px; }
   .seek-control input::-webkit-slider-thumb { opacity: 1; width: 10px; height: 10px; margin-top: -3.5px; }
