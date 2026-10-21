@@ -7,6 +7,9 @@ import { useProfiles } from '../src/state/profile';
 import { useLyricsProfiles, updateLyricChoice } from '../src/state/lyrics';
 import { chooseUserData, connectUserSync, disconnectUserSync, exportUserBackup, localUserData, refreshUserSync, useUserSync } from '../src/storage/userSync';
 import type { UserDocument } from '../src/domain/userData';
+import { defaultRecommendationSettings } from '../src/domain/recommendations';
+import { useRecommendationProfiles, useRecommendationSecrets } from '../src/state/recommendations';
+import { player, usePlayer } from '../src/features/player/engine';
 
 const memory = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../src/storage/local', () => ({
@@ -22,6 +25,7 @@ beforeEach(() => {
   usePreferences.setState(usePreferences.getInitialState(), true);
   useLibrary.setState(useLibrary.getInitialState(), true); useProfiles.setState(useProfiles.getInitialState(), true);
   useLyricsProfiles.setState({ profiles: {}, refreshes: {} });
+  useRecommendationProfiles.setState({ profiles: {} });
   remote = { revision: 0, updatedAt: 0, data: null };
   api = new MusicApi(`${window.location.origin}/nd`, 'sample-user', crypto.randomUUID());
   client = new UserDataApi(); client.owner = 'verified-sample-owner';
@@ -35,6 +39,22 @@ beforeEach(() => {
 });
 afterEach(() => { disconnectUserSync(); api.dispose(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('user data migration and sync', () => {
+  it('syncs recommendation preferences, excludes credentials from backups and restores legacy documents without touching playback', async () => {
+    const attach = vi.spyOn(player, 'attach'); const before = usePlayer.getState();
+    await connectUserSync(api); const legacy = structuredClone(localUserData()!);
+    const secret = crypto.randomUUID(); useRecommendationSecrets.getState().update(api.identity, { aiKey: secret });
+    useRecommendationProfiles.getState().update(api.identity, () => ({ settings: { ...defaultRecommendationSettings, model: 'fixture' } }));
+    await vi.advanceTimersByTimeAsync(900);
+    expect(remote.data?.recommendations?.settings.model).toBe('fixture');
+    const backup = await exportUserBackup(); expect(backup.data.recommendations?.settings.model).toBe('fixture'); expect(JSON.stringify(backup)).not.toContain(secret);
+    disconnectUserSync(); memory.clear(); useRecommendationProfiles.setState({ profiles: {} });
+    await connectUserSync(api); expect(useRecommendationProfiles.getState().profiles[api.identity].settings.model).toBe('fixture');
+    useRecommendationProfiles.getState().update('other-account', () => ({ settings: defaultRecommendationSettings }));
+    await chooseUserData('local', legacy);
+    expect(useRecommendationProfiles.getState().profiles[api.identity]).toBeUndefined(); expect(useRecommendationProfiles.getState().profiles['other-account']).toBeDefined();
+    expect(remote.data?.recommendations).toBeUndefined(); useRecommendationSecrets.getState().clear();
+    expect(attach).not.toHaveBeenCalled(); expect(usePlayer.getState()).toBe(before);
+  });
   it('syncs lyric bindings and corrections, restores old backups and isolates other accounts', async () => {
     await connectUserSync(api); const legacy = structuredClone(localUserData()!);
     updateLyricChoice(api.identity, 'song', { mode: 'qq', bindings: { qq: 'abc123' }, edits: { local: { layout: 'halves', hash: 'a', delayMs: 100 } } });

@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { createUserApi } from './server/api.ts';
 import { isNavidromeProxyRequest } from './server/navidromeProxy.ts';
 import { createLyricsApi } from './server/lyrics/http.ts';
+import { createRecommendationsApi } from './server/recommendations/http.ts';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'NAVIDROME_');
@@ -12,13 +13,15 @@ export default defineConfig(({ mode }) => {
       configureServer(server) {
         const users = createUserApi({ upstream: env.NAVIDROME_UPSTREAM });
         const lyrics = createLyricsApi();
+        const recommendations = createRecommendationsApi();
+        server.middlewares.use((req, res, next) => { void recommendations.handle(req, res, next); });
         server.middlewares.use((req, res, next) => { void lyrics.handle(req, res, next); });
         server.middlewares.use((req, res, next) => { void users.handle(req, res, next); });
         server.middlewares.use((req, res, next) => {
           if (req.url?.startsWith('/nd/') && !isNavidromeProxyRequest(req.url, req.method)) { res.statusCode = 404; res.end(); return; }
           next();
         });
-        server.httpServer?.once('close', () => { users.close(); lyrics.close(); });
+        server.httpServer?.once('close', () => { users.close(); lyrics.close(); recommendations.close(); });
         server.middlewares.use('/__tooku/health', (_req, res) => {
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Cache-Control', 'no-store');

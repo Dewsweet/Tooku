@@ -23,7 +23,8 @@ function artistNames(artists: string[]) {
   });
   return [...new Set(names)];
 }
-function comparison(track: TrackDescriptor, candidate: LyricCandidate) {
+type CandidateMetadata = Pick<LyricCandidate, 'title' | 'artists' | 'artistAliases' | 'album' | 'durationMs'>;
+function comparison(track: TrackDescriptor, candidate: CandidateMetadata) {
   const base = (title: string) => title.replace(/\([^)]*\)|（[^）]*）|\[[^\]]*\]/g, '').trim();
   const artists = artistNames(track.artists); const otherArtists = artistNames([...candidate.artists, ...(candidate.artistAliases ?? [])]);
   let artist = 0;
@@ -35,14 +36,14 @@ function comparison(track: TrackDescriptor, candidate: LyricCandidate) {
     conflict: version(track.title) !== version(candidate.title),
   };
 }
-export function canUseLyricCandidate(track: TrackDescriptor, candidate: LyricCandidate) {
+export function canUseLyricCandidate(track: TrackDescriptor, candidate: CandidateMetadata) {
   const { title, artist, delta, conflict } = comparison(track, candidate);
   if (conflict || title < .8 || artist < .65) return false;
   // Nearby editions are usable without asking the listener to pick an album release.
   const tolerance = Math.min(15000, Math.max(10000, (track.durationMs ?? 0) * .05));
   return delta === undefined ? title >= .95 && artist >= .9 : delta <= tolerance;
 }
-export function rankCandidates(track: TrackDescriptor, candidates: LyricCandidate[]) {
+export function rankCandidates<T extends CandidateMetadata>(track: TrackDescriptor, candidates: T[]) {
   return candidates.map((candidate) => {
     const { title, artist, delta, conflict } = comparison(track, candidate);
     const score = Math.max(0, title * .55 + artist * .3 + (delta === undefined ? 0 : Math.max(0, 1 - delta / 15000) * .1) + (track.album && candidate.album ? similarity(track.album, candidate.album) * .05 : 0) - (conflict ? .4 : 0));

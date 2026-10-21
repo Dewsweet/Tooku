@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { createUserApi } from '../server/api';
 import { UserStore, DataError } from '../server/store';
 import { isUserData, type UserData } from '../src/domain/userData';
+import { defaultRecommendationSettings } from '../src/domain/recommendations';
 
 export function sampleData(): UserData {
   const track = { id: 'track-1', title: '测试歌曲', artist: '测试歌手', coverArt: 'cover-1' };
@@ -26,6 +27,14 @@ async function listening(server: Server) {
   return `http://127.0.0.1:${address.port}`;
 }
 describe('versioned user storage', () => {
+  it('accepts optional recommendation data, retains legacy data and rejects credential-bearing profiles', () => {
+    const legacy = sampleData(); const data = { ...legacy, recommendations: { settings: defaultRecommendationSettings } };
+    expect(isUserData(legacy)).toBe(true); expect(isUserData(data)).toBe(true);
+    const store = new UserStore(':memory:'); cleanups.push(() => store.close()); store.write('alice', 0, data);
+    expect(store.read('alice').data?.recommendations).toEqual(data.recommendations); expect(store.read('bob').data).toBeNull();
+    expect(isUserData({ ...data, recommendations: { ...data.recommendations, aiKey: crypto.randomUUID() } })).toBe(false);
+    expect(isUserData({ ...data, recommendations: { settings: { ...defaultRecommendationSettings, token: crypto.randomUUID() } } })).toBe(false);
+  });
   it('round-trips optional lyrics settings while accepting old data and rejecting credential fields', () => {
     const legacy = sampleData(); expect(isUserData(legacy)).toBe(true);
     const lyrics = { enabled: true, order: ['netease', 'qq'], tracks: { song: { mode: 'qq', bindings: { qq: 'abc123' }, edits: { local: { layout: 'alternating', hash: 'a', delayMs: 100 } } } } };
