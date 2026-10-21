@@ -14,9 +14,17 @@ export async function mapLimit<T, R>(items: T[], count: number, action: (item: T
 }
 export function createCatalog(fetcher: typeof fetch = fetch) {
   const domestic = createProviders(fetcher);
-  async function json(url: URL | string, init: RequestInit, signal: AbortSignal) {
-    const response = await fetcher(url, { ...init, credentials: 'omit', redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]) });
-    return object(await limitedJson(response));
+  async function json(url: URL | string, init: RequestInit, signal: AbortSignal, timeoutMs = 6000) {
+    const budget = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+    try {
+      const response = await fetcher(url, { ...init, credentials: 'omit', redirect: 'error', signal: budget });
+      return object(await limitedJson(response));
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (budget.aborted) throw new RecommendationError('来源请求超时，请稍后重试');
+      if (error instanceof RecommendationError) throw error;
+      throw new RecommendationError(error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name) ? '来源请求超时，请稍后重试' : '来源网络连接失败，请稍后重试');
+    }
   }
   async function spotifyToken(credentials: RecommendationCredentials, signal: AbortSignal) {
     const data = await json('https://accounts.spotify.com/api/token', { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${credentials.spotifyClientId}:${credentials.spotifyClientSecret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=client_credentials' }, signal);

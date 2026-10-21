@@ -4,7 +4,7 @@
 
 ## 入口与行为
 
-左栏“最近在听”下方为“推荐”，路由 `/recommendations`。从头像进入设置，在“音乐推荐”中配置服务。只有“生成推荐 / 换一批”才调用模型；每批最多 10 首，保留最近一批，失败或没有新候选时保留旧结果。平台链接核实独立进行，核实前可搜索歌曲。
+左栏“最近在听”下方为“推荐”，路由 `/recommendations`。从头像进入设置，在“音乐推荐”中配置服务。只有“生成推荐 / 换一批”才发起推荐，不自动生成；模型连接检测另发一次短请求。每批最多 10 首，保留最近一批，失败或没有新候选时保留旧结果。平台链接核实独立进行，核实前可搜索歌曲。
 
 每首显示歌名、歌手、可用专辑信息、推荐依据和四个平台入口。核实到封面时显示，否则使用音乐图标，不虚构图片。当前曲库播放须先查询、匹配版本，再交给既有播放器；外部平台音频不进入 Tooku 队列。
 
@@ -28,11 +28,13 @@
 
 从最多 200 条有效收听记录中提取最近 30/40/50 首不同歌曲；仅分析时聚合，原始历史不变。重复次数的权重增益递减、总权重最多 5；时间权重以 14 天为半衰期。发送标题、歌手、专辑、可用时长、次数与权重，不发送账号、歌曲 ID、认证 URL、音频或歌词。
 
-算法模式使用 Last.fm `track.getSimilar`。按权重选最多 8 位不同歌手的代表歌曲，每首最多 20 个候选，合并后最多 80 个。混合模式将最多 60 个候选交给模型排序；只接受已有候选 ID，不允许模型替换元信息或生成 URL。
+算法模式使用 Last.fm `track.getSimilar`。按权重选最多 8 位不同歌手的代表歌曲，每首最多 20 个候选，合并后最多 80 个。查无歌曲或相似项为空视为正常空结果；认证、限流、网络等失败显示完成数量与原因。混合模式将最多 60 个候选交给模型排序，传入临时短 ID（c1…c60）减少输出长度，再映射回真实候选 ID；不允许模型替换元信息或生成 URL。
 
 AI 模式或混合模式缺少 Last.fm 候选时，模型可提名最多 20 首，必须经网易云、QQ 或已配置的 Apple Music 核实；使用正式元信息重新归一化 ID，无法核实的略过。AI 失败且有候选时回退算法并显示状态；候选不足允许少于 10 首或空结果，不填造数据。
 
 支持兼容 Chat Completions 的公网 HTTPS 接口：基址自动追加 `/chat/completions`，也可填完整地址；请求使用 `model`、`messages`、`temperature`、`max_tokens`。要求返回 JSON，兼容 Markdown JSON 代码块。不同模型的参数和响应能力需分别检测。
+
+DeepSeek 官方主机 `api.deepseek.com` 的生成与检测均显式设置 `thinking: { type: "disabled" }` 和 JSON 输出格式；其他兼容主机不附加这些专用参数。模型名按用户填写，不自动改写。排序 / 提名的输出额度分别为 2048 / 4096 tokens；检测使用 256 tokens 并核对 `{"ok":true}`。截断、只有思考内容、无效 JSON 和 HTTP 认证/余额/模型配置等故障分别提示；有候选时保留算法回退，避免把收到 10 首误认为 AI 已成功。
 
 过滤当前样本与上一批歌曲，同一歌手最多两首。探索比例优先分配熟悉/新歌手，候选不足时按实际结果补足，不是音频风格识别或精确多样性保证。原因来自种子关联或明确标注的 AI 推荐，不生成虚假的音频特征分析。Spotify 目录仅在推荐后用于链接核实，返回内容不输入模型。
 
@@ -46,6 +48,8 @@ AI 模式或混合模式缺少 Last.fm 候选时，模型可提名最多 20 首�
 | Apple Music | 可选 Developer Token、商店地区（默认 cn） | 官方目录与歌曲 URL |
 | Spotify | 可选 Client ID / Client Secret、市场地区（默认 US） | Client Credentials 临时令牌及官方搜索 URL |
 
+Last.fm 填写 API key，不填写 Shared secret。各服务的检测按钮旁持续显示未检测、检测中、成功或失败原因；未填必需配置时就地提示，不发网络请求。只校验和发送所选服务的配置与凭据，并清理密钥首尾空白。修改对应字段会取消检测并清除旧状态，修改其他服务或保存相同设置保留结果。检测状态仅在当前设置页有效，不作为持续健康保证。
+
 使用歌名、歌手（含来源别名）、专辑、时长、Live/翻唱等版本信息匹配。直达链接限定固定 HTTPS 平台主机和歌曲路径，拒绝任意 URL 和认证查询参数。未配置、限流、故障、无匹配时显示带“搜索”标记的入口。目录命中不保证该地区的播放权限。
 
 ## HTTP、凭据与限制
@@ -56,7 +60,7 @@ AI 模式或混合模式缺少 Last.fm 候选时，模型可提名最多 20 首�
 | `/api/recommendations/links` | `settings, credentials, songs` | 每首的链接和可用封面 |
 | `/api/recommendations/check` | `settings, credentials, target` | 当次连接结果 |
 
-输入最多 96 KB、上游响应读取最多 1 MB；每 IP 每分钟最多 16 次操作，全服务最多 4 个在途操作。Last.fm 并发 3、目录并发 4。来源预算 6 秒、模型 18 秒、AI 核实 20 秒、生成总计 65 秒，链接/检测 20 秒。不自动重试生成；客户端断开或服务退出取消在途工作。超时平台保留搜索入口，其他结果不受影响。
+输入最多 96 KB、上游响应读取最多 1 MB；每 IP 每分钟最多 16 次操作，全服务最多 4 个在途操作。Last.fm 并发 3、目录并发 4。Last.fm 单次预算 10 秒、其他来源 6 秒、模型 45 秒、AI 核实 20 秒；服务端生成总计 100 秒、检测 50 秒、链接 20 秒，客户端分别多留 5 秒。不会自动重试生成；客户端断开或服务退出取消在途工作。超时平台保留搜索入口，其他结果不受影响。
 
 密钥、Client Secret、Developer Token 和 Spotify 临时令牌仅会话/请求内存，不写 localStorage、IndexedDB、SQLite、备份、日志或查询 key。切换 MusicApi 会话时清除密钥，页面卸载取消工作，迟到结果不能写入其他账号。模型调用仅携带模型密钥，平台凭据仅发往对应固定主机；上游错误采用固定文案，不返回原始响应。
 
@@ -75,6 +79,7 @@ AI 模式或混合模式缺少 Last.fm 候选时，模型可提名最多 20 首�
 自行编写适配，无新依赖、未复制参考代码：
 
 - [Last.fm track.getSimilar](https://www.last.fm/api/show/track.getSimilar)
+- [DeepSeek 接入说明](https://api-docs.deepseek.com/quick_start)、[Chat Completions 参数](https://api-docs.deepseek.com/api/create-chat-completion/)、[错误码](https://api-docs.deepseek.com/quick_start/error_codes/)
 - [Apple Music 请求与响应](https://developer.apple.com/documentation/applemusicapi/handling-requests-and-responses)
 - [Spotify Client Credentials](https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow)、[Search](https://developer.spotify.com/documentation/web-api/reference/search)、[Developer Policy](https://developer.spotify.com/policy)
 - 国内固定目录沿用 [歌词组件维护记录](15-lyrics-service-design.md) 的自行实现与许可边界。

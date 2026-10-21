@@ -7,6 +7,19 @@ export class RecommendationError extends Error {
   readonly status: number;
   constructor(message: string, status = 502) { super(message); this.status = status; }
 }
+export function recommendationFailure(error: unknown, fallback = '服务连接失败，请检查网络或稍后重试') {
+  return error instanceof RecommendationError ? error.message : error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name) ? '服务请求超时，请稍后重试' : fallback;
+}
+export function modelHttpError(status: number) {
+  const reasons: Record<number, string> = { 400: '请求格式或模型参数不被支持', 401: 'API Key 认证失败', 402: '账户余额不足', 403: '没有访问权限', 404: '接口地址或模型名称不存在', 422: '模型参数无效', 429: '请求过于频繁，请稍后重试' };
+  return new RecommendationError(`模型${reasons[status] ?? (status >= 300 && status < 400 ? '接口发生重定向，请填写最终接口地址' : status >= 500 ? '服务暂不可用，请稍后重试' : '请求未通过')}（HTTP ${status}）`);
+}
+function modelTransportError(error: unknown, signal: AbortSignal) {
+  if (error instanceof RecommendationError) return error;
+  if (signal.aborted) return new RecommendationError(signal.reason instanceof Error && signal.reason.name === 'TimeoutError' ? '模型请求超时，请稍后重试' : '模型请求已取消');
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+  return new RecommendationError(['ENOTFOUND', 'EAI_AGAIN'].includes(code) ? '模型域名解析失败，请检查服务地址和网络' : /CERT|VERIFY|SELF_SIGNED/.test(code) ? '模型 TLS 证书验证失败，请检查网络和接口配置' : '模型网络连接失败，请检查服务地址或稍后重试');
+}
 export async function limitedJson(response: Response): Promise<unknown> {
   if (!response.ok) throw new RecommendationError(response.status === 429 ? '来源请求过于频繁，请稍后再试' : [401, 403].includes(response.status) ? '来源认证未通过，请检查凭据或权限' : '来源暂时不可用');
   const reader = response.body?.getReader(); if (!reader) throw new RecommendationError('来源响应格式无效');
@@ -45,22 +58,22 @@ export async function modelCompletion(base: string, key: string, payload: unknow
   signal.throwIfAborted();
   let cancel = () => {};
   const canceled = new Promise<never>((_resolve, reject) => { cancel = () => reject(new RecommendationError('模型请求已取消或超时')); signal.addEventListener('abort', cancel, { once: true }); });
-  const destination = await Promise.race([resolveModelEndpoint(base), canceled]).finally(() => signal.removeEventListener('abort', cancel));
+  const destination = await Promise.race([resolveModelEndpoint(base), canceled]).catch((error: unknown) => { throw modelTransportError(error, signal); }).finally(() => signal.removeEventListener('abort', cancel));
   const { url, address } = destination;
   signal.throwIfAborted();
   const body = JSON.stringify(payload);
   return new Promise((resolve, reject) => {
-    const fail = () => reject(new RecommendationError(signal.aborted ? '模型请求已取消或超时' : '模型请求失败，请检查接口和模型配置'));
+    const fail = (error: unknown) => reject(modelTransportError(error, signal));
     const req = request(url, { method: 'POST', signal,
       lookup: (_hostname, options, callback) => options.all ? callback(null, [address]) : callback(null, address.address, address.family),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'Content-Length': Buffer.byteLength(body) },
     }, (response) => {
-      if (response.statusCode !== 200) { response.resume(); reject(new RecommendationError(response.statusCode === 429 ? '模型请求过于频繁，请稍后再试' : '模型认证或请求未通过，请检查接口和模型配置')); return; }
+      if (response.statusCode !== 200) { response.resume(); reject(modelHttpError(response.statusCode ?? 502)); return; }
       const chunks: Buffer[] = []; let size = 0;
-      response.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 1048576) req.destroy(); else chunks.push(chunk); });
+      response.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 1048576) req.destroy(new RecommendationError('模型响应超过大小限制')); else chunks.push(chunk); });
       response.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new RecommendationError('模型响应格式无效')); } });
       response.on('error', fail);
     });
-    req.setTimeout(15000, () => req.destroy()); req.on('error', fail); req.end(body);
+    req.setTimeout(45000, () => req.destroy(new RecommendationError('模型请求超时，请稍后重试'))); req.on('error', fail); req.end(body);
   });
 }

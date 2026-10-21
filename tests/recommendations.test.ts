@@ -3,10 +3,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { listeningSeeds, defaultRecommendationSettings as settings, emptyRecommendationCredentials, isRecommendationProfile, isResolvedSong, isDirectPlatformUrl, songKey, type RecommendationSong, type ListeningSeed } from '../src/domain/recommendations';
-import { selectRecommendations, createRecommendationService } from '../server/recommendations/service';
+import { selectRecommendations, createRecommendationService, modelCompatibility, readModelJson } from '../server/recommendations/service';
 import { createCatalog, object, text } from '../server/recommendations/catalog';
 import { createRecommendationsApi } from '../server/recommendations/http';
-import { limitedJson, publicAddress, resolveModelEndpoint, type modelCompletion } from '../server/recommendations/network';
+import { limitedJson, publicAddress, resolveModelEndpoint, modelHttpError, RecommendationError, type modelCompletion } from '../server/recommendations/network';
 
 const credentials = { ...emptyRecommendationCredentials, lastfmKey: crypto.randomUUID(), aiKey: crypto.randomUUID(), spotifyClientId: crypto.randomUUID(), spotifyClientSecret: crypto.randomUUID(), appleToken: crypto.randomUUID() };
 const seed: ListeningSeed = { title: 'Seed', artists: ['Artist'], plays: 1, weight: 1 };
@@ -68,9 +68,58 @@ it('falls back to algorithm results when model ranking fails, without returning 
   const complete = vi.fn<typeof modelCompletion>(async () => { throw new Error(credentials.aiKey); });
   const service = createRecommendationService({ fetcher, complete });
   const result = await service.generate([seed], { ...settings, aiBaseUrl: 'https://example.com/v1', model: 'fixture' }, credentials, [], new AbortController().signal);
-  expect(result.songs).toHaveLength(10); expect(result.mode).toBe('algorithm'); expect(result.notices).toContain('AI 排序未完成，本批使用算法推荐');
+  expect(result.songs).toHaveLength(10); expect(result.mode).toBe('algorithm'); expect(result.notices.some((notice) => notice.includes('AI 排序未完成') && notice.includes('本批使用算法推荐'))).toBe(true);
   expect(JSON.stringify(result)).not.toContain(credentials.aiKey);
   expect(fetcher).toHaveBeenCalledOnce(); expect(complete).toHaveBeenCalledOnce();
+});
+
+it('uses compact ranking ids and sufficient JSON output with thinking disabled on official DeepSeek', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => json({ similartracks: { track: Array.from({ length: 20 }, (_, i) => ({ name: `Found ${i}`, artist: { name: `Singer ${i}` }, match: .9 })) } }));
+  const complete = vi.fn<typeof modelCompletion>(async (_base, _key, payload) => {
+    const data = object(payload); expect(data.thinking).toEqual({ type: 'disabled' }); expect(data.response_format).toEqual({ type: 'json_object' });
+    if (data.max_tokens === 256) return { choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }] };
+    expect(Number(data.max_tokens)).toBeGreaterThanOrEqual(2048);
+    const messages = Array.isArray(data.messages) ? data.messages : []; const prompt = object(JSON.parse(text(object(messages[1]).content)));
+    const candidates = Array.isArray(prompt.candidates) ? prompt.candidates.map(object) : [];
+    expect(candidates[0].id).toBe('c1'); expect(candidates.every((candidate) => /^c\d+$/.test(text(candidate.id)))).toBe(true);
+    return { choices: [{ message: { content: JSON.stringify({ ids: candidates.map((candidate) => candidate.id).reverse() }) }, finish_reason: 'stop' }] };
+  });
+  const service = createRecommendationService({ fetcher, complete }); const deepseek = { ...settings, aiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' };
+  expect(await service.check('ai', deepseek, credentials, new AbortController().signal)).toMatchObject({ ok: true });
+  const result = await service.generate([seed], deepseek, credentials, [], new AbortController().signal);
+  expect(result.mode).toBe('hybrid'); expect(result.songs[0].title).toBe('Found 19');
+  expect(modelCompatibility('https://api.deepseek.com/v1').thinking).toEqual({ type: 'disabled' });
+  expect(modelCompatibility('https://other.example.com/v1')).toEqual({});
+});
+
+it('reports model truncation, thinking-only output and safe HTTP causes without showing raw upstream errors', async () => {
+  expect(() => readModelJson({ choices: [{ finish_reason: 'length', message: { content: '{"ids":[' } }] })).toThrow('被截断');
+  expect(() => readModelJson({ choices: [{ message: { content: '', reasoning_content: 'private reasoning' } }] })).toThrow('只返回了思考内容');
+  expect(() => readModelJson({ choices: [{ message: { content: credentials.aiKey } }] })).toThrow('有效 JSON');
+  expect(modelHttpError(401).message).toContain('API Key 认证失败'); expect(modelHttpError(402).message).toContain('余额不足'); expect(modelHttpError(404).message).toContain('模型名称不存在');
+  expect(modelHttpError(429).message).toContain('过于频繁'); expect(modelHttpError(422).message).toContain('参数无效');
+  const fetcher = vi.fn<typeof fetch>(async () => json({ similartracks: { track: [{ name: 'Found', artist: { name: 'Singer' }, match: 1 }] } }));
+  const complete = vi.fn<typeof modelCompletion>(async () => { throw modelHttpError(402); });
+  const result = await createRecommendationService({ fetcher, complete }).generate([seed], { ...settings, aiBaseUrl: 'https://example.com/v1', model: 'fixture' }, credentials, [], new AbortController().signal);
+  expect(result.notices.some((notice) => notice.includes('余额不足') && notice.includes('本批使用算法推荐'))).toBe(true);
+  complete.mockRejectedValueOnce(new RecommendationError('模型请求超时，请稍后重试'));
+  const timedOut = await createRecommendationService({ fetcher, complete }).generate([seed], { ...settings, aiBaseUrl: 'https://example.com/v1', model: 'fixture' }, credentials, [], new AbortController().signal);
+  expect(timedOut.notices.some((notice) => notice.includes('模型请求超时'))).toBe(true);
+});
+
+it('treats missing Last.fm tracks as empty results while distinguishing credential and network failures', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => json({ error: 6, message: 'Track not found' }));
+  const service = createRecommendationService({ fetcher }); const config = { ...settings, mode: 'algorithm' as const };
+  const missing = await service.generate([seed], config, credentials, [], new AbortController().signal);
+  expect(missing.songs).toEqual([]); expect(missing.notices.some((notice) => notice.includes('未完成'))).toBe(false);
+  fetcher.mockResolvedValueOnce(json({ similartracks: { '@attr': { artist: 'Artist' } } }));
+  expect((await service.generate([seed], config, credentials, [], new AbortController().signal)).notices.some((notice) => notice.includes('未完成'))).toBe(false);
+  fetcher.mockResolvedValueOnce(json({ error: 10, message: credentials.lastfmKey }));
+  const invalid = await service.generate([seed], config, credentials, [], new AbortController().signal);
+  expect(invalid.notices[0]).toContain('API Key 无效'); expect(JSON.stringify(invalid)).not.toContain(credentials.lastfmKey);
+  fetcher.mockRejectedValueOnce(new DOMException('fixture', 'TimeoutError'));
+  const timeout = await service.generate([seed], config, credentials, [], new AbortController().signal);
+  expect(timeout.notices[0]).toContain('来源请求超时'); expect(timeout.notices[0]).toContain('0/1');
 });
 
 it('does not accept invented AI ids or songs that cannot be verified in a catalog', async () => {

@@ -22,8 +22,13 @@
 .recommendation-platforms label { display: inline-flex; flex-direction: row; gap: 8px; align-items: center; margin: 0; font-size: 13px; }
 .recommendation-platforms input { accent-color: var(--accent); }
 .recommendation-service { padding: 20px 0 12px; border-top: 1px solid var(--line); margin-top: 16px; }
-.recommendation-service-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.recommendation-service-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .recommendation-service-heading h3 { font-size: 15px; margin: 0; }
+.recommendation-check { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: min(100%, 420px); }
+.recommendation-check-result { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
+.recommendation-check-result svg { flex-shrink: 0; margin-top: 3px; }
+.recommendation-check-result[data-state=success] { color: var(--text); }
+.recommendation-check-result[data-state=error] { color: var(--accent); }
 @media (max-width: 767px) {
   .recommendation-card { gap: 13px; flex-wrap: wrap; align-items: flex-start; }
   .recommendation-art { width: 64px; height: 64px; flex-basis: 64px; }

@@ -1,11 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MusicApi } from '../src/api/client';
-import { recommendationsApi } from '../src/api/recommendations';
+import { RecommendationsApi, recommendationsApi } from '../src/api/recommendations';
 import { Recommendations } from '../src/features/recommendations/Recommendations';
 import { RecommendationSettings } from '../src/features/settings/RecommendationSettings';
-import { defaultRecommendationSettings as settings, platformSearchLink, type RecommendationBatch } from '../src/domain/recommendations';
+import { defaultRecommendationSettings as settings, emptyRecommendationCredentials, platformSearchLink, type RecommendationBatch } from '../src/domain/recommendations';
 import { useRecommendationProfiles, useRecommendationSecrets } from '../src/state/recommendations';
 import { useSession } from '../src/state/session';
 import { useLibrary } from '../src/state/library';
@@ -94,6 +94,7 @@ it('stores ordinary settings while keeping credentials out of localStorage and c
   fireEvent.click(screen.getByRole('button', { name: '检测 AI 模型' }));
   await screen.findByText('AI 模型 · 连接成功');
   fireEvent.click(screen.getByRole('button', { name: '保存推荐设置' }));
+  expect(screen.getByText('AI 模型 · 连接成功')).toBeInTheDocument();
   expect(useRecommendationProfiles.getState().profiles[api.identity].settings.model).toBe('fixture-model');
   const stored = localStorage.getItem('tooku-recommendations')!;
   expect(stored).toContain('fixture-model'); expect(stored).not.toContain(key); expect(stored).not.toContain(modelKey);
@@ -109,4 +110,61 @@ it('adopts asynchronously restored account settings without overwriting a form b
   fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'editing' } });
   act(() => useRecommendationProfiles.getState().apply(api.identity, { settings: { ...settings, model: 'remote' } }));
   expect(screen.getByLabelText('模型名称')).toHaveValue('editing');
+});
+
+it('shows missing configuration next to each check without sending requests', () => {
+  surface(<RecommendationSettings />);
+  const lastfm = within(screen.getByRole('group', { name: 'Last.fm 连接检测' }));
+  fireEvent.click(lastfm.getByRole('button'));
+  expect(lastfm.getByRole('alert')).toHaveTextContent('请先填写 Last.fm API Key（不是 Shared secret）');
+  expect(lastfm.getByRole('button')).toHaveAttribute('aria-busy', 'false');
+  fireEvent.click(screen.getByRole('button', { name: '检测 AI 模型' }));
+  expect(within(screen.getByRole('group', { name: 'AI 模型 连接检测' })).getByRole('alert')).toHaveTextContent('请先填写模型服务地址、模型名称、API Key');
+  expect(recommendationsApi.check).not.toHaveBeenCalled();
+});
+
+it('keeps per-service progress and results visible until related settings change', async () => {
+  let resolve!: (value: string) => void;
+  vi.mocked(recommendationsApi.check).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  surface(<RecommendationSettings />);
+  fireEvent.change(screen.getByLabelText('Last.fm API Key'), { target: { value: crypto.randomUUID() } });
+  const lastfm = within(screen.getByRole('group', { name: 'Last.fm 连接检测' }));
+  fireEvent.click(lastfm.getByRole('button'));
+  expect(lastfm.getByRole('status')).toHaveTextContent('正在检测');
+  expect(lastfm.getByRole('button')).toBeDisabled();
+  expect(screen.getByRole('button', { name: '检测 AI 模型' })).toBeEnabled();
+  await act(async () => resolve('连接成功'));
+  expect(lastfm.getByRole('status')).toHaveTextContent('Last.fm · 连接成功');
+  fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'deepseek-flash' } });
+  expect(lastfm.getByRole('status')).toHaveTextContent('连接成功');
+  fireEvent.change(screen.getByLabelText('Last.fm API Key'), { target: { value: crypto.randomUUID() } });
+  expect(lastfm.getByRole('status')).toHaveTextContent('未检测');
+});
+
+it('shows check failures and ignores late responses after a credential edit', async () => {
+  vi.mocked(recommendationsApi.check).mockRejectedValueOnce(new Error('模型账户余额不足（HTTP 402）'));
+  surface(<RecommendationSettings />);
+  fireEvent.change(screen.getByLabelText('模型服务地址'), { target: { value: 'https://api.deepseek.com' } });
+  fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'deepseek-flash' } });
+  fireEvent.change(screen.getByLabelText('模型 API Key'), { target: { value: crypto.randomUUID() } });
+  const ai = within(screen.getByRole('group', { name: 'AI 模型 连接检测' }));
+  fireEvent.click(ai.getByRole('button'));
+  expect(await ai.findByRole('alert')).toHaveTextContent('HTTP 402');
+  let resolve!: (value: string) => void;
+  vi.mocked(recommendationsApi.check).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  fireEvent.click(ai.getByRole('button'));
+  const signal = vi.mocked(recommendationsApi.check).mock.calls[1][3];
+  fireEvent.change(screen.getByLabelText('模型 API Key'), { target: { value: crypto.randomUUID() } });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => resolve('连接成功'));
+  expect(ai.getByRole('status')).toHaveTextContent('未检测');
+  expect(ai.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('checks only the selected service and trims its credential', async () => {
+  const isolated = new RecommendationsApi();
+  const request = vi.spyOn(isolated, 'request').mockResolvedValue({ ok: true });
+  const key = crypto.randomUUID();
+  await isolated.check('lastfm', { ...settings, aiBaseUrl: 'invalid' }, { ...emptyRecommendationCredentials, lastfmKey: `  ${key}  `, aiKey: crypto.randomUUID() });
+  expect(request).toHaveBeenCalledWith('check', { target: 'lastfm', settings, credentials: { ...emptyRecommendationCredentials, lastfmKey: key } }, undefined);
 });
