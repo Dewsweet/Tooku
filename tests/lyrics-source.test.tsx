@@ -70,6 +70,22 @@ it('uses the next nearby candidate when the first candidate has an empty body', 
   const view = renderHook(() => useLyrics(track), { wrapper });
   await waitFor(() => expect(view.result.current.document?.recordId).toBe('456')); expect(network.lyrics).toHaveBeenCalledTimes(2);
 });
+it.each(['Guest／Artist／Composer', 'Artist (アーティスト)', 'Guest / Artist / Composer'])('automatically reads the first matching result for a combined or aliased artist tag (%s)', async (artist) => {
+  const view = renderHook(() => useLyrics({ ...track, artist }), { wrapper });
+  await waitFor(() => expect(view.result.current.lyrics?.lines[0].text).toBe('hello'));
+  expect(view.result.current.document?.recordId).toBe('123');
+  expect(network.search).toHaveBeenCalledTimes(1); expect(network.lyrics).toHaveBeenCalledTimes(1);
+  expect(view.result.current.choice?.bindings).toBeUndefined();
+});
+it('skips a different performer in the first result and reads the matching artist later in the list', async () => {
+  vi.mocked(network.search).mockResolvedValue({ version: 1, candidates: [
+    { provider: 'netease', id: '999', title: 'Song', artists: ['Other'], durationMs: 180000 },
+    { provider: 'netease', id: '123', title: 'Song', artists: ['Artist'], durationMs: 180000 },
+  ], errors: [] });
+  const view = renderHook(() => useLyrics({ ...track, artist: 'Artist／Composer' }), { wrapper });
+  await waitFor(() => expect(view.result.current.document?.recordId).toBe('123'));
+  expect(network.lyrics).toHaveBeenCalledExactlyOnceWith('netease', '123', expect.any(AbortSignal), false);
+});
 it('finishes with a quiet empty result when both providers return no data or fail', async () => {
   vi.mocked(network.search).mockResolvedValueOnce({ version: 1, candidates: [], errors: [] }).mockRejectedValueOnce(new Error('provider unavailable'));
   const view = renderHook(() => useLyrics(track), { wrapper });

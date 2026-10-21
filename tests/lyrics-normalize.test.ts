@@ -106,4 +106,23 @@ describe('matching and persisted choices', () => {
     for (const choice of [{ mode: 'qq', token: 'secret' }, { mode: 'qq', bindings: { qq: 'https://example.test/path' } }, { mode: 'auto', edits: { local: { layout: 'bad', hash: 'a' } } }]) expect(isLyricsSettings({ ...defaultLyricsSettings, tracks: { song: choice } })).toBe(false);
     expect(isLyricsSettings({ ...defaultLyricsSettings, order: ['qq', 'qq'] })).toBe(false);
   });
+  it.each([
+    ['Ceui／小高光太郎／スミイ酸', ['Ceui']],
+    ['Duca (デュッカ)', ['Duca']],
+    ['Duca', ['デュッカ（Duca）']],
+    ['Daniel Lanois / Daryl Johnson / Rhiannon Giddens', ['Daniel Lanois', 'Daryl Johnson', 'Rhiannon Giddens']],
+    ['戸松遥、井口裕香、相坂优歌、五十嵐裕美、渕上舞、户田惠', ['戸松遥', '井口裕香', '相坂優歌', '五十嵐裕美', '渕上舞', '戸田めぐみ']],
+    ['Singer feat. Guest', ['Guest']],
+  ])('matches artist lists and aliases in the tag %s', (artist, artists) => {
+    const local = { ...track, artists: [artist] };
+    expect(rankCandidates(local, [{ ...candidate, artists }])[0].confident).toBe(true);
+    expect(rankCandidates(local, [{ ...candidate, artists, durationMs: undefined }])[0].confident).toBe(true);
+    expect(rankCandidates(local, [{ ...candidate, artists, title: 'Song (Live)' }])[0].confident).toBe(false);
+    expect(rankCandidates(local, [{ ...candidate, artists, durationMs: 250000 }])[0].confident).toBe(false);
+  });
+  it('does not match a fragment of a band name or unrelated performers just because the title and time agree', () => {
+    const local = { ...track, artists: ['AC/DC'] };
+    expect(rankCandidates(local, [{ ...candidate, artists: ['AC/DC'] }])[0].confident).toBe(true);
+    for (const artists of [['AC'], ['DC'], ['Other']]) expect(rankCandidates(local, [{ ...candidate, artists }])[0].confident).toBe(false);
+  });
 });
