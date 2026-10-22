@@ -234,6 +234,23 @@ export class MusicApi {
     const data = await this.request('getAlbumList2', { type, size: 30, offset, musicFolderId }, signal);
     return list(object(data.albumList2).album).map(album);
   }
+  async allAlbums(type = 'newest', signal?: AbortSignal, musicFolderId?: string) {
+    const albums = new Map<string, Album>();
+    // Random pages overlap; enumerate a stable order before shuffling the complete list.
+    for (let offset = 0; ; offset += 500) {
+      const data = await this.request('getAlbumList2', { type: type === 'random' ? 'alphabeticalByName' : type, size: 500, offset, musicFolderId }, signal);
+      const page = list(object(data.albumList2).album).map(album);
+      const before = albums.size;
+      for (const item of page) albums.set(item.id, item);
+      if (page.length < 500 || albums.size === before) break;
+    }
+    const result = [...albums.values()];
+    if (type === 'random') for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
   async libraryOverview(musicFolderId: string, signal?: AbortSignal) {
     const seen = new Set<string>(); let songCount = 0; let duration = 0; let completeSongs = true; let completeDuration = true;
     for (let offset = 0; ; offset += 500) {

@@ -15,19 +15,35 @@ export const fontFamilies = [
 export type FontFamily = typeof fontFamilies[number]['id'];
 export const normalizeFontFamily = (value: unknown): FontFamily => fontFamilies.find((font) => font.id === value)?.id ?? 'source-sans';
 export const fontFamilyCss = (value: unknown) => fontFamilies.find((font) => font.id === value)?.css ?? fontFamilies[0].css;
-interface DisplayPreferences { baseFontSize: BaseFontSize; fontFamily: FontFamily; setBaseFontSize: (value: number) => void; setFontFamily: (value: string) => void }
+export const gridColumnOptions = [3, 4, 5, 6, 8] as const;
+const normalizeGridColumns = (value: unknown) => gridColumnOptions.find((count) => count === value) ?? 4;
+function normalizeGridPreferences(value: unknown) {
+  return {
+    albums: normalizeGridColumns(value && typeof value === 'object' && 'albums' in value ? value.albums : undefined),
+    artists: normalizeGridColumns(value && typeof value === 'object' && 'artists' in value ? value.artists : undefined),
+  };
+}
+interface DisplayPreferences {
+  baseFontSize: BaseFontSize; fontFamily: FontFamily;
+  gridColumns: { albums: number; artists: number };
+  setBaseFontSize: (value: number) => void; setFontFamily: (value: string) => void;
+  setGridColumns: (kind: 'albums' | 'artists', value: number) => void;
+}
 
-// Text size follows this browser/display; it is intentionally outside account sync and backups.
+// Display preferences follow this browser, outside account sync and backups.
 export const useDisplayPreferences = create<DisplayPreferences>()(persist((set) => ({
   baseFontSize: 14,
   fontFamily: 'source-sans',
+  gridColumns: { albums: 4, artists: 4 },
   setBaseFontSize: (value) => set({ baseFontSize: normalizeBaseFontSize(value) }),
   setFontFamily: (value) => set({ fontFamily: normalizeFontFamily(value) }),
+  setGridColumns: (kind, value) => set((state) => ({ gridColumns: { ...state.gridColumns, [kind]: normalizeGridColumns(value) } })),
 }), {
   name: 'tooku-display', version: 1,
-  partialize: ({ baseFontSize, fontFamily }) => ({ baseFontSize, fontFamily }),
+  partialize: ({ baseFontSize, fontFamily, gridColumns }) => ({ baseFontSize, fontFamily, gridColumns }),
   merge: (stored, current) => ({ ...current,
     baseFontSize: normalizeBaseFontSize(stored && typeof stored === 'object' && 'baseFontSize' in stored ? stored.baseFontSize : undefined),
     fontFamily: normalizeFontFamily(stored && typeof stored === 'object' && 'fontFamily' in stored ? stored.fontFamily : undefined),
+    gridColumns: normalizeGridPreferences(stored && typeof stored === 'object' && 'gridColumns' in stored ? stored.gridColumns : undefined),
   }),
 }));

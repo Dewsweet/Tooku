@@ -30,6 +30,7 @@ describe('player lifecycle integration', () => {
     expect(usePlayer.getState().shuffle).toBe(true);
     expect(usePlayer.getState().entries).toBe(queue);
     expect(usePlayer.getState().currentId).toBe(secondOccurrence.entryId);
+    expect(secondOccurrence.sourceIndex).toBe(2);
     expect(usePlayer.getState().entries).toHaveLength(3);
     player.shuffle();
     expect(usePlayer.getState().entries.map((entry) => entry.track.id)).toEqual(['one', 'two', 'one']);
@@ -54,8 +55,11 @@ describe('player lifecycle integration', () => {
     player.replace(songs, 0, { source, shuffle: true });
     player.replace([...songs, songs[0]], 2, { source });
     expect(usePlayer.getState().shuffle).toBe(true);
-    player.append([songs[1]], true, { kind: 'playlist', id: 'b' });
+    player.append([songs[1]], true, { kind: 'playlist', id: 'b' }, [7]);
     const added = usePlayer.getState().entries.find((entry) => entry.source?.id === 'b')!;
+    expect(added.sourceIndex).toBe(7);
+    player.append([songs[0]], false, { kind: 'playlist', id: 'unknown-position' });
+    expect(usePlayer.getState().entries.at(-1)?.sourceIndex).toBeUndefined();
     player.select(added.entryId);
     expect(usePlayer.getState().entries.find((entry) => entry.entryId === usePlayer.getState().currentId)?.source?.id).toBe('b');
     player.next(); expect(usePlayer.getState().shuffle).toBe(true);
@@ -70,6 +74,7 @@ describe('player lifecycle integration', () => {
     expect(usePlayer.getState().shuffle).toBe(true);
     expect(usePlayer.getState().position).toBe(17);
     expect(usePlayer.getState().entries.every((entry) => entry.source?.id === 'a')).toBe(true);
+    expect(usePlayer.getState().entries.map((entry) => entry.sourceIndex).sort()).toEqual([0, 1, 2]);
     const saved = vi.mocked(saveProfile).mock.calls.at(-1)![2];
     if (Array.isArray(saved)) throw new Error('Expected queue snapshot');
     vi.mocked(readProfile).mockResolvedValueOnce(saved).mockResolvedValueOnce(undefined);
@@ -78,6 +83,7 @@ describe('player lifecycle integration', () => {
     expect(usePlayer.getState().shuffle).toBe(true);
     expect(usePlayer.getState().position).toBe(17);
     expect(usePlayer.getState().entries.every((entry) => entry.source?.id === 'a')).toBe(true);
+    expect(usePlayer.getState().entries.map((entry) => entry.sourceIndex).sort()).toEqual([0, 1, 2]);
     player.replace(tracks, 2, { source }); expect(usePlayer.getState().shuffle).toBe(true);
     player.shuffle(); expect(usePlayer.getState().entries.map((entry) => entry.track.id)).toEqual(['one', 'two', 'one']);
   });

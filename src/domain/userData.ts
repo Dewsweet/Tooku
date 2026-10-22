@@ -39,6 +39,7 @@ const image = (v: unknown) => typeof v === 'string' && v.length <= 2 * 1024 * 10
 export function isPlaybackSource(v: unknown): v is PlaybackSource {
   return record(v) && keys(v, ['kind', 'id', 'libraryId']) && ['album', 'playlist', 'artist', 'collection'].includes(String(v.kind)) && id(v.id) && optionalId(v.libraryId);
 }
+export const isSourceIndex = (value: unknown): value is number => finite(value, 0, 1e9) && Number.isInteger(value);
 function validTrack(v: unknown): v is Track {
   if (!record(v) || !keys(v, ['id', 'title', 'artist', 'album', 'albumId', 'artistId', 'artists', 'coverArt', 'duration', 'track', 'discNumber', 'suffix', 'bitRate', 'starred'])) return false;
   return id(v.id) && text(v.title) && text(v.artist) && ['album', 'suffix', 'starred'].every((k) => v[k] === undefined || text(v[k]))
@@ -79,7 +80,7 @@ export function isUserData(v: unknown): v is UserData {
   }
   if (q !== null) {
     if (!record(q) || !keys(q, ['version', 'entries', 'currentId', 'position', 'repeat', 'volume', 'shuffle', 'originalOrder']) || q.version !== 1
-      || !Array.isArray(q.entries) || q.entries.length > 5000 || !q.entries.every((e) => record(e) && keys(e, ['entryId', 'track', 'source']) && id(e.entryId) && validTrack(e.track) && (e.source === undefined || isPlaybackSource(e.source)))
+      || !Array.isArray(q.entries) || q.entries.length > 5000 || !q.entries.every((e) => record(e) && keys(e, ['entryId', 'track', 'source', 'sourceIndex']) && id(e.entryId) && validTrack(e.track) && (e.source === undefined || isPlaybackSource(e.source)) && (e.sourceIndex === undefined || isPlaybackSource(e.source) && isSourceIndex(e.sourceIndex)))
       || new Set(q.entries.map((e) => e.entryId)).size !== q.entries.length || q.currentId !== null && !q.entries.some((e) => e.entryId === q.currentId)
       || !finite(q.position, 0, 1e9) || !finite(q.volume, 0, 1) || !['off', 'all', 'one'].includes(String(q.repeat))) return false;
     const entryIds = new Set(q.entries.map((e) => e.entryId));

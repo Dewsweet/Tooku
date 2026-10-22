@@ -9,7 +9,7 @@ import { Lyrics } from './Lyrics';
 import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
 import type { Track } from '../../domain/models';
-import { AlbumLink, ArtistLinks } from '../../components/TrackLinks';
+import { PlaybackSourceLink, ArtistLinks } from '../../components/TrackLinks';
 import { FullscreenButton } from './FullscreenButton';
 import { ScrollingText } from './ScrollingText';
 import { DesktopLyricsButton } from './DesktopLyrics';
@@ -68,7 +68,7 @@ export function PlayerBar({ openQueue, openLyrics, queueOpen = false }: { openQu
   const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId);
   return <footer className={`player-bar playback-dock ${current ? 'has-track' : ''}`} aria-label="音乐播放器">
     <div className="dock-track"><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
-      <div key={current?.entryId} className="dock-metadata"><strong>{current ? <AlbumLink track={current.track} title /> : '选择一首歌'}</strong><small>{current && <ArtistLinks track={current.track} resolve />}</small></div><Favorite track={current?.track} compact /></div>
+      <div key={current?.entryId} className="dock-metadata"><strong>{current ? <PlaybackSourceLink entry={current} /> : '选择一首歌'}</strong><small>{current && <ArtistLinks track={current.track} resolve />}</small></div><Favorite track={current?.track} compact /></div>
     <div className="player-center"><Transport /><Progress /></div>
     <div className="player-right"><IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton><Volume /><DesktopLyricsButton track={current?.track} /><FullscreenButton disabled={!current} openPlayer={openLyrics} /></div>
     {state.error && <div className="player-error" role="alert"><span>{state.error}</span><button onClick={() => player.play()}>重试</button><button onClick={() => player.mode('compatible')}>兼容模式</button></div>}

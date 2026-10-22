@@ -12,7 +12,7 @@ export interface Track {
 export interface Playlist { id: string; name: string; owner?: string; songCount?: number; changed?: string; coverArt?: string; duration?: number; comment?: string; readonly?: boolean }
 export interface MusicLibrary { id: string; name: string }
 export interface PlaybackSource { kind: 'album' | 'playlist' | 'artist' | 'collection'; id: string; libraryId?: string }
-export interface QueueEntry { entryId: string; track: Track; source?: PlaybackSource }
+export interface QueueEntry { entryId: string; track: Track; source?: PlaybackSource; sourceIndex?: number }
 export interface LyricLine { startMs?: number; text: string; translation?: string[]; romanization?: string[] }
 export interface Lyrics { lines: LyricLine[]; offsetMs: number; synced: boolean; lang?: string; instrumental?: boolean; document?: import('./lyrics/types').LyricDocument }
 export interface HistoryEntry { occurrenceId: string; track: Track; listenedAt: number; submitted: boolean }

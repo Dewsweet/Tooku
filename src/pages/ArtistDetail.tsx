@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import { Heart, LoaderCircle, Pencil, Play, Shuffle } from 'lucide-react';
+import { Heart, Pencil } from 'lucide-react';
 import type { MusicApi } from '../api/client';
 import { AlbumGrid, Empty, IconButton, QueryState, useApi } from '../components/Common';
 import type { Album, Track } from '../domain/models';
@@ -13,6 +13,8 @@ import { player } from '../features/player/engine';
 import { useMusicLibrary } from '../state/library';
 import { errorMessage, useSession } from '../state/session';
 import { useProfiles } from '../state/profile';
+import { PlaybackButtons } from '../components/PlaybackButtons';
+import { DensityGrid, GridDensitySelect } from '../components/GridDensity';
 import './artist-detail.css';
 
 function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; coverArt?: string; albums: Album[] }) {
@@ -126,13 +128,12 @@ function ArtistDetailContent({ api, libraryId, id }: { api: MusicApi; libraryId?
     {query.data && <>
       <ArtistHero id={id} name={query.data.name} coverArt={query.data.coverArt} albums={query.data.albums} />
       <div className="artist-detail-body">
-        <div className="artist-actions">
-          <button type="button" className="artist-play" aria-label={preparing ? '正在准备播放' : `播放 ${query.data.name}`} disabled={preparing || !query.data.albums.length} onClick={() => void play()} data-tooltip={preparing ? '正在准备播放' : '播放'}>{preparing ? <LoaderCircle size={25} className="spin" /> : <Play size={25} fill="currentColor" />}</button>
-          <IconButton label="随机播放歌手歌曲" disabled={preparing || !query.data.albums.length} onClick={() => void play(true)}><Shuffle size={24} /></IconButton>
-          <button type="button" className="subtle-button artist-favorite" disabled={saving || favorites.isPending || favorites.isError} aria-pressed={starred} onClick={() => void favorite()}><Heart size={17} fill={starred ? 'currentColor' : 'none'} />{starred ? '已收藏' : '收藏歌手'}</button>
+        <div className="button-row entity-controls artist-actions">
+          <PlaybackButtons preparing={preparing} playLabel={preparing ? '正在准备播放' : `播放 ${query.data.name}`} disabled={!query.data.albums.length} play={() => void play()} shuffle={() => void play(true)} shuffleLabel="随机播放歌手歌曲" />
+          <IconButton label={starred ? '取消收藏歌手' : '收藏歌手'} disabled={saving || favorites.isPending || favorites.isError} aria-pressed={starred} onClick={() => void favorite()}><Heart size={21} fill={starred ? 'currentColor' : 'none'} /></IconButton>
         </div>
         <QueryState pending={false} error={favorites.error} retry={() => favorites.refetch()} />
-        <section className="artist-discography" aria-labelledby="artist-albums-heading"><h2 id="artist-albums-heading">专辑</h2>{query.data.albums.length ? <AlbumGrid albums={query.data.albums} /> : <Empty title="这个音乐库还没有这位歌手的专辑" />}</section>
+        <section className="artist-discography" aria-labelledby="artist-albums-heading"><div className="discography-heading"><h2 id="artist-albums-heading">专辑</h2><GridDensitySelect kind="albums" /></div>{query.data.albums.length ? <DensityGrid kind="albums"><AlbumGrid albums={query.data.albums} /></DensityGrid> : <Empty title="这个音乐库还没有这位歌手的专辑" />}</section>
       </div>
     </>}
   </div>;

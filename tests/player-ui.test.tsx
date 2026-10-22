@@ -52,6 +52,12 @@ afterEach(() => {
 });
 function RouteMarker() { const location = useLocation(); return <output data-testid="route-path">{location.pathname}</output>; }
 const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}><MemoryRouter><Interactions>{child}<RouteMarker /></Interactions></MemoryRouter></QueryClientProvider>);
+it('uses the dock title to navigate to the current playback source and keeps playback intact', () => {
+  surface(<PlayerBar openQueue={() => {}} openLyrics={() => {}} />);
+  fireEvent.click(screen.getByRole('link', { name: '当前曲目' }));
+  expect(screen.getByTestId('route-path')).toHaveTextContent('/playlists/playlist%20a');
+  expect(usePlayer.getState()).toMatchObject({ currentId: 'first', position: 11, status: 'paused' });
+});
 it('scrolls overflowing metadata only, updates on resize, and honors reduced motion', () => {
   let resize = () => {}; const disconnect = vi.fn();
   vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect = disconnect; });

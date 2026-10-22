@@ -170,3 +170,17 @@ describe('authenticated Tooku API', () => {
     expect((await request()).status).toBe(200); rejected = true; expect((await request()).status).toBe(401);
   });
 });
+
+it('accepts legacy queue entries and validates optional source positions for persistence', () => {
+  const data = sampleData();
+  expect(isUserData(data)).toBe(true);
+  const entry = data.queue!.entries[1];
+  entry.source = { kind: 'playlist', id: 'source' }; entry.sourceIndex = 12;
+  expect(isUserData(data)).toBe(true);
+  for (const invalid of [-1, 1.5, Infinity, 1e10]) {
+    entry.sourceIndex = invalid;
+    expect(isUserData(data)).toBe(false);
+  }
+  entry.sourceIndex = 12; delete entry.source;
+  expect(isUserData(data)).toBe(false);
+});

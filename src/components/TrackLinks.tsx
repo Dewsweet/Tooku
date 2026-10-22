@@ -1,5 +1,6 @@
+import { playbackDestination } from '../domain/playbackLocation';
 import { Link } from 'react-router-dom';
-import type { Track } from '../domain/models';
+import type { QueueEntry, Track } from '../domain/models';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '../state/session';
 
@@ -14,4 +15,17 @@ export function ArtistLinks({ track, resolve = false }: { track: Track; resolve?
 export function AlbumLink({ track, title = false }: { track: Track; title?: boolean }) {
   const text = title ? track.title : track.album ?? '—';
   return track.albumId ? <Link to={`/albums/${encodeURIComponent(track.albumId)}`} data-tooltip={`查看专辑 ${track.album ?? track.title}`}>{text}</Link> : <span>{text}</span>;
+}
+
+export function PlaybackSourceLink({ entry }: { entry: QueueEntry }) {
+  const api = useSession((state) => state.api);
+  const knownSource = entry.source?.kind === 'album' || entry.source?.kind === 'playlist';
+  const detail = useQuery({ queryKey: [api?.identity, 'song', entry.track.id],
+    enabled: Boolean(api && !knownSource && !entry.track.albumId),
+    queryFn: ({ signal }) => api!.song(entry.track.id, signal),
+  });
+  const destination = playbackDestination(entry, entry.track.albumId ?? detail.data?.albumId);
+  return destination && api ? <Link to={destination.pathname} state={{ tookuTrack: {
+    identity: api.identity, source: destination.source, trackId: destination.trackId, sourceIndex: destination.sourceIndex,
+  } }} data-tooltip="查看播放来源并定位歌曲">{entry.track.title}</Link> : <span>{entry.track.title}</span>;
 }

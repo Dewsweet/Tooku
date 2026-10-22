@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { MusicApi } from '../../api/client';
 import type { HistoryEntry, PlaybackSource, PlayerSnapshot, QueueEntry, Track } from '../../domain/models';
 import { entriesFor, moveEntry, nextEntry, samePlaybackSource, shouldScrobble, shuffled } from '../../domain/queue';
-import { isPlaybackSource } from '../../domain/userData';
+import { isPlaybackSource, isSourceIndex } from '../../domain/userData';
 import { readProfile, saveProfile } from '../../storage/local';
 import { useSession } from '../../state/session';
 
@@ -108,7 +108,7 @@ class PlayerEngine {
     const [saved, history] = await Promise.all([readProfile<PlayerSnapshot>(api.identity, 'queue'), readProfile<HistoryEntry[]>(api.identity, 'history')]);
     if (this.#api !== api || generation !== this.#generation) return;
     if (saved?.version === 1 && Array.isArray(saved.entries) && saved.entries.every((e) => typeof e.entryId === 'string' && typeof e.track?.id === 'string')) {
-      const entries = saved.entries.slice(0, 5000).map((e) => ({ entryId: e.entryId, track: e.track, ...(isPlaybackSource(e.source) ? { source: e.source } : {}) })); const currentId = entries.some((e) => e.entryId === saved.currentId) ? saved.currentId : entries[0]?.entryId ?? null;
+      const entries = saved.entries.slice(0, 5000).map((e) => ({ entryId: e.entryId, track: e.track, ...(isPlaybackSource(e.source) ? { source: e.source, ...(isSourceIndex(e.sourceIndex) ? { sourceIndex: e.sourceIndex } : {}) } : {}) })); const currentId = entries.some((e) => e.entryId === saved.currentId) ? saved.currentId : entries[0]?.entryId ?? null;
       this.#originalOrder = this.#restoreOrder(entries, saved.originalOrder);
       const position = Number.isFinite(saved.position) ? Math.max(0, saved.position) : 0;
       update({ entries, currentId, shuffle: saved.shuffle === true, position, duration: entries.find((e) => e.entryId === currentId)?.track.duration ?? 0, status: currentId ? 'paused' : 'idle', volume: Number.isFinite(saved.volume) ? Math.min(1, Math.max(0, saved.volume)) : 0.7, repeat: ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off' });
@@ -163,8 +163,8 @@ class PlayerEngine {
     if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); }
     this.persist();
   }
-  append(tracks: Track[], next = false, source?: PlaybackSource) {
-    const s = usePlayer.getState(); const additions = entriesFor(tracks, source);
+  append(tracks: Track[], next = false, source?: PlaybackSource, sourceIndices?: readonly number[]) {
+    const s = usePlayer.getState(); const additions = entriesFor(tracks, source, sourceIndices ?? []);
     if (!additions.length) return;
     const after = next ? s.entries.findIndex((e) => e.entryId === (this.#insertCursor ?? s.currentId)) : -1;
     const entries = [...s.entries]; entries.splice(next ? Math.max(0, after + 1) : entries.length, 0, ...additions);

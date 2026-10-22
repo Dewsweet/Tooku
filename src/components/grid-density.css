@@ -1,0 +1,10 @@
+.browse-controls, .discography-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.discography-heading { justify-content: space-between; margin-bottom: 24px; }
+.artist-discography .discography-heading h2 { margin: 0; }
+.density-grid-container { container: browse-grid / inline-size; }
+.workspace-shell .density-grid-container > :is(.album-grid, .artist-grid) { grid-template-columns: repeat(min(var(--grid-columns), var(--grid-cap, 8)), minmax(0, 1fr)); }
+@container browse-grid (max-width: 1240px) { .album-grid, .artist-grid { --grid-cap: 6; } }
+@container browse-grid (max-width: 1040px) { .album-grid, .artist-grid { --grid-cap: 5; } }
+@container browse-grid (max-width: 840px) { .album-grid, .artist-grid { --grid-cap: 4; } }
+@container browse-grid (max-width: 640px) { .album-grid, .artist-grid { --grid-cap: 3; } }
+@container browse-grid (max-width: 420px) { .album-grid, .artist-grid { --grid-cap: 2; } }
