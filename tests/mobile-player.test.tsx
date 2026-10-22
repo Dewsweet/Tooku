@@ -53,7 +53,11 @@ function drag(target: Element, start: number, end: number) {
   pointer(target, 'pointerup', 200, end, { pointerType: 'mouse' });
 }
 function nativeScroll(body: HTMLElement, left: number) {
-  body.scrollLeft = left; fireEvent.scroll(body); act(() => vi.advanceTimersByTime(120));
+  body.scrollLeft = left; fireEvent.scroll(body); act(() => vi.advanceTimersByTime(60));
+}
+function touch(target: Element, type: 'touchStart' | 'touchEnd' | 'touchCancel', x: number, y = 300) {
+  const point = { identifier: 1, clientX: x, clientY: y };
+  fireEvent[type](target, { touches: type === 'touchStart' ? [point] : [], changedTouches: [point] });
 }
 
 it('settles native horizontal scrolling on the same lyrics reader without changing playback', async () => {
@@ -67,7 +71,7 @@ it('settles native horizontal scrolling on the same lyrics reader without changi
   expect(body).not.toHaveAttribute('data-dragging');
   pointer(cover, 'pointercancel', 300, 80);
   body.scrollLeft = 390; fireEvent.scroll(body);
-  act(() => vi.advanceTimersByTime(119)); expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  act(() => vi.advanceTimersByTime(59)); expect(body).toHaveAttribute('data-mobile-page', 'controls');
   act(() => vi.advanceTimersByTime(1));
   expect(body).toHaveAttribute('data-mobile-page', 'lyrics'); expect(body.querySelector('.room-record')).toHaveAttribute('inert');
   expect(body.querySelector('.room-lyrics-lines')).toBe(reader); expect(reader.scrollTop).toBe(123);
@@ -90,15 +94,64 @@ it('supports mouse swipes in both directions, suppressing the click generated af
   expect(body.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' });
   expect(usePlayer.getState().position).toBe(11);
 });
-it('offers keyboard paging and a top return button without a bottom lyrics hint', async () => {
+it('offers keyboard paging without a lyrics return button or bottom hint', async () => {
   const { body } = await setup();
   expect(screen.queryByRole('button', { name: '歌词' })).not.toBeInTheDocument();
   expect(body.querySelector('.mobile-player-lyrics-link')).toBeNull();
+  expect(screen.queryByRole('button', { name: '返回播放控制', hidden: true })).not.toBeInTheDocument();
   fireEvent.keyDown(body, { key: 'ArrowRight' }); expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
   fireEvent.keyDown(body, { key: 'ArrowLeft' }); expect(body).toHaveAttribute('data-mobile-page', 'controls');
   fireEvent.keyDown(body, { key: 'ArrowRight' });
-  fireEvent.click(screen.getByRole('button', { name: '返回播放控制' }));
+  fireEvent.keyDown(body, { key: 'ArrowLeft' });
   expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(screen.getByRole('region', { name: '当前歌曲' })).toHaveFocus();
+});
+it('finishes native swipes in either direction and leaves vertical lyric scrolling alone', async () => {
+  const { body, cover, close } = await setup();
+  touch(cover, 'touchStart', 300); expect(body).toHaveAttribute('data-paging', 'true');
+  body.scrollLeft = 160;
+  touch(cover, 'touchEnd', 80); expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
+  expect(body.scrollTo).toHaveBeenLastCalledWith({ left: 390, behavior: 'instant' });
+  const line = screen.getByRole('button', { name: '第一句测试歌词' });
+  body.scrollLeft = 390;
+  touch(line, 'touchStart', 80); touch(line, 'touchEnd', 300);
+  expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  fireEvent.keyDown(body, { key: 'ArrowRight' }); body.scrollLeft = 390;
+  touch(line, 'touchStart', 100, 400); touch(line, 'touchEnd', 100, 200);
+  expect(body).toHaveAttribute('data-mobile-page', 'lyrics'); expect(body).not.toHaveAttribute('data-paging');
+  expect(close).not.toHaveBeenCalled(); expect(usePlayer.getState().position).toBe(11);
+});
+it('completes a release in 160ms and cancels an unfinished animation on viewport changes', async () => {
+  const { body, cover } = await setup();
+  act(() => { usePlayer.setState({ status: 'paused' }); usePreferences.setState({ reducedMotion: false }); });
+  const callbacks = new Map<number, FrameRequestCallback>(); let id = 0;
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callbacks.set(++id, callback); return id; });
+  const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((key) => { callbacks.delete(key); });
+  vi.spyOn(performance, 'now').mockReturnValue(100);
+  touch(cover, 'touchStart', 300); body.scrollLeft = 100; touch(cover, 'touchEnd', 80);
+  expect(body).toHaveAttribute('data-paging', 'true');
+  const step = (now: number) => { const pending = [...callbacks.values()]; callbacks.clear(); act(() => pending.forEach((callback) => callback(now))); };
+  step(180); expect(body.scrollTo).toHaveBeenLastCalledWith({ left: 317.5, behavior: 'instant' });
+  step(260); expect(body.scrollTo).toHaveBeenLastCalledWith({ left: 390, behavior: 'instant' });
+  expect(body).not.toHaveAttribute('data-paging'); expect(callbacks.size).toBe(0);
+  body.scrollLeft = 390; fireEvent.keyDown(body, { key: 'ArrowLeft' });
+  expect(body).toHaveAttribute('data-paging', 'true'); fireEvent.resize(window);
+  expect(cancel).toHaveBeenCalled(); expect(callbacks.size).toBe(0); expect(body).not.toHaveAttribute('data-paging');
+  expect(body.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'instant' });
+});
+it('returns short or cancelled touches to their page and abandons gestures when a second finger arrives', async () => {
+  const { body, cover, close } = await setup();
+  touch(cover, 'touchStart', 200); body.scrollLeft = 20; touch(cover, 'touchEnd', 180);
+  expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(body).not.toHaveAttribute('data-paging');
+  touch(cover, 'touchStart', 300); body.scrollLeft = 140; touch(cover, 'touchCancel', 160);
+  expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(body).not.toHaveAttribute('data-paging');
+  body.scrollLeft = 0;
+  touch(cover, 'touchStart', 300);
+  pointer(cover, 'pointerdown', 200); pointer(cover, 'pointermove', 230);
+  expect(body).toHaveAttribute('data-dragging', 'true');
+  fireEvent.touchStart(cover, { touches: [{ identifier: 1 }, { identifier: 2 }] });
+  pointer(cover, 'pointerup', 400); touch(cover, 'touchEnd', 80);
+  expect(body).not.toHaveAttribute('data-paging'); expect(body).not.toHaveAttribute('data-dragging');
+  expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(close).not.toHaveBeenCalled();
 });
 it('closes a downward controls swipe through the Modal animation instead of a separate dismissal path', async () => {
   const { cover, dialog, close } = await setup();
@@ -120,6 +173,13 @@ it('returns to the underlying page and restores the dock trigger focus after swi
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(trigger).toHaveFocus(); expect(screen.getByRole('heading', { name: '主界面' })).toBeInTheDocument();
   expect(usePlayer.getState()).toMatchObject({ currentId: 'entry', position: 11, status: 'playing' });
 });
+it('supports downward mouse dragging on cover-page blank space', async () => {
+  const { body, close } = await setup(); const record = body.querySelector('.room-record')!;
+  pointer(record, 'pointerdown', 200, 100, { pointerType: 'mouse' });
+  pointer(record, 'pointermove', 300, 102, { pointerType: 'mouse' });
+  pointer(record, 'pointerup', 300, 102, { pointerType: 'mouse' });
+  expect(close).toHaveBeenCalledOnce();
+});
 it('does not capture lyrics scrolling, seeking, buttons or horizontal metadata gestures', async () => {
   const { body, close } = await setup();
   const progress = screen.getByRole('slider', { name: '播放进度' });
@@ -130,6 +190,10 @@ it('does not capture lyrics scrolling, seeking, buttons or horizontal metadata g
   expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(close).not.toHaveBeenCalled();
   fireEvent.keyDown(body, { key: 'ArrowRight' });
   swipe(body.querySelector('.room-lyrics-lines')!, 100, 500);
+  const line = screen.getByRole('button', { name: '第一句测试歌词' });
+  pointer(line, 'pointerdown', 200, 100, { pointerType: 'mouse' });
+  pointer(line, 'pointermove', 350, 100, { pointerType: 'mouse' });
+  pointer(line, 'pointerup', 350, 100, { pointerType: 'mouse' });
   expect(body).toHaveAttribute('data-mobile-page', 'lyrics'); expect(close).not.toHaveBeenCalled();
 });
 it('snaps back on small drags, cancellation, capture loss and viewport changes', async () => {

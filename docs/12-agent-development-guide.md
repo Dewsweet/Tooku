@@ -135,7 +135,7 @@ React 页面 / 通用控件
 
 歌手图片写回入口集中在 `src/api/client.ts`：登录时仅对 Navidrome 尝试 `/auth/login`，原生 JWT 与角色只留会话内存，退出清除；密码只传给登录请求。`POST /api/artist/:id/image` 使用 `image` multipart 字段，`DELETE` 恢复默认，写前/后均读取 `/api/artist/:id`。HTTP 权限错误由 Navidrome 最终裁决，不自动重放上传；确认后的预览仅留查询内存，等待上游构建图片。`server/navidromeProxy.ts` 为开发/生产共用路径及方法白名单，仅新增登录与歌手图片所需路由；不开放其余原生管理接口。原生认证失败不阻断 Subsonic 登录，旧版服务器或直连 CORS 配置不支持时无法编辑。协议参照 [Navidrome v0.64.1 上传实现](https://github.com/navidrome/navidrome/blob/v0.64.1/server/nativeapi/artists.go)。
 
-手机页面状态与鼠标拖动集中在 `PlayerPages.tsx`，`player-pages.css` 使用原生横向 overflow 与 scroll-snap 形成左右两个整屏页面，`player.css` 保留桌面/共享控件样式；不要恢复旧手机两行 grid 或自定义触摸翻页。原生滚动停稳 120 ms 后更新页状态、焦点与 inert；左滑进入歌词，右滑返回，支持鼠标拖动、键盘左右键与歌词顶部返回按钮，移除底部“歌词”/箭头提示。歌词保留原生纵向滚动，横向 overscroll 允许传到父级分页；封面区使用 pan-x，保留控制页触摸下滑收起，普通按钮、进度条、元信息横向滚动和嵌套 dialog 不进入鼠标拖动或收起手势。处理取消、捕获丢失、窗口变化与短拖回弹；关闭只调用 Modal 的 `dismissRef`，沿用其动画、减少动态效果、焦点恢复。两 section 均保留挂载，非活动页 inert/aria-hidden；歌词设置通过 portal 挂到外层 dialog/body，避免继承隐藏歌词页的不可交互状态。断点变化保留同一歌词 DOM 和播放器实例。
+手机页面状态与指针操作集中在 `PlayerPages.tsx`，`player-pages.css` 使用原生横向 overflow 与 scroll-snap 形成左右两个整屏页面，`player.css` 保留桌面/共享控件样式。触摸拖动仍由浏览器处理，不捕获横向触摸；touchend 接管松手收尾，暂时关闭 snap、取消原生惯性，通过 rAF / 160 ms 二次减速滚到目标页，避免浏览器默认 smooth 的长尾。鼠标和键盘也复用该短过渡，减少动态效果时立即到位；原生滚动兜底以 60 ms 静止判定更新状态，避免歌词纵向滚动干扰分页。处理新手势、取消、多指、窗口/断点/动态偏好变化与卸载的动画清理；不要恢复旧手机两行 grid。左滑进入歌词、右滑返回，兼容键盘左右键，不放歌词页左上角返回按钮或底部“歌词”/箭头提示。歌词纵向独立滚动，横向 overscroll 允许传到父级分页；整个封面页使用 pan-x pinch-zoom，封面与空白区支持触摸下滑或鼠标下拖收起，普通按钮、进度条、元信息横向滚动和嵌套 dialog 排除。关闭只调用 Modal 的 `dismissRef`，沿用其动画、减少动态效果、焦点恢复。两 section 均保留挂载，非活动页 inert/aria-hidden；歌词设置通过 portal 挂到外层 dialog/body，避免继承隐藏歌词页的不可交互状态。断点变化保留同一歌词 DOM 和播放器实例。
 
 ## 5. 数据归属与当前限制
 

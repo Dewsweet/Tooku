@@ -1,19 +1,18 @@
 .room-pages-track { display: contents; }
 .room-record:focus, .room-content:focus, .room-body:focus { outline: none; }
 @media (max-width: 767px) {
-  .modal-player { translate: 0 var(--player-dismiss-y, 0px); transition: translate .24s cubic-bezier(.2,.75,.3,1); }
+  .modal-player { translate: 0 var(--player-dismiss-y, 0px); transition: translate .16s ease-out; }
   .modal-player[data-player-dragging=true] { transition: none; }
   .room-body[data-mobile-page] { display: block; width: 100%; height: 100%; margin: 0; padding: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior: contain; scrollbar-width: none; }
   .room-body[data-mobile-page]::-webkit-scrollbar { display: none; }
   .room-pages-track { display: flex; width: 100%; height: 100%; }
-  .room-body[data-dragging=true] { scroll-snap-type: none; user-select: none; }
+  .room-body[data-dragging=true], .room-body[data-paging=true] { scroll-snap-type: none; }
+  .room-body[data-dragging=true] { user-select: none; }
   .room-body .room-record, .room-body .room-content { position: relative; flex: 0 0 100%; width: 100%; height: 100%; max-height: none; max-width: none; margin: 0; scroll-snap-align: start; scroll-snap-stop: always; padding: calc(76px + env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px)); }
-  .room-body .room-artwork-slot { touch-action: pan-x; }
+  .room-body .room-record { touch-action: pan-x pinch-zoom; }
   .room-body .room-artwork { width: min(100cqw, 100cqh, 440px); }
   .room-body .room-content { padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); --lyric-anchor: .5; animation: none; }
   .room-body .room-lyrics-lines { overscroll-behavior-x: auto; overscroll-behavior-y: contain; }
-  .mobile-player-return-zone { position: absolute; inset: 0 0 auto; height: calc(72px + env(safe-area-inset-top, 0px)); padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 0; }
-  .mobile-player-return-zone .icon-button { width: 44px; height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { .modal-player { transition: none; } }
 :root[data-motion=reduced] .modal-player { transition: none; }
