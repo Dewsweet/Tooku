@@ -1,13 +1,10 @@
 .room-pages-track { display: contents; }
 .room-record:focus, .room-content:focus, .room-body:focus { outline: none; }
 @media (max-width: 767px) {
-  .room-body[data-mobile-page] { display: block; width: 100%; height: 100%; margin: 0; padding: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior: none; scrollbar-width: none; }
-  .room-body[data-mobile-page]::-webkit-scrollbar { display: none; }
-  .room-pages-track { display: flex; width: 100%; height: 100%; }
-  .room-body[data-dragging=true], .room-body[data-paging=true] { scroll-snap-type: none; }
+  .room-body[data-mobile-page] { display: block; width: 100%; height: 100%; margin: 0; padding: 0; overflow: clip; }
+  .room-pages-track { display: flex; width: 100%; height: 100%; transform: translate3d(var(--player-page-x, 0px), 0, 0); will-change: transform; }
   .room-body[data-dragging=true] { user-select: none; }
-  .room-body .room-record, .room-body .room-content { position: relative; flex: 0 0 100%; width: 100%; height: 100%; max-height: none; max-width: none; margin: 0; scroll-snap-align: start; scroll-snap-stop: always; padding: calc(76px + env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px)); }
+  .room-body .room-record, .room-body .room-content { position: relative; flex: 0 0 100%; width: 100%; height: 100%; max-height: none; max-width: none; margin: 0; padding: calc(76px + env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px)); }
   .room-body .room-artwork { width: min(100cqw, 100cqh, 440px); }
   .room-body .room-content { padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); --lyric-anchor: .5; animation: none; }
-  .room-body .room-lyrics-lines { overscroll-behavior-x: auto; overscroll-behavior-y: contain; }
 }
