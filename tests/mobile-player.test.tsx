@@ -38,37 +38,65 @@ async function setup(close = vi.fn()) {
   render(<QueryClientProvider client={client}><MemoryRouter><Interactions><LyricsPlayer onClose={close} addToPlaylist={() => {}} /></Interactions></MemoryRouter></QueryClientProvider>);
   await screen.findByText('第一句测试歌词');
   const dialog = screen.getByRole('dialog', { name: '正在播放' });
-  return { close, dialog, body: dialog.querySelector<HTMLElement>('.room-body')!, cover: dialog.querySelector<HTMLElement>('.room-artwork-slot')! };
+  const body = dialog.querySelector<HTMLElement>('.room-body')!;
+  Object.defineProperty(body, 'clientWidth', { configurable: true, value: 390 });
+  return { close, dialog, body, cover: dialog.querySelector<HTMLElement>('.room-artwork-slot')! };
 }
 function pointer(target: Element, type: string, y: number, x = 100, extras = {}) {
   const event = new Event(type, { bubbles: true });
   Object.assign(event, { pointerType: 'touch', pointerId: 1, button: 0, isPrimary: true, clientX: x, clientY: y, ...extras }); fireEvent(target, event);
 }
 function swipe(target: Element, start: number, end: number) { pointer(target, 'pointerdown', start); pointer(target, 'pointermove', end); pointer(target, 'pointerup', end); }
+function drag(target: Element, start: number, end: number) {
+  pointer(target, 'pointerdown', 200, start, { pointerType: 'mouse' });
+  pointer(target, 'pointermove', 200, end, { pointerType: 'mouse' });
+  pointer(target, 'pointerup', 200, end, { pointerType: 'mouse' });
+}
+function nativeScroll(body: HTMLElement, left: number) {
+  body.scrollLeft = left; fireEvent.scroll(body); act(() => vi.advanceTimersByTime(120));
+}
 
-it('starts on full controls and slides to the same mounted lyrics reader without changing playback', async () => {
+it('settles native horizontal scrolling on the same lyrics reader without changing playback', async () => {
   const { body, cover, close } = await setup(); const reader = body.querySelector<HTMLElement>('.room-lyrics-lines')!;
   reader.scrollTop = 123;
   const attach = vi.spyOn(player, 'attach'); const select = vi.spyOn(player, 'select'); const seek = vi.spyOn(player, 'seek');
   expect(body).toHaveAttribute('data-mobile-page', 'controls');
   expect(body.querySelector('.room-content')).toHaveAttribute('inert');
-  pointer(cover, 'pointerdown', 500); pointer(cover, 'pointermove', 350);
-  expect(body.style.getPropertyValue('--player-page-drag')).toBe('-150px');
-  pointer(cover, 'pointerup', 350);
+  vi.useFakeTimers();
+  pointer(cover, 'pointerdown', 300, 300); pointer(cover, 'pointermove', 300, 80);
+  expect(body).not.toHaveAttribute('data-dragging');
+  pointer(cover, 'pointercancel', 300, 80);
+  body.scrollLeft = 390; fireEvent.scroll(body);
+  act(() => vi.advanceTimersByTime(119)); expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  act(() => vi.advanceTimersByTime(1));
   expect(body).toHaveAttribute('data-mobile-page', 'lyrics'); expect(body.querySelector('.room-record')).toHaveAttribute('inert');
   expect(body.querySelector('.room-lyrics-lines')).toBe(reader); expect(reader.scrollTop).toBe(123);
   expect(screen.getByRole('region', { name: '歌词' })).toHaveFocus();
-  fireEvent.click(screen.getByRole('button', { name: '第一句测试歌词' }), { detail: 1 });
+  // Scrolling the reader vertically must not flip the horizontal pager back.
+  fireEvent.scroll(reader); act(() => vi.advanceTimersByTime(120));
+  expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
   expect(usePlayer.getState()).toMatchObject({ currentId: 'entry', position: 11, status: 'playing' });
   expect(close).not.toHaveBeenCalled(); expect(attach).not.toHaveBeenCalled(); expect(select).not.toHaveBeenCalled(); expect(seek).not.toHaveBeenCalled();
+  nativeScroll(body, 0); expect(body).toHaveAttribute('data-mobile-page', 'controls');
 });
-it('provides keyboard-operable page buttons and returns from the lyric header by dragging down', async () => {
+it('supports mouse swipes in both directions, suppressing the click generated after a drag', async () => {
+  const { body, cover } = await setup(); const seek = vi.spyOn(player, 'seek');
+  drag(cover, 300, 80); expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
+  expect(body.scrollTo).toHaveBeenCalledWith({ left: 390, behavior: 'instant' });
+  const line = screen.getByRole('button', { name: '第一句测试歌词' });
+  fireEvent.click(line, { detail: 1 }); expect(seek).not.toHaveBeenCalled();
+  body.scrollLeft = 390;
+  drag(line, 80, 300); expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  expect(body.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' });
+  expect(usePlayer.getState().position).toBe(11);
+});
+it('offers keyboard paging and a top return button without a bottom lyrics hint', async () => {
   const { body } = await setup();
-  fireEvent.click(screen.getByRole('button', { name: '歌词' }));
-  const zone = body.querySelector('.mobile-player-return-zone')!;
-  swipe(zone, 300, 150); expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
-  swipe(zone, 150, 300); expect(body).toHaveAttribute('data-mobile-page', 'controls');
-  fireEvent.click(screen.getByRole('button', { name: '歌词' }));
+  expect(screen.queryByRole('button', { name: '歌词' })).not.toBeInTheDocument();
+  expect(body.querySelector('.mobile-player-lyrics-link')).toBeNull();
+  fireEvent.keyDown(body, { key: 'ArrowRight' }); expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
+  fireEvent.keyDown(body, { key: 'ArrowLeft' }); expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  fireEvent.keyDown(body, { key: 'ArrowRight' });
   fireEvent.click(screen.getByRole('button', { name: '返回播放控制' }));
   expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(screen.getByRole('region', { name: '当前歌曲' })).toHaveFocus();
 });
@@ -92,25 +120,29 @@ it('returns to the underlying page and restores the dock trigger focus after swi
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(trigger).toHaveFocus(); expect(screen.getByRole('heading', { name: '主界面' })).toBeInTheDocument();
   expect(usePlayer.getState()).toMatchObject({ currentId: 'entry', position: 11, status: 'playing' });
 });
-it('ignores lyrics scrolling, seeking, buttons and horizontal metadata gestures', async () => {
+it('does not capture lyrics scrolling, seeking, buttons or horizontal metadata gestures', async () => {
   const { body, close } = await setup();
-  for (const target of [screen.getByRole('slider', { name: '播放进度' }), screen.getByRole('button', { name: '暂停' }), body.querySelector('.scrolling-text')!]) swipe(target, 500, 200);
+  const progress = screen.getByRole('slider', { name: '播放进度' });
+  for (const target of [progress, screen.getByRole('button', { name: '暂停' }), body.querySelector('.scrolling-text')!]) {
+    swipe(target, 500, 200); drag(target, 300, 80);
+  }
+  fireEvent.keyDown(progress, { key: 'ArrowRight' });
   expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(close).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '歌词' }));
+  fireEvent.keyDown(body, { key: 'ArrowRight' });
   swipe(body.querySelector('.room-lyrics-lines')!, 100, 500);
   expect(body).toHaveAttribute('data-mobile-page', 'lyrics'); expect(close).not.toHaveBeenCalled();
 });
-it('snaps back on small drags, horizontal gestures, cancellation, capture loss and viewport changes', async () => {
+it('snaps back on small drags, cancellation, capture loss and viewport changes', async () => {
   const { body, cover, close } = await setup();
   swipe(cover, 200, 230);
-  pointer(cover, 'pointerdown', 200); pointer(cover, 'pointermove', 220, 300); pointer(cover, 'pointerup', 220, 300);
+  drag(cover, 200, 180);
+  body.scrollLeft = 0;
   for (const interrupt of [() => pointer(cover, 'pointercancel', 400), () => fireEvent.lostPointerCapture(body), () => fireEvent.resize(window), () => fireEvent.blur(window)]) {
     pointer(cover, 'pointerdown', 200); pointer(cover, 'pointermove', 400); interrupt(); pointer(cover, 'pointerup', 400);
-    expect(body).not.toHaveAttribute('data-dragging'); expect(body.style.getPropertyValue('--player-page-drag')).toBe('');
+    expect(body).not.toHaveAttribute('data-dragging'); expect(body.closest('dialog')?.style.getPropertyValue('--player-dismiss-y')).toBe('');
   }
   expect(body).toHaveAttribute('data-mobile-page', 'controls'); expect(close).not.toHaveBeenCalled();
-  // A real tap after a cancelled/short drag must remain functional.
-  const link = screen.getByRole('button', { name: '歌词' }); pointer(link, 'pointerdown', 100); pointer(link, 'pointerup', 100); fireEvent.click(link, { detail: 1 });
+  fireEvent.keyDown(body, { key: 'ArrowRight' });
   expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
 });
 it('preserves the reader when resizing back to desktop and ignores swipes in nested settings', async () => {
@@ -121,7 +153,10 @@ it('preserves the reader when resizing back to desktop and ignores swipes in nes
   expect(body).not.toHaveAttribute('data-dragging'); expect(close).not.toHaveBeenCalled();
   act(() => { mobile = true; listeners.forEach((listener) => listener()); });
   fireEvent.click(screen.getByRole('button', { name: '歌词设置' }));
-  swipe(screen.getByRole('dialog', { name: '歌词设置' }).querySelector('header')!, 100, 400);
+  const settingsHeader = screen.getByRole('dialog', { name: '歌词设置' }).querySelector('header')!;
+  swipe(settingsHeader, 100, 400); drag(settingsHeader, 300, 80);
+  fireEvent.keyDown(settingsHeader, { key: 'ArrowRight' });
+  expect(body).toHaveAttribute('data-mobile-page', 'controls');
   expect(close).not.toHaveBeenCalled();
   act(() => { mobile = false; listeners.forEach((listener) => listener()); });
   expect(body).not.toHaveAttribute('data-mobile-page'); expect(body.querySelector('.room-content')).not.toHaveAttribute('inert');
