@@ -16,7 +16,7 @@
 .mobile-queue-sheet .integrated-queue-time { display: none; }
 .mobile-queue-sheet .integrated-queue-actions { position: static; flex-shrink: 0; margin: 0; padding: 0; opacity: 1; pointer-events: auto; background: transparent; border: 0; box-shadow: none; }
 .mobile-queue-sheet .integrated-queue-actions .icon-button { width: 40px; height: 40px; }
-.mobile-queue-sheet .play-button { color: var(--bg); background: var(--text); border-radius: 50%; }
+.mobile-queue-sheet .play-button { color: var(--text); background: transparent; border-radius: 7px; }
 @keyframes mobile-queue-enter { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes mobile-queue-exit { to { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) { .modal.mobile-queue-sheet { transition: none; } }

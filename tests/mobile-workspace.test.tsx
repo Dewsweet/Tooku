@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { useState, type ReactNode } from 'react';
+import { WorkspaceBoundary } from '../src/components/WorkspaceBoundary';
 import App from '../src/App';
 import { MusicApi } from '../src/api/client';
 import { Interactions } from '../src/components/Interactions';
@@ -41,8 +43,8 @@ afterEach(() => {
   Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal'); Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
   vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
-async function setup(path = '/albums') {
-  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Interactions><App /></Interactions></MemoryRouter></QueryClientProvider>);
+async function setup(path = '/albums', extra?: ReactNode) {
+  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><WorkspaceBoundary><Interactions><App />{extra}</Interactions></WorkspaceBoundary></MemoryRouter></QueryClientProvider>);
   await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
   return view;
 }
@@ -70,17 +72,39 @@ it.each(['/albums', '/artists'])('hides density controls on %s without overwriti
   act(() => { mobile = false; listeners.forEach((listener) => listener()); });
   expect(screen.getByRole('combobox', { name: /每行数量/ })).toHaveTextContent(path === '/albums' ? '每行 6 个' : '每行 8 个');
 });
-it('renders a compact dock with only cover, metadata, queue, desktop lyrics and play/pause', async () => {
+it('renders a compact dock with linked scrolling metadata, favorite before queue, and play/pause', async () => {
   await setup();
   const dock = within(screen.getByRole('contentinfo', { name: '音乐播放器' }));
   expect(dock.getAllByRole('button')).toHaveLength(4);
   expect(dock.getByRole('button', { name: '展开播放器：重复歌曲' })).toBeInTheDocument();
   expect(dock.getByRole('link', { name: '重复歌曲' })).toBeInTheDocument();
-  expect(dock.getByRole('button', { name: '桌面歌词' })).toBeInTheDocument();
+  expect(dock.queryByRole('button', { name: '桌面歌词' })).not.toBeInTheDocument();
+  expect(dock.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['展开播放器：重复歌曲', '收藏当前歌曲', '播放队列，3 首', '暂停']);
+  expect(dock.getByRole('link', { name: '重复歌曲' }).closest('.scrolling-text')).toBeInTheDocument();
+  expect(dock.getByRole('link', { name: '歌手' }).closest('.scrolling-text')).toBeInTheDocument();
   expect(dock.queryByRole('slider')).not.toBeInTheDocument();
   expect(dock.queryByRole('button', { name: '下一首' })).not.toBeInTheDocument();
   const toggle = vi.spyOn(player, 'toggle').mockImplementation(() => {});
   fireEvent.click(dock.getByRole('button', { name: '暂停' })); expect(toggle).toHaveBeenCalledOnce();
+});
+
+it('recovers from a rendering failure without losing the session, query cache or active playback', async () => {
+  function Failure() {
+    const [failed, setFailed] = useState(false);
+    if (failed) throw new Error('synthetic UI failure');
+    return <button onClick={() => setFailed(true)}>触发测试异常</button>;
+  }
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  await setup('/albums', <Failure />);
+  client.setQueryData(['recovery-check'], 'retained');
+  const attach = vi.spyOn(player, 'attach'); const logout = vi.spyOn(player, 'logout');
+  fireEvent.click(screen.getByRole('button', { name: '触发测试异常' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('界面暂时无法显示');
+  fireEvent.click(screen.getByRole('button', { name: '恢复界面' }));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '搜索音乐库' })).toBeInTheDocument());
+  expect(useSession.getState().api).toBe(api); expect(client.getQueryData(['recovery-check'])).toBe('retained');
+  expect(usePlayer.getState()).toMatchObject({ currentId: 'one', position: 42, status: 'playing' });
+  expect(attach).not.toHaveBeenCalled(); expect(logout).not.toHaveBeenCalled();
 });
 it('opens a separate queue sheet and closes directly to the browser without changing sidebar preferences or audio', async () => {
   usePreferences.setState({ sidePanel: false });

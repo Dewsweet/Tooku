@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Copy, Home, Search, ListMusic, Scissors, ClipboardPaste, TextSelect } from 'lucide-react';
 import { useSession, errorMessage } from '../state/session';
+import { useTooltips } from './useTooltips';
+import { revealPopover } from './popover';
 
 export interface MenuItem { label: string; icon?: ReactNode; action: () => void | Promise<unknown>; href?: string; disabled?: boolean; danger?: boolean; divider?: boolean }
 type OpenMenu = (event: Pick<MouseEvent, 'preventDefault' | 'stopPropagation' | 'clientX' | 'clientY' | 'currentTarget'> & { target?: EventTarget | null }, items: MenuItem[]) => { update: (items: MenuItem[]) => void };
@@ -12,13 +14,16 @@ export const useContextMenu = () => useContext(MenuContext);
 export function Interactions({ children }: { children: ReactNode }) {
   const navigate = useNavigate(); const [menu, setMenu] = useState<{ id: number; x: number; y: number; items: MenuItem[]; host: HTMLElement } | null>(null); const previousFocus = useRef<HTMLElement | null>(null);
   const sequence = useRef(0); const positioned = useRef<number | null>(null);
-  const ref = useRef<HTMLDivElement>(null); const tooltip = useRef<HTMLDivElement>(null); const [hint, setHint] = useState<{ text: string; target: HTMLElement } | null>(null);
-  const open = useCallback<OpenMenu>((event, items) => { event.preventDefault(); event.stopPropagation(); setHint(null); const element = event.currentTarget instanceof Element ? event.currentTarget : null; const source = event.target instanceof Element ? event.target : element; const bounds = element?.getBoundingClientRect(); previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; const id = ++sequence.current; setMenu({ id, x: event.clientX || bounds?.left || 12, y: event.clientY || bounds?.top || 12, items, host: source?.closest('dialog') ?? document.body }); return { update: (next) => setMenu((current) => current?.id === id ? { ...current, items: next } : current) }; }, []);
+  const ref = useRef<HTMLDivElement>(null); const tooltip = useRef<HTMLDivElement>(null);
+  const location = useLocation(); const { hint, setHint, menuOpen } = useTooltips(location.key);
+  useLayoutEffect(() => { menuOpen.current = Boolean(menu); }, [menu, menuOpen]);
+  useEffect(() => { setMenu(null); }, [location.key]);
+  const open = useCallback<OpenMenu>((event, items) => { event.preventDefault(); event.stopPropagation(); setHint(null); const element = event.currentTarget instanceof Element ? event.currentTarget : null; const source = event.target instanceof Element ? event.target : element; const bounds = element?.getBoundingClientRect(); previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; const id = ++sequence.current; setMenu({ id, x: event.clientX || bounds?.left || 12, y: event.clientY || bounds?.top || 12, items, host: source?.closest('dialog') ?? document.body }); return { update: (next) => setMenu((current) => current?.id === id ? { ...current, items: next } : current) }; }, [setHint]);
   const dismiss = useCallback(() => { setMenu(null); previousFocus.current?.focus({ preventScroll: true }); }, []);
   useLayoutEffect(() => {
     const node = ref.current; if (!menu || !node) { positioned.current = null; return; }
     if (positioned.current === menu.id) return; positioned.current = menu.id;
-    node.showPopover?.();
+    if (!revealPopover(node)) { setMenu(null); return; }
     node.style.left = `${Math.max(8, Math.min(menu.x, window.innerWidth - node.offsetWidth - 8))}px`;
     node.style.top = `${Math.max(8, Math.min(menu.y, window.innerHeight - node.offsetHeight - 8))}px`;
     node.querySelector<HTMLElement>('button:not(:disabled), a[href]')?.focus({ preventScroll: true });
@@ -30,24 +35,14 @@ export function Interactions({ children }: { children: ReactNode }) {
     document.addEventListener('pointerdown', outside); document.addEventListener('scroll', scroll, true); window.addEventListener('resize', dismiss);
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', dismiss); };
   }, [menu, dismiss]);
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined; let target: HTMLElement | null = null;
-    const hide = () => { clearTimeout(timer); target = null; setHint(null); };
-    const show = (e: Event) => {
-      const element = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-tooltip]') : null;
-      if (element === target) return; hide(); if (!element || element.closest('[role="menu"]')) return;
-      target = element; const text = element.dataset.tooltip; if (!text) return;
-      timer = setTimeout(() => { if (element.isConnected && !ref.current) setHint({ text, target: element }); }, e.type === 'focusin' ? 200 : 450);
-    };
-    const leave = (e: Event) => { const related = (e as PointerEvent).relatedTarget; if (!target || !(related instanceof Node) || !target.contains(related)) hide(); };
-    document.addEventListener('pointerover', show); document.addEventListener('focusin', show); document.addEventListener('pointerout', leave); document.addEventListener('focusout', hide); document.addEventListener('pointerdown', hide); document.addEventListener('scroll', hide, true);
-    return () => { hide(); document.removeEventListener('pointerover', show); document.removeEventListener('focusin', show); document.removeEventListener('pointerout', leave); document.removeEventListener('focusout', hide); document.removeEventListener('pointerdown', hide); document.removeEventListener('scroll', hide, true); };
-  }, []);
   useLayoutEffect(() => {
-    if (!hint || !tooltip.current) return; const node = tooltip.current; node.showPopover?.(); const box = hint.target.getBoundingClientRect();
+    if (!hint || !tooltip.current) return;
+    const node = tooltip.current;
+    if (!hint.target.isConnected || !revealPopover(node)) { setHint(null); return; }
+    const box = hint.target.getBoundingClientRect();
     node.style.left = `${Math.max(7, Math.min(box.left + box.width / 2 - node.offsetWidth / 2, window.innerWidth - node.offsetWidth - 7))}px`;
-    node.style.top = `${box.top > node.offsetHeight + 12 ? box.top - node.offsetHeight - 9 : box.bottom + 9}px`; node.showPopover?.();
-  }, [hint]);
+    node.style.top = `${box.top > node.offsetHeight + 12 ? box.top - node.offsetHeight - 9 : box.bottom + 9}px`;
+  }, [hint, setHint]);
   function globalMenu(event: MouseEvent) {
     const candidate = event.target instanceof Element ? event.target.closest('input, textarea') : null;
     const field = candidate instanceof HTMLTextAreaElement || candidate instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'email', 'password'].includes(candidate.type) ? candidate : null;

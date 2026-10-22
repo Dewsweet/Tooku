@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useReducedMotion } from './playback-hooks';
 
-export function ScrollingText({ text }: { text: string }) {
+export function ScrollingText({ text, children }: { text: string; children?: ReactNode }) {
   const viewport = useRef<HTMLSpanElement>(null); const content = useRef<HTMLSpanElement>(null);
   const reduced = useReducedMotion();
   useLayoutEffect(() => {
@@ -23,5 +23,5 @@ export function ScrollingText({ text }: { text: string }) {
     void document.fonts?.ready.then(measure);
     return () => { active = false; observer?.disconnect(); };
   }, [text, reduced]);
-  return <span className="scrolling-text" ref={viewport}><span ref={content}>{text}</span></span>;
+  return <span className="scrolling-text" ref={viewport}><span ref={content}>{children ?? text}</span></span>;
 }

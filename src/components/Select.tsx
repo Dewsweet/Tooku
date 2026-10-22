@@ -1,6 +1,7 @@
 import { Children, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type SelectHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
+import { revealPopover } from './popover';
 
 type Props = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value' | 'children'> & { value: string | number; onChange: (value: string) => void; children: ReactNode };
 type Option = { value: string; label: ReactNode; disabled: boolean };
@@ -22,8 +23,7 @@ export function Select({ value, onChange, children, disabled, id, className = ''
       setPosition({ top: above ? Math.max(7, rect.top - Math.min(options.length * 41 + 12, maxHeight) - 6) : rect.bottom + 6, left: Math.min(Math.max(7, rect.left), Math.max(7, window.innerWidth - Math.max(rect.width, 170) - 7)), width: Math.min(Math.max(rect.width, 170), window.innerWidth - 14), maxHeight });
     };
     place();
-    if (popup.current?.showPopover) popup.current.showPopover();
-    else popup.current?.removeAttribute('popover');
+    if (popup.current && !revealPopover(popup.current)) { setOpen(false); return; }
     const onScroll = (event: Event) => {
       // Internal list scrolling (including keyboard navigation) must not reposition it.
       if (event.target instanceof Node && popup.current?.contains(event.target)) return;

@@ -128,7 +128,9 @@ html:has(dialog[open]) { overflow: hidden; }
 .scrolling-text { display: block; width: 100%; min-width: 0; overflow: auto; white-space: nowrap; scrollbar-width: none; }
 .scrolling-text > span { display: block; width: max-content; }
 .scrolling-text[data-animate=true] > span { animation: text-pan var(--text-duration) linear infinite; }
-.scrolling-text:hover > span, .scrolling-text:focus > span { animation-play-state: paused; }
+.scrolling-text:focus > span { animation-play-state: paused; }
+@media (hover: hover) and (pointer: fine) { .scrolling-text:hover > span { animation-play-state: paused; } }
+:root[data-focus-input=keyboard] .scrolling-text:focus-within > span { animation-play-state: paused; }
 .scrolling-text:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 @keyframes text-pan { 0%, 10%, 100% { transform: translateX(0); } 45%, 55% { transform: translateX(var(--text-distance)); } 90% { transform: translateX(0); } }
 .room-song-actions { display: flex; gap: 10px; flex-shrink: 0; }

@@ -49,7 +49,8 @@ React 页面 / 通用控件
 | 头部、搜索、头像菜单 | `src/components/WorkspaceHeader.tsx` | 唯一账户设置入口、快速切库、搜索输入法组合与防抖 |
 | 通用歌曲表格 | `src/components/Common.tsx` 的 `TrackList` | 收藏、右键动作、空白处双击、顺序与权限回调；不要另建一套表格交互 |
 | 列宽 | `src/components/TrackColumns.tsx` | 歌单/专辑与推荐表头共用 `TrackColumnHandle` 和偏好；指针与键盘操作，预览宽度与提交偏好分离 |
-| 右键菜单、图标提示 | `src/components/Interactions.tsx` | `useContextMenu()`、`data-tooltip`；弹窗内浮层、定位翻转和焦点恢复 |
+| 右键菜单、图标提示 | `src/components/Interactions.tsx`、`useTooltips.ts`、`popover.ts` | `useContextMenu()`、`data-tooltip`；鼠标/键盘与触摸长按分离，安全浮层打开、定位翻转和焦点恢复 |
+| 界面异常恢复 | `src/components/WorkspaceBoundary.tsx`、`src/main.tsx` | 边界包裹 Interactions/App，Router/Query Provider 与会话/播放单例留在外侧；恢复只重建 UI，不重新登录或接入音频 |
 | 基础弹窗和选择器 | `src/components/Modal.tsx`、`Select.tsx` | 原生 dialog 与 popover；不要退回未统一样式的控件 |
 | 账户与设置 | `src/pages/Settings.tsx`、`src/features/settings/SettingsSection.tsx`、`settings.css` | 六类导航、统一设置分区/状态/操作；分类切换保留推荐草稿与检测，不重建音频 |
 | 界面字体与设备字号 | `src/fonts.css`、`src/state/display.ts`、`src/assets/fonts/` | 两款思源原始 WOFF2 按需加载，也可选系统黑体/宋体；字体与字号不进入账号同步与备份 |

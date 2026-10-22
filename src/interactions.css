@@ -10,6 +10,7 @@
 .context-menu svg, .menu-icon-space { flex-shrink: 0; width: 16px; }
 .app-tooltip { pointer-events: none; max-width: min(280px,calc(100vw - 14px)); padding: 8px 11px; border-radius: 7px; font-size:calc(12px * var(--ui-font-scale, 1)); line-height: 1.5; box-shadow: 0 4px 14px #1115221a; background: var(--text); color: var(--bg); border: 0; }
 .app-tooltip:popover-open { animation: surface-enter .12s ease both; }
+:root[data-focus-input=pointer] :focus-visible { outline: none; }
 .workspace-shell > .panel-resize-handle { position: fixed; inset: var(--header-height) calc(var(--gutter) + var(--panel-width)) var(--dock-height) auto; width: var(--gutter); background: transparent; border-radius: 0; z-index: 20; }
 .workspace-shell > .panel-resize-handle::after { content: ''; position: absolute; top: 13px; bottom: 13px; left: calc(50% - 1px); width: 2px; border-radius: 2px; background: var(--muted); opacity: 0; transition: opacity .16s; }
 .workspace-shell > .panel-resize-handle:hover::after, .workspace-shell > .panel-resize-handle:focus-visible::after, .is-resizing-panel .panel-resize-handle::after { opacity: .8; }

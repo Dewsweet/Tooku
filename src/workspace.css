@@ -20,6 +20,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 ::selection { background: color-mix(in srgb, var(--accent) 24%, var(--bg)); }
 .primary-button { color: var(--accent-contrast); }
 .workspace-shell { --header-height: 72px; --dock-height: 96px; --sidebar-width: 220px; --panel-width: 328px; --gutter: 10px; height: 100dvh; min-height: 0; overflow: hidden; background: var(--shell); }
+.workspace-recovery { display: grid; justify-items: center; align-content: center; gap: 20px; min-height: 100dvh; padding: 24px; background: var(--bg); color: var(--text); text-align: center; }
+.workspace-recovery h1 { font-size: calc(24px * var(--ui-font-scale, 1)); }
+.workspace-recovery p { margin: 0; color: var(--muted); }
 .workspace-shell button, .workspace-shell a { transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .2s ease, transform .2s ease; }
 .workspace-header { position: fixed; inset: 0 0 auto; height: var(--header-height); z-index: 60; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(300px, 570px) minmax(180px, 1fr); align-items: center; gap: 24px; padding: 0 26px; background: var(--shell); }
 .header-brand, .header-logo { display: flex; align-items: center; }
@@ -72,6 +75,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .sidebar-playlists .loading { padding: 25px 4px; font-size:calc(13px * var(--ui-font-scale, 1)); }
 .workspace-shell .app-main { position: fixed; top: var(--header-height); left: calc(var(--sidebar-width) + var(--gutter) * 2); right: var(--gutter); bottom: var(--dock-height); margin: 0; height: auto; padding: 0; border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); border-radius: 13px; overflow: hidden; background: var(--bg); box-shadow: var(--panel-shadow); transition: right .25s cubic-bezier(.2,.75,.3,1); }
 .workspace-shell .content { max-width: none; width: 100%; height: 100%; margin: 0; overflow: auto; padding: 30px 30px 45px; }
+.workspace-shell .content:focus { outline: none; }
 .workspace-shell .content > :not(dialog) { animation: surface-enter .24s ease both; }
 .workspace-shell h1 { font-size:calc(29px * var(--ui-font-scale, 1)); letter-spacing: -.8px; font-weight: 720; }
 .workspace-shell .page-heading { margin-bottom: 25px; }
@@ -132,6 +136,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .modal-player .transport.large .play-button { color: var(--accent-contrast); }
 .menu-scrim, .panel-scrim { display: none; }
 @keyframes surface-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes scrim-enter { from { opacity: 0; } to { opacity: 1; } }
 @media (min-width: 1200px) { .with-now-panel .app-main { right: calc(var(--panel-width) + var(--gutter) * 2); } .with-now-panel .album-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media (min-width: 1550px) { .workspace-shell { --sidebar-width: 242px; --panel-width: 352px; } .with-now-panel .album-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 @media (max-width: 1399px) {
@@ -155,22 +160,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media (max-width: 767px) {
   .workspace-shell { --header-height: calc(56px + env(safe-area-inset-top, 0px)); --dock-height: calc(72px + env(safe-area-inset-bottom, 0px)); --gutter: 7px; }
-  .workspace-header { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; padding: calc(6px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 6px max(8px, env(safe-area-inset-left, 0px)); }
+  .workspace-header { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; padding: calc(6px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 6px max(12px, env(safe-area-inset-left, 0px)); }
   .header-brand { flex: 0 0 auto; }
   .header-brand .menu-toggle { display: flex; width: 40px; min-width: 40px; height: 44px; }
   .header-search-key, .header-settings, .profile-trigger > svg { display: none; }
-  .header-discovery { flex: 1; min-width: 0; gap: 4px; }
-  .header-home { width: 40px; height: 44px; flex-shrink: 0; }
-  .header-home svg { width: 19px; }
+  .header-discovery { flex: 1; min-width: 0; max-width: 520px; margin-inline: auto; gap: 6px; }
+  .header-home { width: 40px; height: 40px; flex: 0 0 40px; }
+  .header-home svg { width: 19px; height: 19px; flex-shrink: 0; }
   .header-search { min-width: 0; height: 40px; padding: 0 8px; gap: 4px; }
-  .header-search > button > svg { width: 18px; }
+  .header-search > button { flex: 0 0 24px; width: 24px; height: 32px; }
+  .header-search > button > svg { width: 18px; height: 18px; }
   .header-search input:not([type=range]) { font-size: max(16px, calc(14px * var(--ui-font-scale, 1))); }
   .header-actions { flex: 0 0 auto; }
-  .profile-trigger { width: 40px; min-height: 44px; justify-content: center; padding: 4px; }
+  .profile-trigger { width: 44px; height: 44px; min-height: 44px; flex-shrink: 0; justify-content: center; padding: 4px; border-radius: 50%; }
   .profile-avatar { width: 30px; height: 30px; font-size:calc(12px * var(--ui-font-scale, 1)); }
-  .workspace-shell .sidebar { width: 242px; top: var(--header-height); bottom: 7px; left: 7px; z-index: 50; transform: translateX(calc(-100% - 15px)); transition: transform .24s cubic-bezier(.2,.75,.3,1); }
+  .workspace-shell .sidebar { width: min(242px, calc(100vw - 56px)); top: var(--header-height); bottom: 7px; left: 7px; z-index: 50; transform: translateX(calc(-100% - 15px)); transition: transform .24s cubic-bezier(.2,.75,.3,1); }
   .workspace-shell .sidebar.open { transform: translateX(0); }
-  .workspace-shell .menu-scrim { display: block; position: fixed; left: 256px; top: var(--header-height); bottom: 0; right: 0; width: auto; background: #14151c44; z-index: 40; }
+  .workspace-shell .menu-scrim { display: block; position: fixed; inset: var(--header-height) 0 0; width: auto; padding: 0; border-radius: 0; background: #14151c44; z-index: 40; animation: scrim-enter .2s ease both; }
   .workspace-shell .app-main { left: var(--gutter); right: var(--gutter); border-radius: 11px; }
   .workspace-shell .content { padding: 23px 17px 32px; }
   .workspace-shell h1 { font-size:calc(26px * var(--ui-font-scale, 1)); }
@@ -179,6 +185,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .workspace-shell .dock-art .mini-cover { width: 44px; }
   .workspace-shell .dock-track .now-playing { max-width: none; }
   .workspace-shell .dock-track { gap: 8px; }
+  .workspace-shell .dock-metadata { flex: 1; width: 0; }
+  .workspace-shell .dock-metadata strong, .workspace-shell .dock-metadata small { text-overflow: clip; }
   .workspace-shell .dock-metadata strong { font-size:calc(13px * var(--ui-font-scale, 1)); }
   .track-table-heading { display: none !important; }
   .workspace-shell .track-row { grid-template-columns: 26px minmax(0,1fr) 40px; gap: 6px; padding: 9px 0; }
