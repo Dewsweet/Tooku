@@ -18,6 +18,18 @@ describe('Subsonic transport and contracts', () => {
     expect(normalizeLyrics(lyrics.document).lines).toEqual([{ text: 'Écoute-moi', translation: ['听我说'] }, { text: 'Bonjour', translation: ['你好'] }]);
   });
   it('preserves base paths and rejects credentials in a URL', () => { expect(normalizeServer(' https://example.test/music/// ')).toBe('https://example.test/music'); expect(normalizeServer('/nd', 'http://localhost:5173')).toBe('http://localhost:5173/nd'); expect(() => normalizeServer('https://user:password@example.test')).toThrow(); expect(() => normalizeServer('https://example.test?token=secret')).toThrow(); expect(() => normalizeServer('file:///music')).toThrow(); });
+  it('maps the Tooku site address to the existing proxy identity without changing direct connections', () => {
+    for (const origin of ['http://localhost:18733', 'https://music.example.test']) {
+      const proxy = `${origin}/nd`;
+      for (const input of [origin, `${origin}///`, '/nd', proxy]) expect(normalizeServer(input, origin)).toBe(proxy);
+      expect(normalizeServer(`${origin}/music`, origin)).toBe(`${origin}/music`);
+      expect(normalizeServer('https://other.example.test', origin)).toBe('https://other.example.test');
+      expect(() => normalizeServer(`${origin}?token=synthetic`, origin)).toThrow();
+      expect(() => normalizeServer(`${origin}#synthetic`, origin)).toThrow();
+    }
+    expect(normalizeServer('http://localhost:44533', 'http://localhost:18733')).toBe('http://localhost:44533');
+    expect(normalizeServer('http://music.example.test', 'https://music.example.test')).toBe('http://music.example.test');
+  });
   it('uses the protocol hash on UTF-8 raw password plus salt', () => { const password = ' 密码🎵 '; const salt = '测试salt'; expect(authToken(password, salt)).toBe(createHash('md5').update(password + salt, 'utf8').digest('hex')); });
   it('checks failed business envelopes even on HTTP 200 and does not expose server echoes', async () => { vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ 'subsonic-response': { status: 'failed', error: { code: 40, message: 'password=private' } } })))); const api = new MusicApi('https://example.test/music', 'user', 'private', 'salt'); await expect(api.request('ping')).rejects.toMatchObject({ code: 40, message: '用户名或密码不正确。' }); });
   it('distinguishes a proxy HTML response from bad credentials', async () => { vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>Login</html>'))); await expect(new MusicApi('https://example.test', 'u', 'p').connect()).rejects.toThrow('反向代理'); });

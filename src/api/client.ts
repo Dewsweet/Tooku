@@ -43,7 +43,9 @@ export function normalizeServer(input: string, origin = window.location.origin) 
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new ApiError('请输入完整的 http/https 服务地址，不包含账号、查询参数或锚点。');
   }
-  return url.href.replace(/\/+$/, '');
+  const base = url.href.replace(/\/+$/, '');
+  // The Tooku site itself is a friendly alias for its fixed Navidrome proxy.
+  return base === origin ? `${origin}/nd` : base;
 }
 export function authToken(password: string, salt: string) { return md5(password + salt); }
 type Params = Record<string, string | number | boolean | string[] | undefined>;

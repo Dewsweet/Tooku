@@ -80,6 +80,8 @@
 .login-card input:focus-visible { outline-width: 2px; outline-offset: 2px; }
 .login-card .form-error { margin: 0; font-size: 1rem; color: var(--status-error); }
 .login-card .login-submit {
+  background: #000;
+  color: #fff;
   width: 100%;
   min-height: 50px;
   margin-top: 8px;

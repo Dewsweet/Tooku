@@ -1,0 +1,29 @@
+.login-transition .login-brand,
+.login-transition .header-logo { view-transition-name: tooku-brand; }
+
+:root.login-transition::view-transition-group(root) { animation: none; }
+:root.login-transition::view-transition-old(root) {
+  animation: login-content-out 260ms ease-out both;
+}
+:root.login-transition::view-transition-new(root) {
+  animation: workspace-content-in 420ms ease-out 120ms both;
+}
+:root.login-transition::view-transition-group(tooku-brand) {
+  z-index: 1;
+  animation-duration: 620ms;
+  animation-timing-function: cubic-bezier(.22, .7, .2, 1);
+}
+:root.login-transition::view-transition-old(tooku-brand),
+:root.login-transition::view-transition-new(tooku-brand) { animation-duration: 400ms; }
+
+@keyframes login-content-out { to { opacity: 0; } }
+@keyframes workspace-content-in { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root.login-transition::view-transition-group(*),
+  :root.login-transition::view-transition-old(*),
+  :root.login-transition::view-transition-new(*) { animation: none !important; }
+}
+:root.login-transition[data-motion=reduced]::view-transition-group(*),
+:root.login-transition[data-motion=reduced]::view-transition-old(*),
+:root.login-transition[data-motion=reduced]::view-transition-new(*) { animation: none !important; }

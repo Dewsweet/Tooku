@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Disc3, Mic2, Heart, Clock3, X, Sparkles } from 'lucide-react';
 import { Recommendations } from './features/recommendations/Recommendations';
@@ -50,7 +50,7 @@ export default function App() {
   const location = useLocation(); const contentRef = useRef<HTMLElement>(null);
   useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; setPanelOverlay(false); setMenu(false); }, [location.pathname, location.search, library.libraryId]);
   useEffect(() => { if (api && !player.connectedTo(api)) void player.attach(api); }, [api]);
-  useEffect(() => { document.documentElement.dataset.theme = api ? prefs.theme : 'light'; document.documentElement.style.setProperty('--accent-base', /^#[0-9a-f]{6}$/i.test(prefs.accent ?? '') ? prefs.accent : '#c83e55'); document.documentElement.dataset.motion = prefs.reducedMotion ? 'reduced' : 'full'; }, [api, prefs.theme, prefs.accent, prefs.reducedMotion]);
+  useLayoutEffect(() => { document.documentElement.dataset.theme = api ? prefs.theme : 'light'; document.documentElement.style.setProperty('--accent-base', /^#[0-9a-f]{6}$/i.test(prefs.accent ?? '') ? prefs.accent : '#c83e55'); document.documentElement.dataset.motion = prefs.reducedMotion ? 'reduced' : 'full'; }, [api, prefs.theme, prefs.accent, prefs.reducedMotion]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => useSession.getState().notify(''), 9000); return () => clearTimeout(timer); }, [notice]);
   const logout = (clear = true) => {
     if (!api) return;
@@ -88,7 +88,7 @@ export default function App() {
       <nav className="sidebar-primary" aria-label="主导航">{navigation.map(({ to, name, icon: Icon }) => <NavLink key={to} to={to} onClick={() => setMenu(false)}><Icon size={20} /><span>{name}</span></NavLink>)}</nav>
       <ScrollArea className="sidebar-scroll" scope={library.libraryId} label="歌单导航滚动条"><PlaylistTree key={library.libraryId} closeNavigation={() => setMenu(false)} /></ScrollArea>
     </aside>{menu && <button className="menu-scrim" aria-label="关闭导航遮罩" onClick={() => setMenu(false)} />}
-    <div className="app-main" inert={mobile && menu || panelOverlay}><main id="workspace-content" ref={contentRef} className="content with-overlay-scrollbar" key={library.libraryId}><Routes>
+    <div className="app-main" inert={mobile && menu || panelOverlay}><main id="workspace-content" tabIndex={-1} ref={contentRef} className="content with-overlay-scrollbar" key={library.libraryId}><Routes>
       <Route path="/" element={<Home />} /><Route path="/songs" element={<Navigate to="/search?type=songs" replace />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Settings logout={() => logout(false)} />} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
       <Route path="/recommendations" element={<Recommendations />} />
     </Routes></main><ContentScrollbar viewport={contentRef} scope={JSON.stringify([location.key, library.libraryId])} /></div>
