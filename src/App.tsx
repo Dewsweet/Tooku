@@ -4,6 +4,7 @@ import { Disc3, Mic2, Heart, Clock3, X, Sparkles } from 'lucide-react';
 import { Recommendations } from './features/recommendations/Recommendations';
 import { queryClient, useSession } from './state/session';
 import { panelWidthCss, usePreferences } from './state/preferences';
+import { normalizeBaseFontSize, useDisplayPreferences } from './state/display';
 import { player, usePlayer } from './features/player/engine';
 import { Login } from './pages/Login';
 import { AlbumDetail, Albums, ArtistDetail, Artists } from './pages/Library';
@@ -32,6 +33,8 @@ const navigation = [
   { to: '/recommendations', name: '为你推荐', icon: Sparkles },
 ];
 export default function App() {
+  const baseFontSize = useDisplayPreferences((s) => s.baseFontSize);
+  useEffect(() => { document.documentElement.style.setProperty('--ui-font-scale', String(normalizeBaseFontSize(baseFontSize) / 14)); }, [baseFontSize]);
   const api = useSession((s) => s.api); const notice = useSession((s) => s.notice); const prefs = usePreferences(); const navigate = useNavigate();
   const [queue, setQueue] = useState(false); const [lyrics, setLyrics] = useState(false); const [adding, setAdding] = useState<Track | null>(null); const [menu, setMenu] = useState(false);
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);

@@ -36,6 +36,7 @@ afterEach(() => {
   frames.splice(0).forEach((frame) => frame.remove());
   Reflect.deleteProperty(window, 'documentPictureInPicture');
   document.documentElement.style.removeProperty('--accent');
+  document.documentElement.style.removeProperty('--ui-font-scale');
   vi.restoreAllMocks();
 });
 function fakePip() {
@@ -91,6 +92,9 @@ it('shares bilingual lyrics and updates offset/settings without changing playbac
   expect(usePlayer.getState().currentId).toBe('first');
   act(() => document.documentElement.style.setProperty('--accent', '#123456'));
   await waitFor(() => expect(pip.document.documentElement.style.getPropertyValue('--accent')).toBe('#123456'));
+  expect(pip.document.querySelector('base')?.href).toBe(`${window.location.origin}/`);
+  act(() => document.documentElement.style.setProperty('--ui-font-scale', '1.2857'));
+  await waitFor(() => expect(pip.document.documentElement.style.getPropertyValue('--ui-font-scale')).toBe('1.2857'));
 });
 
 it('handles browser close, reopen, button close and unmount without stale state', async () => {

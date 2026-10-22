@@ -9,11 +9,12 @@ import { useSession } from '../../state/session';
 import { useLyrics } from '../lyrics/useLyrics';
 import { usePlayer } from './engine';
 import desktopLyricsCss from './desktop-lyrics.css?raw';
+import fontCss from '../../fonts.css?inline';
 
 interface DocumentPictureInPicture {
   requestWindow(options: { width: number; height: number }): Promise<Window>;
 }
-const themeTokens = ['--bg', '--surface', '--shell', '--text', '--muted', '--line', '--accent', '--soft'];
+const themeTokens = ['--bg', '--surface', '--shell', '--text', '--muted', '--line', '--accent', '--soft', '--ui-font-scale'];
 
 // Keep this view in the same React tree so lyrics, preferences and queries are shared.
 function DesktopLyricsContent({ track, target }: { track?: Track; target: Window }) {
@@ -82,9 +83,11 @@ function DesktopLyricsControl({ track }: { track?: Track }) {
       if (openedAt !== generation.current) { target.close(); return; }
       if (target.closed) return;
       const pip = target;
+      const base = pip.document.createElement('base');
+      base.href = `${window.location.origin}/`;
       const style = pip.document.createElement('style');
-      style.textContent = desktopLyricsCss;
-      pip.document.head.append(style);
+      style.textContent = `${fontCss}\n${desktopLyricsCss}`;
+      pip.document.head.append(base, style);
       const syncTheme = () => {
         const theme = getComputedStyle(document.documentElement);
         for (const token of themeTokens) pip.document.documentElement.style.setProperty(token, theme.getPropertyValue(token));

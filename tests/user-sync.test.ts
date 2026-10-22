@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MusicApi } from '../src/api/client';
 import { UserDataApi, UserDataError } from '../src/api/userData';
 import { usePreferences } from '../src/state/preferences';
+import { useDisplayPreferences } from '../src/state/display';
 import { orderKey, libraryItems, useLibrary } from '../src/state/library';
 import { useProfiles } from '../src/state/profile';
 import { useLyricsProfiles, updateLyricChoice } from '../src/state/lyrics';
@@ -37,8 +38,19 @@ beforeEach(() => {
     remote = { revision: revision + 1, updatedAt: Date.now(), data: structuredClone(data) }; return structuredClone(remote);
   });
 });
-afterEach(() => { disconnectUserSync(); api.dispose(); vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { disconnectUserSync(); api.dispose(); useDisplayPreferences.setState(useDisplayPreferences.getInitialState()); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('user data migration and sync', () => {
+  it('keeps browser text size outside account sync, imports and backups', async () => {
+    useDisplayPreferences.getState().setBaseFontSize(18);
+    await connectUserSync(api);
+    const data = structuredClone(localUserData()!);
+    await chooseUserData('local', data);
+    const backup = await exportUserBackup();
+    expect(JSON.stringify(backup)).not.toContain('baseFontSize');
+    expect(useDisplayPreferences.getState().baseFontSize).toBe(18);
+    disconnectUserSync();
+    expect(useDisplayPreferences.getState().baseFontSize).toBe(18);
+  });
   it('syncs recommendation preferences, excludes credentials from backups and restores legacy documents without touching playback', async () => {
     const attach = vi.spyOn(player, 'attach'); const before = usePlayer.getState();
     await connectUserSync(api); const legacy = structuredClone(localUserData()!);

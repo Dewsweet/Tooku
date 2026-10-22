@@ -315,6 +315,7 @@ it('shows missing configuration next to each check without sending requests', ()
   fireEvent.click(lastfm.getByRole('button'));
   expect(lastfm.getByRole('alert')).toHaveTextContent('请先填写 Last.fm API Key（不是 Shared secret）');
   expect(lastfm.getByRole('button')).toHaveAttribute('aria-busy', 'false');
+  expect(screen.getByRole('img', { name: 'Last.fm：检测失败' })).toHaveClass('status-light');
   fireEvent.click(screen.getByRole('button', { name: '检测 AI 模型' }));
   expect(within(screen.getByRole('group', { name: 'AI 模型 连接检测' })).getByRole('alert')).toHaveTextContent('请先填写模型服务地址、模型名称、API Key');
   expect(recommendationsApi.check).not.toHaveBeenCalled();
@@ -343,6 +344,35 @@ it('collapses optional platform credentials and preserves edits and checks when 
   expect(useRecommendationProfiles.getState().profiles[api.identity].settings.mode).toBe('algorithm');
 });
 
+it('starts Last.fm and AI expanded, retains status when collapsed and selects region codes', async () => {
+  useRecommendationProfiles.getState().apply(api.identity, { settings: { ...settings, appleStorefront: 'nz', spotifyMarket: 'NZ' } });
+  surface(<RecommendationSettings />);
+  const lastfmSummary = screen.getByText('Last.fm', { selector: 'summary' });
+  const aiSummary = screen.getByText('AI 模型', { selector: 'summary' });
+  expect(lastfmSummary.closest('details')).toHaveAttribute('open');
+  expect(aiSummary.closest('details')).toHaveAttribute('open');
+  expect(screen.queryByText('按近期收听查找相似歌曲。')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Last.fm API Key'), { target: { value: 'synthetic-lastfm-key' } });
+  fireEvent.click(screen.getByRole('button', { name: '检测 Last.fm' }));
+  await screen.findByText('Last.fm · 连接成功');
+  fireEvent.click(lastfmSummary);
+  expect(screen.getByRole('img', { name: 'Last.fm：可用' })).toBeVisible();
+  expect(screen.getByText('Last.fm · 连接成功')).not.toBeVisible();
+  fireEvent.click(lastfmSummary);
+  fireEvent.change(screen.getByLabelText('Last.fm API Key'), { target: { value: 'synthetic-replacement-key' } });
+  expect(screen.getByRole('img', { name: 'Last.fm：未检测' })).toBeVisible();
+  fireEvent.click(screen.getByText('Apple Music', { selector: 'summary' }));
+  const storefront = screen.getByRole('combobox', { name: '商店地区' });
+  expect(storefront).toHaveTextContent('当前地区 · NZ');
+  fireEvent.click(storefront); fireEvent.click(screen.getByRole('option', { name: '日本 · JP' }));
+  fireEvent.click(screen.getByText('Spotify', { selector: 'summary' }));
+  const market = screen.getByRole('combobox', { name: '市场地区' });
+  expect(market).toHaveTextContent('当前地区 · NZ');
+  fireEvent.click(market); fireEvent.click(screen.getByRole('option', { name: '中国台湾 · TW' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存推荐设置' }));
+  expect(useRecommendationProfiles.getState().profiles[api.identity].settings).toMatchObject({ appleStorefront: 'jp', spotifyMarket: 'TW' });
+});
+
 it('keeps per-service progress and results visible until related settings change', async () => {
   let resolve!: (value: string) => void;
   vi.mocked(recommendationsApi.check).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
@@ -351,6 +381,7 @@ it('keeps per-service progress and results visible until related settings change
   const lastfm = within(screen.getByRole('group', { name: 'Last.fm 连接检测' }));
   fireEvent.click(lastfm.getByRole('button'));
   expect(lastfm.getByRole('status')).toHaveTextContent('正在检测');
+  expect(screen.getByRole('img', { name: 'Last.fm：检测中' })).toHaveClass('status-light');
   expect(lastfm.getByRole('button')).toBeDisabled();
   expect(screen.getByRole('button', { name: '检测 AI 模型' })).toBeEnabled();
   await act(async () => resolve('连接成功'));

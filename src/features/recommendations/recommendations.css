@@ -1,34 +1,34 @@
-.recommendation-status { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 10px 0; }
+.recommendation-status { color: var(--muted); font-size:calc(13px * var(--ui-font-scale, 1)); line-height: 1.7; margin: 10px 0; }
 .recommendations-page { min-width: 0; }
 .recommendation-page-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; margin-bottom: 28px; }
-.recommendation-page-heading h1 { margin: 0 0 9px; font-size: 34px; letter-spacing: -1px; }
-.recommendation-page-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.recommendation-page-heading h1 { margin: 0 0 9px; font-size:calc(34px * var(--ui-font-scale, 1)); letter-spacing: -1px; }
+.recommendation-page-heading p { margin: 0; color: var(--muted); font-size:calc(13px * var(--ui-font-scale, 1)); }
 .recommendation-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .recommendation-actions > .text-button { color: var(--muted); margin-right: 6px; }
 .recommendation-actions .styled-select { min-width: 96px; }
 .recommendation-actions .primary-button { white-space: nowrap; }
 .recommendation-table-wrap { min-width: 0; container-type: inline-size; }
-.recommendation-table { display: block; width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 13px; }
+.recommendation-table { display: block; width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; font-size:calc(13px * var(--ui-font-scale, 1)); }
 .recommendation-table thead, .recommendation-table tbody { display: block; }
 .recommendation-table tr { display: grid; grid-template-columns: 42px minmax(90px, var(--track-title-width)) minmax(75px, var(--track-artist-width)) minmax(85px, var(--track-album-width)) 110px minmax(48px, var(--track-time-width)); }
-.recommendation-table th { min-width: 0; align-content: center; text-align: left; color: var(--muted); font-size: 12px; font-weight: 400; height: 42px; border-bottom: 1px solid var(--line); padding: 0 12px; }
+.recommendation-table th { min-width: 0; align-content: center; text-align: left; color: var(--muted); font-size:calc(12px * var(--ui-font-scale, 1)); font-weight: 400; height: 42px; border-bottom: 1px solid var(--line); padding: 0 12px; }
 .recommendation-table td { min-width: 0; align-content: center; padding: 7px 12px; height: 62px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recommendation-table .recommendation-position { text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; padding-left: 8px; }
+.recommendation-table .recommendation-position { text-align: center; font-size:calc(12px * var(--ui-font-scale, 1)); font-variant-numeric: tabular-nums; padding-left: 8px; }
 .recommendation-table .recommendation-time-column { text-align: right; padding-right: 8px; font-variant-numeric: tabular-nums; }
 .recommendation-table tbody tr { cursor: pointer; }
 .recommendation-table tbody tr:hover, .recommendation-table tbody tr:focus-within { background: var(--surface); }
 .recommendation-table tbody td:first-child { border-radius: 6px 0 0 6px; }
 .recommendation-table tbody td:last-child { border-radius: 0 6px 6px 0; }
-.recommendation-song-trigger { display: block; width: 100%; min-width: 0; min-height: 36px; text-align: left; padding: 4px 0; background: transparent; color: var(--text); font-size: 14px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recommendation-mobile-artist { display: none; color: var(--muted); font-size: 12px; }
-.recommendation-table .track-duration { font-size: 12px; margin: 0; }
+.recommendation-song-trigger { display: block; width: 100%; min-width: 0; min-height: 36px; text-align: left; padding: 4px 0; background: transparent; color: var(--text); font-size:calc(14px * var(--ui-font-scale, 1)); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recommendation-mobile-artist { display: none; color: var(--muted); font-size:calc(12px * var(--ui-font-scale, 1)); }
+.recommendation-table .track-duration { font-size:calc(12px * var(--ui-font-scale, 1)); margin: 0; }
 @container (max-width: 1000px) { .recommendation-table .recommendation-date-column { display: none; } .recommendation-table tr { grid-template-columns: 42px minmax(90px, var(--track-title-width)) minmax(75px, var(--track-artist-width)) minmax(85px, var(--track-album-width)) minmax(48px, var(--track-time-width)); } }
 @container (max-width: 620px) { .recommendation-table .recommendation-album-column { display: none; } .recommendation-table tr { grid-template-columns: 42px minmax(90px, var(--track-title-width)) minmax(75px, var(--track-artist-width)) minmax(48px, var(--track-time-width)); } }
 @container (max-width: 420px) { .recommendation-table .recommendation-artist-column { display: none; } .recommendation-table tr { grid-template-columns: 32px minmax(0, var(--track-title-width)) minmax(48px, var(--track-time-width)); } .recommendation-mobile-artist { display: block; overflow: hidden; text-overflow: ellipsis; } }
 .recommendation-sources { padding: 18px 20px; margin-bottom: 20px; border-radius: 12px; background: var(--surface); }
-.recommendation-sources > p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.recommendation-sources > p { margin: 0 0 14px; color: var(--muted); font-size:calc(12px * var(--ui-font-scale, 1)); line-height: 1.7; }
 .recommendation-sources ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 22px; list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; }
-.recommendation-sources li { min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.recommendation-sources li { min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size:calc(12px * var(--ui-font-scale, 1)); }
 .recommendation-sources strong { font-weight: 500; overflow-wrap: anywhere; }
 .recommendation-sources li > span { color: var(--muted); overflow-wrap: anywhere; }
 .recommendation-notices { margin-bottom: 20px; padding-left: 14px; border-left: 2px solid var(--line); }
@@ -36,20 +36,20 @@
 .home-recommendation-feature { display: flex; align-items: center; gap: 24px; padding: 28px; border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line)); border-radius: 13px; background: linear-gradient(110deg, var(--soft), var(--bg) 80%); }
 .home-recommendation-mark { display: grid; place-items: center; width: 88px; height: 88px; flex-shrink: 0; border-radius: 50%; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
 .home-recommendation-copy { min-width: 0; flex: 1; }
-.home-recommendation-copy h2 { margin: 0 0 9px; font-size: 23px; letter-spacing: -.6px; }
-.home-recommendation-copy p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.8; }
-.home-recommendation-copy > span { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
-.home-recommendation-action { display: flex; align-items: center; gap: 8px; color: var(--accent); margin-left: auto; font-size: 13px; white-space: nowrap; }
+.home-recommendation-copy h2 { margin: 0 0 9px; font-size:calc(23px * var(--ui-font-scale, 1)); letter-spacing: -.6px; }
+.home-recommendation-copy p { margin: 0; color: var(--text); font-size:calc(13px * var(--ui-font-scale, 1)); line-height: 1.8; }
+.home-recommendation-copy > span { display: block; color: var(--muted); font-size:calc(12px * var(--ui-font-scale, 1)); margin-top: 5px; }
+.home-recommendation-action { display: flex; align-items: center; gap: 8px; color: var(--accent); margin-left: auto; font-size:calc(13px * var(--ui-font-scale, 1)); white-space: nowrap; }
 .home-recommendation-feature:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 @container (max-width: 620px) {
   .home-recommendation-feature { display: grid; grid-template-columns: 56px minmax(0, 1fr); padding: 20px; gap: 16px; }
   .home-recommendation-mark { width: 56px; height: 56px; }
   .home-recommendation-mark svg { width: 28px; }
-  .home-recommendation-copy h2 { font-size: 20px; }
+  .home-recommendation-copy h2 { font-size:calc(20px * var(--ui-font-scale, 1)); }
   .home-recommendation-action { grid-column: 2; margin-left: 0; }
 }
 @media (max-width: 767px) {
-  .recommendation-page-heading h1 { font-size: 29px; }
+  .recommendation-page-heading h1 { font-size:calc(29px * var(--ui-font-scale, 1)); }
   .recommendation-actions { width: 100%; }
   .recommendation-actions .primary-button { flex: 1; justify-content: center; }
 }

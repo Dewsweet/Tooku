@@ -10,6 +10,7 @@ import { Settings } from '../src/pages/Settings';
 import { useSession } from '../src/state/session';
 import { useLibrary } from '../src/state/library';
 import { usePreferences } from '../src/state/preferences';
+import { useDisplayPreferences } from '../src/state/display';
 import { useRecommendationProfiles, useRecommendationSecrets } from '../src/state/recommendations';
 import { player, usePlayer } from '../src/features/player/engine';
 
@@ -21,6 +22,7 @@ beforeEach(() => {
   useSession.getState().setSession(api);
   useLibrary.setState({ profiles: {} });
   usePreferences.setState(usePreferences.getInitialState());
+  useDisplayPreferences.setState(useDisplayPreferences.getInitialState());
   useRecommendationProfiles.setState({ profiles: {} });
   usePlayer.setState({ ...usePlayer.getInitialState(), position: 23 });
   vi.spyOn(api, 'libraries').mockResolvedValue([{ id: 'music', name: '测试音乐库' }]);
@@ -32,6 +34,7 @@ afterEach(() => {
   useSession.getState().setSession(null);
   usePlayer.setState(usePlayer.getInitialState());
   usePreferences.setState(usePreferences.getInitialState());
+  useDisplayPreferences.setState(useDisplayPreferences.getInitialState());
   vi.restoreAllMocks();
 });
 function surface() {
@@ -61,7 +64,14 @@ it('supports keyboard category navigation and keeps hidden settings out of the f
 it('applies custom colors without persisting incomplete values and restores the default', async () => {
   const nav = surface();
   fireEvent.click(nav.getByRole('button', { name: '外观' }));
+  const scheme = screen.getByRole('combobox', { name: '主题色方案' });
+  expect(scheme).toHaveTextContent('默认 · 莓红');
+  expect(screen.queryByRole('textbox', { name: '主题色值' })).not.toBeInTheDocument();
+  fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '海蓝' }));
+  expect(usePreferences.getState().accent).toBe('#3365c4');
+  fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '自定义' }));
   const hex = screen.getByRole('textbox', { name: '主题色值' });
+  expect(hex.parentElement).toBe(screen.getByLabelText('选择主题色').parentElement);
   fireEvent.change(screen.getByLabelText('选择主题色'), { target: { value: '#123456' } });
   expect(hex).toHaveValue('#123456');
   expect(usePreferences.getState().accent).toBe('#123456');
@@ -74,9 +84,21 @@ it('applies custom colors without persisting incomplete values and restores the 
   expect(usePreferences.getState().accent).toBe('#aa88ff');
   act(() => usePreferences.getState().update({ accent: '#334455' }));
   expect(hex).toHaveValue('#334455');
-  fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
+  fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '默认 · 莓红' }));
   expect(usePreferences.getState().accent).toBe(usePreferences.getInitialState().accent);
-  await waitFor(() => expect(hex).toHaveAttribute('aria-invalid', 'false'));
+  expect(screen.queryByRole('textbox', { name: '主题色值' })).not.toBeInTheDocument();
+});
+
+it('keeps text size in browser display preferences without changing lyrics or account appearance', () => {
+  const nav = surface(); const initial = usePreferences.getState();
+  fireEvent.click(nav.getByRole('button', { name: '外观' }));
+  fireEvent.click(screen.getByRole('combobox', { name: '基础字号' }));
+  fireEvent.click(screen.getByRole('option', { name: '大 · 16 px' }));
+  expect(useDisplayPreferences.getState().baseFontSize).toBe(16);
+  expect(localStorage.getItem('tooku-display')).toContain('"baseFontSize":16');
+  expect(usePreferences.getState()).toBe(initial);
+  act(() => useDisplayPreferences.getState().setBaseFontSize(100));
+  expect(useDisplayPreferences.getState().baseFontSize).toBe(14);
 });
 
 it('shows available, failed and stale lyric observations as labelled status lights', async () => {
