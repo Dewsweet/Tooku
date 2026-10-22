@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
+    "dev:lan": "node scripts/dev-server.mjs --lan",
     "start": "node server/index.ts",
     "backup": "node server/backup.ts",
     "build": "tsc -b && vite build",

@@ -1,5 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 import { startOnAvailablePort } from '../scripts/port-selection.mjs';
+import { canReuseListener, lanOrigins } from '../scripts/network-listener.mjs';
+
+describe('LAN startup', () => {
+  it('requires a restart instead of reusing a loopback-only service for LAN access', () => {
+    expect(canReuseListener(undefined, '0.0.0.0')).toBe(false);
+    expect(canReuseListener('127.0.0.1', '0.0.0.0')).toBe(false);
+    expect(canReuseListener('0.0.0.0', '0.0.0.0')).toBe(true);
+  });
+  it('preserves normal reuse of an existing local or LAN service', () => {
+    expect(canReuseListener(undefined, '127.0.0.1')).toBe(true);
+    expect(canReuseListener('127.0.0.1', '127.0.0.1')).toBe(true);
+    expect(canReuseListener('0.0.0.0', '127.0.0.1')).toBe(true);
+  });
+  it('prints unique external IPv4 addresses with the actual fallback port', () => {
+    const address = { address: '192.168.194.81', family: 'IPv4', internal: false };
+    expect(lanOrigins(18734, {
+      loopback: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+      wifi: [address, { address: 'fe80::1', family: 'IPv6', internal: false }],
+      duplicate: [address], disconnected: undefined,
+    })).toEqual(['http://192.168.194.81:18734']);
+    expect(lanOrigins(18733, {})).toEqual([]);
+  });
+});
 
 describe('Windows startup port recovery', () => {
   it('closes the failed listener and falls back after Windows EACCES', async () => {

@@ -17,5 +17,5 @@ if not exist "node_modules\vite\bin\vite.js" (
 )
 echo Tooku will select an available local port and open the browser.
 echo Keep this window open. Press Ctrl+C to stop Tooku.
-call node scripts/dev-server.mjs --open
+call node scripts/dev-server.mjs --open %*
 if errorlevel 1 pause

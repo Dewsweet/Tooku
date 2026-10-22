@@ -3,11 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { startOnAvailablePort } from './port-selection.mjs';
+import { canReuseListener, lanOrigins } from './network-listener.mjs';
 import { spawn } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateFile = path.join(root, '.local', 'server.json');
 const open = process.argv.includes('--open');
+const host = process.argv.includes('--lan') ? '0.0.0.0' : '127.0.0.1';
 const [major] = process.versions.node.split('.').map(Number);
 if (major < 24) {
   console.error('Tooku requires Node.js 24 or newer.'); process.exit(1);
@@ -22,6 +24,9 @@ async function running(origin) {
   } catch { return false; }
 }
 let previous;
+function printLanUrls(port) {
+  for (const address of lanOrigins(port)) console.log(`  LAN: ${address}`);
+}
 function openUrl(origin) {
   const safe = new URL(origin).origin;
   const command = process.platform === 'win32' ? ['cmd.exe', ['/d', '/c', `start "" "${safe}"`]] : process.platform === 'darwin' ? ['open', [safe]] : ['xdg-open', [safe]];
@@ -30,7 +35,12 @@ function openUrl(origin) {
 }
 try { previous = JSON.parse(await readFile(stateFile, 'utf8')); } catch { /* first run or stale state */ }
 if (previous?.origin && await running(previous.origin)) {
+  if (!canReuseListener(previous.host, host)) {
+    console.error(`Tooku is already running locally: ${previous.origin}\nStop it with Ctrl+C in its original terminal, then run npm.cmd run dev:lan. The running service has been left unchanged.`);
+    process.exit(1);
+  }
   console.log(`\nTooku is already running: ${previous.origin}\n`);
+  if (previous.host === '0.0.0.0') printLanUrls(new URL(previous.origin).port);
   if (open) openUrl(previous.origin);
   process.exit(0);
 }
@@ -41,13 +51,14 @@ if (!Number.isInteger(preferred) || preferred < 1024 || preferred > 65535) {
 }
 const candidates = [...new Set([preferred, ...Array.from({ length: 10 }, (_, i) => 18733 + i)])];
 const server = await startOnAvailablePort(candidates,
-  (port) => createServer({ root, clearScreen: false, server: { host: '127.0.0.1', port, strictPort: true, open: false } }),
+  (port) => createServer({ root, clearScreen: false, server: { host, port, strictPort: true, open: false } }),
   (port) => console.warn(`Port ${port} is reserved or occupied; trying another port.`));
 const origin = `http://127.0.0.1:${server.config.server.port}`;
 await mkdir(path.dirname(stateFile), { recursive: true });
-await writeFile(stateFile, JSON.stringify({ pid: process.pid, origin, startedAt: new Date().toISOString() }, null, 2));
+await writeFile(stateFile, JSON.stringify({ pid: process.pid, origin, host, startedAt: new Date().toISOString() }, null, 2));
 await writeFile(path.join(root, '.local', 'server-url.txt'), origin + '\n');
 console.log(`\n  Tooku is ready: ${origin}\n  Keep this process running. Ctrl+C stops Tooku.\n`);
+if (host === '0.0.0.0') printLanUrls(server.config.server.port);
 if (open) openUrl(origin);
 let closing = false;
 async function stop() {
