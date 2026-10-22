@@ -27,7 +27,8 @@ export function Login() {
     <main className="login-main">
       <div className="login-copy">
         <div className="login-art" aria-hidden="true"><TookuMark /></div>
-        <h1>好音乐，<br />传向远方。</h1>
+        <h1>让音乐，<br />陪你去远方。</h1>
+        <p className="login-description">Navidrome 第三方音乐播放器</p>
       </div>
       <section className="login-card" aria-labelledby="login-heading">
         <h2 id="login-heading">登录音乐库</h2>

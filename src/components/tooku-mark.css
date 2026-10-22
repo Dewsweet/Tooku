@@ -3,6 +3,6 @@
   flex-shrink: 0;
   width: 1em;
   height: 1em;
-  background: currentColor;
-  mask: url('/tooku.svg') center / contain no-repeat;
+  object-fit: contain;
+  vertical-align: middle;
 }

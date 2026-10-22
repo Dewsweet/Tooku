@@ -50,7 +50,7 @@ export default function App() {
   const location = useLocation(); const contentRef = useRef<HTMLElement>(null);
   useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; setPanelOverlay(false); setMenu(false); }, [location.pathname, location.search, library.libraryId]);
   useEffect(() => { if (api && !player.connectedTo(api)) void player.attach(api); }, [api]);
-  useEffect(() => { document.documentElement.dataset.theme = prefs.theme; document.documentElement.style.setProperty('--accent-base', /^#[0-9a-f]{6}$/i.test(prefs.accent ?? '') ? prefs.accent : '#c83e55'); document.documentElement.dataset.motion = prefs.reducedMotion ? 'reduced' : 'full'; }, [prefs.theme, prefs.accent, prefs.reducedMotion]);
+  useEffect(() => { document.documentElement.dataset.theme = api ? prefs.theme : 'light'; document.documentElement.style.setProperty('--accent-base', /^#[0-9a-f]{6}$/i.test(prefs.accent ?? '') ? prefs.accent : '#c83e55'); document.documentElement.dataset.motion = prefs.reducedMotion ? 'reduced' : 'full'; }, [api, prefs.theme, prefs.accent, prefs.reducedMotion]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => useSession.getState().notify(''), 9000); return () => clearTimeout(timer); }, [notice]);
   const logout = (clear = true) => {
     if (!api) return;

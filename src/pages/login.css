@@ -1,4 +1,5 @@
 .login-page {
+  color-scheme: light;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -19,7 +20,7 @@
   letter-spacing: -1px;
   border-radius: 8px;
 }
-.login-brand .tooku-mark { width: 42px; height: 42px; color: var(--accent); }
+.login-brand .tooku-mark { width: 42px; height: 42px; }
 .login-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
@@ -36,7 +37,6 @@
   width: 208px;
   height: 208px;
   margin: 0 0 28px -8px;
-  color: var(--accent);
 }
 .login-art .tooku-mark { width: 100%; height: 100%; }
 .login-copy h1 {
@@ -45,6 +45,11 @@
   font-weight: 650;
   letter-spacing: -.055em;
   margin: 0;
+}
+.login-description {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: calc(16px * var(--ui-font-scale, 1));
 }
 .login-card {
   min-width: 0;
