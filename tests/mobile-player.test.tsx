@@ -34,6 +34,7 @@ afterEach(() => {
   usePreferences.setState(usePreferences.getInitialState()); useLyricsProfiles.setState({ profiles: {}, refreshes: {} });
   delete document.documentElement.dataset.motion;
   for (const [prototype, property] of [[HTMLDialogElement.prototype, 'showModal'], [HTMLDialogElement.prototype, 'close'], [HTMLElement.prototype, 'scrollTo']] as const) Reflect.deleteProperty(prototype, property);
+  Reflect.deleteProperty(HTMLElement.prototype, 'animate');
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
 });
 async function setup(close = vi.fn()) {
@@ -54,7 +55,45 @@ function touch(target: Element, type: 'touchstart' | 'touchmove' | 'touchend' | 
   Object.assign(event, { touches: type === 'touchstart' || type === 'touchmove' ? [point] : [], changedTouches: [point] }); fireEvent(target, event); return event;
 }
 function swipe(target: Element, from: number, to: number, elapsed = 100) { touch(target, 'touchstart', from); touch(target, 'touchmove', to, 300, elapsed); touch(target, 'touchend', to, 300, 10); }
-const offset = (body: HTMLElement) => -Number.parseFloat(body.style.getPropertyValue('--player-page-x')) || 0;
+const offset = (body: HTMLElement) => -Number.parseFloat(body.querySelector<HTMLElement>('.room-pages-track')!.style.transform.slice('translate3d('.length)) || 0;
+function nativeAnimations() {
+  type Release = { onfinish: (() => void) | null; cancel: ReturnType<typeof vi.fn> };
+  const runs: Release[] = [];
+  const animate = vi.fn<(frames: Keyframe[], options: KeyframeAnimationOptions) => Release>(() => { const run: Release = { onfinish: null, cancel: vi.fn() }; runs.push(run); return run; });
+  Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+  return { animate, runs };
+}
+
+it('uses a native transform release without scheduling JavaScript animation frames or inherited variables', async () => {
+  const { body, cover } = await setup();
+  act(() => { usePlayer.setState({ status: 'paused' }); usePreferences.setState({ reducedMotion: false }); });
+  const { animate, runs } = nativeAnimations(); const raf = vi.spyOn(window, 'requestAnimationFrame');
+  swipe(cover, 300, 200);
+  expect(animate).toHaveBeenCalledWith([{ transform: 'translate3d(-100px, 0, 0)' }, { transform: 'translate3d(-390px, 0, 0)' }], { duration: 160, easing: 'cubic-bezier(.25,.46,.45,.94)', fill: 'both' });
+  expect(raf).not.toHaveBeenCalled(); expect(body.style.length).toBe(0); expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  act(() => runs[0].onfinish?.());
+  expect(offset(body)).toBe(390); expect(body).toHaveAttribute('data-mobile-page', 'lyrics'); expect(body).not.toHaveAttribute('data-paging'); expect(runs[0].cancel).toHaveBeenCalledOnce();
+});
+it('freezes an interrupted native release at its visible position and ignores its stale completion', async () => {
+  const { body, cover } = await setup();
+  act(() => { usePlayer.setState({ status: 'paused' }); usePreferences.setState({ reducedMotion: false }); });
+  const { runs } = nativeAnimations(); swipe(cover, 300, 200); const stale = runs[0].onfinish;
+  const track = body.querySelector('.room-pages-track')!; const getStyle = window.getComputedStyle.bind(window);
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => { const style = getStyle(element, pseudo); if (element === track) Object.defineProperty(style, 'transform', { configurable: true, value: 'matrix(1, 0, 0, 1, -220, 0)' }); return style; });
+  touch(cover, 'touchstart', 300); expect(offset(body)).toBe(220); expect(runs[0].cancel).toHaveBeenCalledOnce();
+  touch(cover, 'touchmove', 320); touch(cover, 'touchend', 320);
+  act(() => stale?.()); expect(offset(body)).toBe(200); expect(body).toHaveAttribute('data-mobile-page', 'controls');
+  act(() => runs[1].onfinish?.()); expect(offset(body)).toBe(390); expect(body).toHaveAttribute('data-mobile-page', 'lyrics');
+});
+it('cancels native releases when changing breakpoints and keeps reduced-motion switching immediate', async () => {
+  const { body, cover } = await setup();
+  act(() => { usePlayer.setState({ status: 'paused' }); usePreferences.setState({ reducedMotion: false }); });
+  const { runs, animate } = nativeAnimations(); swipe(cover, 300, 200);
+  act(() => { mobile = false; listeners.forEach((listener) => listener()); });
+  expect(runs[0].cancel).toHaveBeenCalledOnce(); expect(body.querySelector<HTMLElement>('.room-pages-track')!.style.transform).toBe('');
+  act(() => { mobile = true; listeners.forEach((listener) => listener()); usePreferences.setState({ reducedMotion: true }); });
+  fireEvent.keyDown(body, { key: 'ArrowRight' }); expect(offset(body)).toBe(390); expect(animate).toHaveBeenCalledOnce(); expect(usePlayer.getState().position).toBe(11);
+});
 
 it('moves a single track without native horizontal scroll, retaining the lyrics reader and playback', async () => {
   const { body, cover, close } = await setup(); const reader = body.querySelector<HTMLElement>('.room-lyrics-lines')!;
@@ -141,7 +180,7 @@ it('retains the reader across desktop breakpoints and ignores the nested setting
   const { body, cover } = await setup(); const reader = body.querySelector('.room-lyrics-lines');
   pointer(cover, 'pointerdown', 300); pointer(cover, 'pointermove', 200);
   act(() => { mobile = false; listeners.forEach((listener) => listener()); }); pointer(cover, 'pointerup', 200);
-  expect(body).not.toHaveAttribute('data-mobile-page'); expect(body.style.getPropertyValue('--player-page-x')).toBe(''); expect(body.querySelector('.room-content')).not.toHaveAttribute('inert');
+  expect(body).not.toHaveAttribute('data-mobile-page'); expect(body.querySelector<HTMLElement>('.room-pages-track')!.style.transform).toBe(''); expect(body.querySelector('.room-content')).not.toHaveAttribute('inert');
   act(() => { mobile = true; listeners.forEach((listener) => listener()); });
   fireEvent.click(screen.getByRole('button', { name: '歌词设置' })); const header = screen.getByRole('dialog', { name: '歌词设置' }).querySelector('header')!;
   swipe(header, 300, 100); fireEvent.keyDown(header, { key: 'ArrowRight' }); expect(offset(body)).toBe(0);

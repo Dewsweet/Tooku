@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { mobileLayoutQuery, useMediaQuery } from '../../components/useMediaQuery';
 import { useReducedMotion } from './playback-hooks';
 import './player-pages.css';
@@ -15,18 +15,29 @@ const pageAt = (value: number, width: number): Page => value >= width / 2 ? 'lyr
 export function PlayerPages({ controls, lyrics }: { controls: ReactNode; lyrics: ReactNode }) {
   const mobile = useMediaQuery(mobileLayoutQuery); const reduced = useReducedMotion();
   const [page, setPage] = useState<Page>('controls');
-  const body = useRef<HTMLDivElement>(null); const record = useRef<HTMLElement>(null); const reader = useRef<HTMLElement>(null);
+  const body = useRef<HTMLDivElement>(null); const track = useRef<HTMLDivElement>(null); const record = useRef<HTMLElement>(null); const reader = useRef<HTMLElement>(null);
   const active = useRef<Page>('controls'); const target = useRef<Page | null>(null); const previousPage = useRef(page);
   const width = useRef(0); const position = useRef(0); const frame = useRef<number | undefined>(undefined);
+  const animation = useRef<Animation | null>(null);
   const gesture = useRef<Gesture | null>(null); const suppressClick = useRef(false);
-  const paint = (value: number) => {
+  const paint = useCallback((value: number) => {
     position.current = clamp(value, width.current);
-    body.current?.style.setProperty('--player-page-x', `${-position.current}px`);
-  };
-  const stopAnimation = () => {
+    if (track.current) track.current.style.transform = `translate3d(${-position.current}px, 0, 0)`;
+  }, []);
+  const stopAnimation = useCallback(() => {
+    const running = animation.current;
+    if (running) {
+      // Freeze the visible compositor position only when interrupted, not on every frame.
+      if (track.current?.isConnected) {
+        const matrix = getComputedStyle(track.current).transform.match(/^matrix(3d)?\((.+)\)$/);
+        const x = matrix ? Number(matrix[2].split(',')[matrix[1] ? 12 : 4]) : NaN;
+        if (Number.isFinite(x)) paint(-x);
+      }
+      animation.current = null; running.onfinish = null; running.cancel();
+    }
     if (frame.current !== undefined) cancelAnimationFrame(frame.current);
     frame.current = undefined; target.current = null; body.current?.removeAttribute('data-paging');
-  };
+  }, [paint]);
   const reset = () => {
     const current = gesture.current; gesture.current = null; body.current?.removeAttribute('data-dragging');
     if (current?.kind === 'mouse' && current.pointer.hasPointerCapture?.(current.id)) current.pointer.releasePointerCapture(current.id);
@@ -38,6 +49,22 @@ export function PlayerPages({ controls, lyrics }: { controls: ReactNode; lyrics:
     const start = position.current; const distance = left - start;
     if (reduced || Math.abs(distance) < .5) { paint(left); commit(next); return; }
     target.current = next; body.current?.setAttribute('data-paging', 'true');
+    const element = track.current;
+    if (element && typeof element.animate === 'function') {
+      try {
+        const running = element.animate([{ transform: `translate3d(${-start}px, 0, 0)` }, { transform: `translate3d(${-left}px, 0, 0)` }], { duration: 160, easing: 'cubic-bezier(.25,.46,.45,.94)', fill: 'both' });
+        animation.current = running;
+        running.onfinish = () => {
+          if (animation.current !== running) return;
+          animation.current = null; paint(left); running.onfinish = null; running.cancel();
+          target.current = null; body.current?.removeAttribute('data-paging'); commit(next);
+        };
+        return;
+      } catch {
+        const failed = animation.current; animation.current = null; failed?.cancel();
+        // Older WebViews keep the same bounded rAF fallback.
+      }
+    }
     const began = performance.now();
     const tick = (now: number) => {
       const progress = Math.min(1, Math.max(0, (now - began) / 160));
@@ -97,23 +124,23 @@ export function PlayerPages({ controls, lyrics }: { controls: ReactNode; lyrics:
     const root = body.current;
     const resize = () => {
       if (!root?.dataset.mobilePage || !root.clientWidth || root.clientWidth === width.current) return;
-      const next = pageAt(position.current, width.current);
-      stopAnimation(); reset(); width.current = root.clientWidth; paint(next === 'lyrics' ? width.current : 0); commit(next);
+      stopAnimation(); const next = pageAt(position.current, width.current);
+      reset(); width.current = root.clientWidth; paint(next === 'lyrics' ? width.current : 0); commit(next);
     };
     const blur = () => { if (root?.dataset.mobilePage) { stopAnimation(); reset(); paint(active.current === 'lyrics' ? width.current : 0); } };
     window.addEventListener('resize', resize); window.addEventListener('blur', blur);
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
     if (root) observer?.observe(root);
     return () => { stopAnimation(); reset(); observer?.disconnect(); window.removeEventListener('resize', resize); window.removeEventListener('blur', blur); };
-  }, []);
+  }, [paint, stopAnimation]);
   useLayoutEffect(() => {
     const next = mobile ? target.current ?? active.current : 'controls';
     stopAnimation(); reset(); suppressClick.current = false;
     width.current = body.current?.clientWidth || window.innerWidth;
     if (mobile) paint(next === 'lyrics' ? width.current : 0);
-    else body.current?.style.removeProperty('--player-page-x');
+    else track.current?.style.removeProperty('transform');
     commit(next);
-  }, [mobile, reduced]);
+  }, [mobile, reduced, paint, stopAnimation]);
   useLayoutEffect(() => {
     if (previousPage.current === page) return;
     previousPage.current = page;
@@ -145,7 +172,7 @@ export function PlayerPages({ controls, lyrics }: { controls: ReactNode; lyrics:
     onPointerCancel={(event) => { const current = gesture.current; if (current?.kind === 'mouse' && current.id === event.pointerId) finish(true); }}
     onLostPointerCapture={() => { if (gesture.current?.kind === 'mouse') finish(true); }}
     onClickCapture={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; event.preventDefault(); event.stopPropagation(); } }}>
-    <div className="room-pages-track">
+    <div ref={track} className="room-pages-track">
       <section ref={record} className="room-record" aria-label="当前歌曲" tabIndex={-1} inert={mobile && page !== 'controls'} aria-hidden={mobile && page !== 'controls' || undefined}>{controls}</section>
       <section ref={reader} className="room-content" aria-label="歌词" tabIndex={-1} inert={mobile && page !== 'lyrics'} aria-hidden={mobile && page !== 'lyrics' || undefined}>{lyrics}</section>
     </div>
