@@ -17,7 +17,7 @@ import { NetworkLyricsSettings } from '../features/settings/NetworkLyricsSetting
 import { RecommendationSettings } from '../features/settings/RecommendationSettings';
 import { SettingsSection } from '../features/settings/SettingsSection';
 import { AccentColorControl } from '../features/settings/AccentColorControl';
-import { baseFontSizes, useDisplayPreferences } from '../state/display';
+import { baseFontSizes, fontFamilies, useDisplayPreferences } from '../state/display';
 
 const categories = [
   { id: 'account', name: '账户与音乐库', icon: UserRound },
@@ -34,6 +34,7 @@ export function Settings({ logout }: { logout: () => void }) {
   const version = useSession((s) => s.version);
   const prefs = usePreferences();
   const baseFontSize = useDisplayPreferences((s) => s.baseFontSize);
+  const fontFamily = useDisplayPreferences((s) => s.fontFamily);
   const mode = usePlayer((s) => s.mode);
   const library = useMusicLibrary();
   const navigate = useNavigate();
@@ -92,7 +93,7 @@ export function Settings({ logout }: { logout: () => void }) {
               <button aria-pressed={prefs.theme === 'dark'} onClick={() => prefs.update({ theme: 'dark' })}><Moon size={18} />深色</button>
             </div></div>
             <AccentColorControl />
-            <div className="setting-row"><strong>界面字体</strong><span className="setting-value">思源黑体</span></div>
+            <div className="setting-row"><strong>界面字体</strong><Select aria-label="界面字体" value={fontFamily} onChange={(value) => useDisplayPreferences.getState().setFontFamily(value)}>{fontFamilies.map((font) => <option key={font.id} value={font.id}>{font.name}</option>)}</Select></div>
             <div className="setting-row"><span className="setting-copy"><strong>基础字号</strong><span className="setting-description">仅在此浏览器生效，歌词字号单独设置。</span></span><Select aria-label="基础字号" value={baseFontSize} onChange={(value) => useDisplayPreferences.getState().setBaseFontSize(Number(value))}>{baseFontSizes.map((size) => <option key={size} value={size}>{size === 14 ? '标准' : size < 14 ? '小' : size === 16 ? '大' : '更大'} · {size} px</option>)}</Select></div>
             <label className="setting-row"><span className="setting-copy"><strong>减少动态效果</strong><span className="setting-description">减少界面过渡与文字滚动。</span></span><input aria-label="减少动态效果" className="settings-switch" type="checkbox" role="switch" checked={prefs.reducedMotion} onChange={(e) => prefs.update({ reducedMotion: e.target.checked })} /></label>
           </SettingsSection>

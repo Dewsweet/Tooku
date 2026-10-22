@@ -13,13 +13,8 @@ type CheckTarget = 'lastfm' | 'ai' | 'apple' | 'spotify';
 type CheckResult = { phase: 'checking' | 'success' | 'error'; message: string };
 const checkNames: Record<CheckTarget, string> = { lastfm: 'Last.fm', ai: 'AI 模型', apple: 'Apple Music', spotify: 'Spotify' };
 const credentialTargets: Record<keyof RecommendationCredentials, CheckTarget> = { lastfmKey: 'lastfm', aiKey: 'ai', appleToken: 'apple', spotifyClientId: 'spotify', spotifyClientSecret: 'spotify' };
-const regions = [
-  { code: 'cn', name: '中国大陆' }, { code: 'hk', name: '中国香港' }, { code: 'tw', name: '中国台湾' },
-  { code: 'jp', name: '日本' }, { code: 'kr', name: '韩国' }, { code: 'us', name: '美国' },
-  { code: 'gb', name: '英国' }, { code: 'ca', name: '加拿大' }, { code: 'au', name: '澳大利亚' },
-  { code: 'sg', name: '新加坡' }, { code: 'de', name: '德国' }, { code: 'fr', name: '法国' },
-  { code: 'in', name: '印度' }, { code: 'br', name: '巴西' },
-];
+const appleRegions = ['cn', 'us', 'jp', 'hk', 'tw'];
+const spotifyRegions = ['US', 'JP', 'HK', 'TW', 'GB'];
 function SettingsView() {
   const api = useApi(); const profile = useRecommendationProfiles((s) => s.profiles[api.identity]);
   const [draft, setDraft] = useState(profile?.settings ?? defaultRecommendationSettings);
@@ -79,10 +74,10 @@ function SettingsView() {
     </div>;
   };
   const regionOptions = (value: string, spotify = false) => {
-    const options = regions.filter((region) => !spotify || region.code !== 'cn').map((region) => ({ value: spotify ? region.code.toUpperCase() : region.code, name: region.name }));
+    const options = spotify ? spotifyRegions : appleRegions;
     // Preserve older valid region codes that are outside this compact list.
-    const available = options.some((option) => option.value === value) ? options : [{ value, name: '当前地区' }, ...options];
-    return available.map((option) => <option key={option.value} value={option.value}>{option.name} · {option.value.toUpperCase()}</option>);
+    const available = options.includes(value) ? options : [value, ...options];
+    return available.map((code) => <option key={code} value={code}>{code}</option>);
   };
   const summary = (target: CheckTarget, label: string, optional = false) => {
     const phase = checks[target]?.phase ?? 'idle';

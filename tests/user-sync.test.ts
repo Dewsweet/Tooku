@@ -42,14 +42,17 @@ afterEach(() => { disconnectUserSync(); api.dispose(); useDisplayPreferences.set
 describe('user data migration and sync', () => {
   it('keeps browser text size outside account sync, imports and backups', async () => {
     useDisplayPreferences.getState().setBaseFontSize(18);
+    useDisplayPreferences.getState().setFontFamily('source-serif');
     await connectUserSync(api);
     const data = structuredClone(localUserData()!);
     await chooseUserData('local', data);
     const backup = await exportUserBackup();
     expect(JSON.stringify(backup)).not.toContain('baseFontSize');
+    expect(JSON.stringify(backup)).not.toContain('fontFamily');
     expect(useDisplayPreferences.getState().baseFontSize).toBe(18);
     disconnectUserSync();
     expect(useDisplayPreferences.getState().baseFontSize).toBe(18);
+    expect(useDisplayPreferences.getState().fontFamily).toBe('source-serif');
   });
   it('syncs recommendation preferences, excludes credentials from backups and restores legacy documents without touching playback', async () => {
     const attach = vi.spyOn(player, 'attach'); const before = usePlayer.getState();

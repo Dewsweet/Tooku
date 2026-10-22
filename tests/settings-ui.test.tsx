@@ -65,9 +65,12 @@ it('applies custom colors without persisting incomplete values and restores the 
   const nav = surface();
   fireEvent.click(nav.getByRole('button', { name: '外观' }));
   const scheme = screen.getByRole('combobox', { name: '主题色方案' });
-  expect(scheme).toHaveTextContent('默认 · 莓红');
+  expect(scheme).toHaveTextContent('默认（红色）');
+  expect(scheme.querySelector('.accent-swatch')).toHaveStyle({ backgroundColor: '#c83e55' });
   expect(screen.queryByRole('textbox', { name: '主题色值' })).not.toBeInTheDocument();
-  fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '海蓝' }));
+  fireEvent.click(scheme);
+  expect(screen.getByRole('option', { name: '蓝色' }).querySelector('.accent-swatch')).toHaveStyle({ backgroundColor: '#3365c4' });
+  fireEvent.click(screen.getByRole('option', { name: '蓝色' }));
   expect(usePreferences.getState().accent).toBe('#3365c4');
   fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '自定义' }));
   const hex = screen.getByRole('textbox', { name: '主题色值' });
@@ -84,7 +87,7 @@ it('applies custom colors without persisting incomplete values and restores the 
   expect(usePreferences.getState().accent).toBe('#aa88ff');
   act(() => usePreferences.getState().update({ accent: '#334455' }));
   expect(hex).toHaveValue('#334455');
-  fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '默认 · 莓红' }));
+  fireEvent.click(scheme); fireEvent.click(screen.getByRole('option', { name: '默认（红色）' }));
   expect(usePreferences.getState().accent).toBe(usePreferences.getInitialState().accent);
   expect(screen.queryByRole('textbox', { name: '主题色值' })).not.toBeInTheDocument();
 });
@@ -99,6 +102,30 @@ it('keeps text size in browser display preferences without changing lyrics or ac
   expect(usePreferences.getState()).toBe(initial);
   act(() => useDisplayPreferences.getState().setBaseFontSize(100));
   expect(useDisplayPreferences.getState().baseFontSize).toBe(14);
+});
+
+it('switches browser font families while retaining account preferences and playback', async () => {
+  const nav = surface(); const initial = usePreferences.getState();
+  const attach = vi.spyOn(player, 'attach');
+  fireEvent.click(nav.getByRole('button', { name: '外观' }));
+  const font = screen.getByRole('combobox', { name: '界面字体' });
+  expect(font).toHaveTextContent('思源黑体');
+  fireEvent.click(font); fireEvent.click(screen.getByRole('option', { name: '思源宋体' }));
+  expect(useDisplayPreferences.getState().fontFamily).toBe('source-serif');
+  expect(localStorage.getItem('tooku-display')).toContain('"fontFamily":"source-serif"');
+  fireEvent.click(font); fireEvent.click(screen.getByRole('option', { name: '系统宋体' }));
+  expect(useDisplayPreferences.getState().fontFamily).toBe('system-serif');
+  expect(usePreferences.getState()).toBe(initial);
+  expect(usePlayer.getState().position).toBe(23); expect(attach).not.toHaveBeenCalled();
+  act(() => useDisplayPreferences.getState().setFontFamily('unknown-font'));
+  await waitFor(() => expect(font).toHaveTextContent('思源黑体'));
+});
+
+it('restores older display preferences without losing text size when the font field is absent', async () => {
+  useDisplayPreferences.getState().setFontFamily('source-serif');
+  localStorage.setItem('tooku-display', JSON.stringify({ version: 1, state: { baseFontSize: 16 } }));
+  await useDisplayPreferences.persist.rehydrate();
+  expect(useDisplayPreferences.getState()).toMatchObject({ baseFontSize: 16, fontFamily: 'source-sans' });
 });
 
 it('shows available, failed and stale lyric observations as labelled status lights', async () => {

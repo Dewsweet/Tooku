@@ -37,6 +37,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'documentPictureInPicture');
   document.documentElement.style.removeProperty('--accent');
   document.documentElement.style.removeProperty('--ui-font-scale');
+  document.documentElement.style.removeProperty('font-family');
   vi.restoreAllMocks();
 });
 function fakePip() {
@@ -95,6 +96,9 @@ it('shares bilingual lyrics and updates offset/settings without changing playbac
   expect(pip.document.querySelector('base')?.href).toBe(`${window.location.origin}/`);
   act(() => document.documentElement.style.setProperty('--ui-font-scale', '1.2857'));
   await waitFor(() => expect(pip.document.documentElement.style.getPropertyValue('--ui-font-scale')).toBe('1.2857'));
+  act(() => document.documentElement.style.setProperty('font-family', '"Tooku Source Han Serif", serif'));
+  await waitFor(() => expect(pip.document.documentElement.style.fontFamily).toContain('Tooku Source Han Serif'));
+  expect(attach).not.toHaveBeenCalled(); expect(load).not.toHaveBeenCalled();
 });
 
 it('handles browser close, reopen, button close and unmount without stale state', async () => {

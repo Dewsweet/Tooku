@@ -15,15 +15,25 @@ export function Select({ value, onChange, children, disabled, id, className = ''
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
-      const rect = button.current!.getBoundingClientRect(); const space = window.innerHeight - rect.bottom - 14; const above = space < 150 && rect.top > space;
+      const rect = button.current!.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) { setOpen(false); return; }
+      const space = window.innerHeight - rect.bottom - 14; const above = space < 150 && rect.top > space;
       const maxHeight = Math.min(280, Math.max(90, above ? rect.top - 14 : space));
       setPosition({ top: above ? Math.max(7, rect.top - Math.min(options.length * 41 + 12, maxHeight) - 6) : rect.bottom + 6, left: Math.min(Math.max(7, rect.left), Math.max(7, window.innerWidth - Math.max(rect.width, 170) - 7)), width: Math.min(Math.max(rect.width, 170), window.innerWidth - 14), maxHeight });
     };
     place();
     if (popup.current?.showPopover) popup.current.showPopover();
     else popup.current?.removeAttribute('popover');
+    const onScroll = (event: Event) => {
+      // Internal list scrolling (including keyboard navigation) must not reposition it.
+      if (event.target instanceof Node && popup.current?.contains(event.target)) return;
+      place();
+    };
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
     window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    if (button.current) observer?.observe(button.current);
+    return () => { document.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', place); observer?.disconnect(); };
   }, [open, options.length]);
   useEffect(() => {
     if (!open) return;

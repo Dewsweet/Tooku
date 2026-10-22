@@ -7,3 +7,11 @@
   font-display: swap;
   src: local('Source Han Sans SC VF'), url('./assets/fonts/SourceHanSansSC-VF.woff2') format('woff2');
 }
+/* Adobe Source Han Serif 2.003R, unmodified; loaded only when selected. */
+@font-face {
+  font-family: 'Tooku Source Han Serif';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: local('Source Han Serif SC VF'), url('./assets/fonts/SourceHanSerifSC-VF.woff2') format('woff2');
+}

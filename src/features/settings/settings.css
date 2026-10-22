@@ -52,6 +52,8 @@
 .theme-options button[aria-pressed=true] { color: var(--accent); border-color: var(--accent); background: var(--soft); }
 .accent-control { min-width: 0; width: 220px; max-width: 100%; display: grid; gap: 12px; }
 .accent-control > .styled-select { width: 100%; min-width: 0; }
+.accent-choice { display: inline-flex; align-items: center; gap: 10px; }
+.accent-swatch { display: inline-block; width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent); }
 .accent-inputs { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-height: 44px; }
 .accent-inputs:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--soft); }
 .accent-control .accent-inputs input[type=color] { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; flex-shrink: 0; }
