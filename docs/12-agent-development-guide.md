@@ -2,17 +2,17 @@
 
 更新日期：2026-10-22。面向首次接入本仓库的 Agent 和开发者，描述当前实现与查找入口。
 
-根目录 [AGENTS.md](../AGENTS.md) 是开发约定入口；本指南提供模块地图、数据说明和常见改动路径。[01–11 号文档](../README.md#文档入口) 保留调研、设计演进及历史验证，其中的示意目录、旧交互和排期不等于当前实现。
+根目录 [AGENTS.md](../AGENTS.md) 是开发约定入口；本指南提供模块地图、数据说明和常见改动路径。[开发记录](09-development-status.md) 汇总当前状态和带日期的验证证据；01–08、10–11 号文档保留调研、设计演进或发布矩阵，其中的示意目录、旧交互和排期不等于当前实现。持久化、歌词与推荐的当前细节分别见 13、15、16 号文档。
 
 ## 1. 五分钟接入
 
 1. 阅读 [AGENTS.md](../AGENTS.md)，检查 `git status --short`，确认任务边界和已有改动。
 2. 从下方模块表找到对应源码；读取相关测试，不必从头阅读所有历史文档。
-3. 使用 `npm.cmd run dev` 或 `start-tooku.cmd` 启动，读取 `.local/server-url.txt` 获取实际地址；默认 18733，Navidrome 默认 44533。
+3. 先读取 `.local/server-url.txt` 并检查 `/__tooku/health`，复用已有服务；确需启动时使用 `npm.cmd run dev` 或 `start-tooku.cmd`，默认 18733，Navidrome 默认 44533，不中断用户播放。
 4. 有写入验证需求时优先使用隔离测试服务或授权的专用测试歌单；真实账号凭据只通过登录页输入。
 5. 完成实现与必要的基础检查，按功能保存 Git 提交；人工功能和观感检查在回复中简列。
 
-没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。服务端使用内置 SQLite / TypeScript 执行，需要 Node 24+。
+没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。服务端使用内置 SQLite / TypeScript 执行，需要 Node 24+。服务端和共享运行时模块使用可擦除语法与显式 `.ts` / `.mjs` 相对导入；不要引入 enum、构造函数参数属性或仅靠打包器才能执行的代码。
 
 ## 2. 当前架构
 
@@ -22,12 +22,15 @@ Tooku 0.1.0 是 SPA 与 Node.js / SQLite 用户数据服务，技术栈以 [pack
 React 页面 / 通用控件
   ├─ TanStack Query → MusicApi → /nd/rest → Navidrome
   ├─ useLyrics → TookuLyricsApi → /api/lyrics → 网易云 / QQ → 独立缓存
+  ├─ 推荐页面 → RecommendationsApi → /api/recommendations → Last.fm / AI / 四平台目录
   ├─ player 命令 → 常驻 PlayerEngine → HTMLAudioElement
   ├─ Zustand / IndexedDB → 浏览器缓存、未上传修改与设备回退
   └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
 ```
 
-开发环境由 Vite 挂载业务 API 并固定转发 `/nd/rest`。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷。直接填写完整 Navidrome 地址仍可使用，只保存本地；服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+开发环境由 Vite 挂载业务 API，并固定转发 `/nd/rest` 及白名单内的原生登录/歌手图片接口。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。直接填写完整 Navidrome 地址仍可使用，只保存本地；服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+
+用户数据 `/api/tooku` 通过验证过的账号会话隔离；`/api/lyrics` 与 `/api/recommendations` 是独立同源限流服务，不依赖 Navidrome 登录，同源检查不等于账号授权。公开部署由外层入口控制访问，不能把它们改成任意代理。歌词的 SQLite 公共缓存与推荐的受限进程内存缓存均不进入账号备份。
 
 ## 3. 源码与修改入口
 
@@ -121,6 +124,8 @@ React 页面 / 通用控件
 | 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
 | 同步基线、未上传数据、导入前副本 | IndexedDB `profiles` 中 `sync` / `before-import` | 原数据保留；清除本机播放快照不清迁移基线 |
 | 查询结果 | TanStack Query 内存 | 按身份与相关库隔离，不等于持久化服务端数据 |
+| 推荐普通设置、最近一批及有限避重元数据 | SQLite 账号文档 / IndexedDB sync；`tooku-recommendations` 本机回退 | 服务密钥、平台链接与目录缓存不进账号文档 |
+| 推荐目录结果 / Spotify 临时令牌 | `server/recommendations/cache.ts` 受限进程内存 | 按相关凭据/地区隔离并过期，不落库；取消和关闭清理规则见 16 号文档 |
 | 登录密码、token/salt | 会话内存 | 刷新/热更新整页重载后需重新登录；不写入上述存储 |
 
 当前 `MusicApi.identity` 使用 `${base}|${username}`。更换访问 origin、代理基址、账号写法或身份规则，可能让旧数据不可见；不能通过简单更名身份来解决串号问题。
@@ -198,6 +203,13 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 搜索输入法 | `tests/search.test.tsx` |
 | 菜单、提示、焦点 | `tests/interactions.test.tsx` |
 | 专辑播放入口 | `tests/albums.test.tsx` |
+| 主页内容与导航前进/后退 | `tests/home.test.tsx`、`tests/navigation.test.tsx` |
+| 时长显示与汇总 | `tests/duration.test.ts` |
+| 桌面画中画歌词、双语/静态正文、关闭与账号隔离 | `tests/desktop-lyrics.test.tsx` |
+| 歌词整理、平台服务、来源协调与迟到响应 | `tests/lyrics-normalize.test.ts`、`tests/lyrics-service.test.ts`、`tests/lyrics-source.test.tsx` |
+| 推荐样本、多样性/补量/避重、模型协议与 HTTP 边界 | `tests/recommendations.test.ts` |
+| 推荐页/主页入口、平台菜单、列宽与设置检测 | `tests/recommendations-ui.test.tsx` |
+| 推荐缓存过期、并发/取消、凭据地区隔离及令牌复用 | `tests/recommendation-cache.test.ts` |
 | 专辑自动分页、失败重试、重复页 | `tests/album-browse.test.tsx` |
 | 全站浮动滚动条几何、拖动、键盘及清理 | `tests/content-scrollbar.test.tsx` |
 | 歌手横幅、缺图、管理员上传/旧图清理、播放及切页取消 | `tests/artist-detail.test.tsx` |
@@ -211,7 +223,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 
 隔离测试服务：`node tests/fixtures/server.mjs`，仅本机 44534；登录地址填 `http://127.0.0.1:44534`，用户名 `fixture`，密码任意非空测试文本。它是简化的内存 fixture，不代理真实 Navidrome，也不保证覆盖后续增加的全部接口字段；测试新能力时先检查 fixture 是否支持。
 
-最近已记录基线：2026-10-19 构建、Lint、59 项测试 / 10 个文件通过；有真实登录、界面与播放的部分检查，但没有完整移动实机、音频格式、长期播放或 Docker 验收。最新执行结果应在当前任务重新说明，不能引用旧记录充当新结果。
+最近已执行的检查统一记在 [开发记录](09-development-status.md)，附日期、对应代码提交、自动化与人工边界。后续功能任务只报告当次执行结果；文档任务不将旧基线写成重新验证，也不为更新数字重复跑全套测试。移动实机、全格式音频、长期播放、真实平台地区权限与 Docker 验收仍需相应证据。
 
 用户目前偏好少量基础错误验证，详细效果留给人工。最终回复直接列出本次需要看的几项，不新建手工验收文档。纯文档改动检查链接、事实和 diff 即可。
 
@@ -223,12 +235,14 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 - **改歌曲操作**：`Common.tsx` 的 `TrackList` → `useContextMenu` / 列宽组件 → 必要的列表交互测试。
 - **改歌单或目录**：`PlaylistViews` / `Organization` → `state/library.ts` 或 `MusicApi` → 判断本地修改还是服务器写入 → 验证重复项、权限、并发与库边界。
 - **改歌词**：`Lyrics.tsx` → 对应播放器样式 → 几何与时间换算测试；保留“同步”和 5 秒空闲恢复。
+- **改桌面歌词**：`DesktopLyrics.tsx` → `domain/lyrics/timing.ts` / `useLyrics` → 画中画生命周期测试；沿用同一音频、QueryClient、主题和偏移，不能承诺网页强制窗口坐标。
+- **改推荐**：推荐页面/设置 → `domain/recommendations.ts` → `server/recommendations/` → 按需执行服务/UI/缓存测试；保持手动生成、整批链接核实和失败搜索兜底，不加入已暂缓的“不感兴趣”功能。
 - **修启动**：先看 `.local/server-url.txt`、健康端点和启动日志 → 启动器/代理；不要先改系统网络或停止 Navidrome。
 - **加持久化**：先梳理本指南的数据表与当前 namespace → 设计迁移和身份验证 → 再实现存储/接口，不把 IndexedDB 改名成“服务端数据库”。
 
 ## 10. 维护规范本身
 
-入口、数据归属、Provider、缓存身份、启动命令或主要交互改变时，同步更新 [AGENTS.md](../AGENTS.md)、本指南和 README 中受影响的段落。测试数量与版本记录需要日期；未测试的能力明确标注。维护历史文档时添加版本提示，不把已经发生的验证记录改写成不存在的结果。
+入口、数据归属、Provider、缓存身份、启动命令或主要交互改变时，同步更新 [AGENTS.md](../AGENTS.md)、本指南和 README 中受影响的段落。当前约定以这些入口和对应组件文档为准；进度、测试数量、提交和未测边界集中记在 09 号开发记录，避免多份数字漂移。维护历史文档时添加版本提示，保留原日期与已发生的证据，不用最新结果覆盖旧测试记录，不把未实现建议变成自动开工任务。
 
 ## 11. 网络与双语歌词
 

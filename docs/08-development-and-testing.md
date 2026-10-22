@@ -2,29 +2,32 @@
 
 > 当前任务级验证尺度见 [AGENTS.md](../AGENTS.md) 和 [开发接入指南](12-agent-development-guide.md)。本文保留发布前验证矩阵与历史环境信息；用户目前要求基础检查后把少量人工查看项直接写在回复中，不为每次改动另建验收清单文档。
 
-本文件是开发与发布验收约定。现已创建 package.json、可运行开发应用及可选 Docker 配置，实际命令见 [README](../README.md)，验证结果见 [开发记录](09-development-status.md)。本文片段保留为原理示例，实际配置以工程文件为准；Docker 尚未实机验证。
+更新日期：2026-10-22。运行与部署章节按当前工程维护；下方发布矩阵是待取得证据的验收目标，不是已通过的清单。实际命令见 [README](../README.md)，实现进度与带日期的检查结果见 [开发记录](09-development-status.md)；Docker 尚未实机验证。
 
 ## 环境与工程初始化
 
-建议 Node.js 22.12+ 或经当前 Vite 验证的更新版本、pnpm；固定 packageManager、engines 和 lockfile。[Vite 官方要求](https://vite.dev/guide/)当前列出 Node 20.19+ / 22.12+，模板可能有更高要求。不要依据参考项目的旧 README 随意锁定旧运行时。
+项目要求 Node.js 24+，使用内置 HTTP、SQLite 与可擦除 TypeScript 执行；本机检查版本为 24.15.0。不能只按 Vite 最低要求选择运行时。版本以 [package.json](../package.json) 和 pnpm 锁文件为准，不主动升级框架，不生成第二份锁文件。
 
-初始化应保留现有文档；可先在临时子目录生成模板，再将所需工程文件整合到根目录。Git 初始化和首个提交留到实际工程阶段，凭据与私人样本不提交。
+现有工程与 Git 已建立，不重新生成模板或重置目录。先检查 git status，保留已有改动；已有 node_modules 时直接运行，首次安装或恢复依赖时使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，无需全局 pnpm。凭据、私人样本、缓存与构建产物不提交。
 
-已实现的脚本与后续约定：
+当前脚本与检查范围：
 
 | 脚本 | 目的 |
 | --- | --- |
-| npm.cmd run dev（或 pnpm dev） | 本地开发，默认 18733，端口不可用时自动回退 |
-| pnpm build / pnpm preview | 产物构建与本地预览 |
-| pnpm lint / pnpm typecheck | 静态检查 |
-| pnpm test | 核心单测与交互测试 |
+| `npm.cmd run dev` | 本地开发，默认 18733，在 18733–18742 中有界回退，挂载全部业务 API |
+| `npm.cmd run build` | TypeScript 检查后构建 SPA |
+| `npm.cmd start` | Node 生产入口，提供已构建页面、业务 API 与固定上游代理 |
+| `npm.cmd run preview` | 只预览静态产物，不提供业务 API，不是完整部署验收 |
+| `npm.cmd run lint` / `npm.cmd run typecheck` | 静态检查 |
+| `npm.cmd test` | 单元、交互、隔离 HTTP/数据库及原生 Node 加载回归 |
+| `npm.cmd run backup -- <新目标路径>` | SQLite 在线完整备份，目标不能已存在，见持久化文档 |
 | 手工浏览器验收 | 独立测试服务验证写入/歌词；真实服务已验证登录、FLAC 播放和 seek；test:e2e 自动化脚本尚未创建 |
 
-源码和文档 UTF-8；领域 ID 为 string；接口时间/单位转换集中处理。依赖、API、缓存结构变更需更新对应文档和迁移。
+源码和文档 UTF-8；领域 ID 为 string；接口时间/单位转换集中处理。服务端及其共享模块使用显式 .ts / .mjs 相对导入，避免 enum、参数属性等需要编译转换的语法；相关修改保留原生 Node 检查。依赖、API、缓存结构变更需更新对应文档和兼容迁移。纯文档检查事实、链接与 diff，不为刷新测试数量重跑全套测试。
 
 ## 本地只读诊断
 
-以下命令当前可用，不需要账号，不读取曲库：
+先根据 `.local/server-url.txt` 检查 Tooku 的 `/__tooku/health`，复用已有服务，不为文档检查重复启动或停止用户播放。以下是 2026-10-13 使用的 Navidrome 无账号诊断示例，不读取曲库；服务当前可达性以实际请求为准：
 
 ```powershell
 Invoke-WebRequest -Uri 'http://127.0.0.1:44533/' -UseBasicParsing -TimeoutSec 10
@@ -33,69 +36,35 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:44533/rest/ping.view?v=1.16.1&c=TookuRe
 
 未认证 ping 预期是 HTTP 200 + failed/code=10；这是可达性结果，不是登录成功。真实认证从应用登录页完成，不在 shell 历史或 URL 示例中粘贴密码、token 或 key。
 
-本轮 GET 的 CORS 为 *，未观察到 Allow-Credentials；token 查询参数认证应使用无跨站 cookie 的请求模式，不设置 credentials=include 来“修复”问题。POST、流、封面和代理行为仍需浏览器核对。
+2026-10-13 的未认证 GET 观察到 CORS 为 *，未观察到 Allow-Credentials；token 查询参数认证应使用无跨站 cookie 的请求模式，不设置 credentials=include 来“修复”问题。POST、流、封面和代理行为仍需浏览器核对。
 
-## 开发同源代理示意
+## 开发同源代理
 
-工程已配置 `/nd/rest` 到本机 Navidrome 的固定代理。以下为简化示意，实际入口和端口回退见 `scripts/dev-server.mjs`，代理配置见 `vite.config.ts`：
-
-```ts
-// server 配置简化示意
-server: {
-  host: '127.0.0.1',
-  port: 18733,
-  strictPort: true,
-  proxy: {
-    '/nd/rest': {
-      target: 'http://127.0.0.1:44533',
-      changeOrigin: true,
-      rewrite: (path) => path.replace(/^\/nd(?=\/|$)/, ''),
-    },
-  },
-}
-```
-
-客户端服务基址默认为同源 `/nd`（应用内部解析为绝对 URL），请求 `/nd/rest/...`；也支持用户输入完整服务地址。
+当前默认基址为同源 `/nd`，内部解析为绝对 URL，也支持填写完整 Navidrome 地址直连。固定代理只开放 `/nd/rest` 与白名单内的原生登录/歌手图片接口，不接受任意上游。实际规则见 [vite.config.ts](../vite.config.ts) 和 [代理白名单](../server/navidromeProxy.ts)，启动与端口回退见 [启动器](../scripts/dev-server.mjs)。Vite 同端口挂载 `/api/tooku`、`/api/lyrics`、`/api/recommendations`，不需要另启业务进程。
 
 Windows 重启后端口保留范围可能变化。2026-10-14 本机 5141–5240 为排除范围，5173 绑定返回 EACCES，44533 的 Navidrome 正常。启动器只对保留/占用端口作有界重试，不修改系统网络设置；`.local/server-url.txt` 记录实际地址。启动器通过本机健康检查复用已运行的 Tooku，避免重复启动。当前没有安装开机自启任务；重启后双击根目录 `start-tooku.cmd` 即可。
 
 手机联调时可显式绑定局域网接口，并从手机访问开发电脑地址；不要让手机请求自己的 127.0.0.1。局域网 HTTP 可用于基础联调，但不能代替 HTTPS 下的 PWA/安全上下文验收。没有变更本地 Navidrome 服务配置的默认需求。
 
-## 正式静态部署示意
+## 生产与可选容器部署
 
-SPA 产物 + Nginx/Caddy 静态服务；推荐固定上游同源代理。支持根路径与应用子路径要分别验证。Nginx 根路径示意：
+先 `npm.cmd run build`，再 `npm.cmd start`，由 [server/index.ts](../server/index.ts) 同时提供 SPA 路由回退、用户数据、歌词、推荐 API 与固定上游代理。Node 24 生产运行不依赖 node_modules；数据库目录通过 TOOKU_DATA_DIR 配置，不放在 dist。仅静态托管或 vite preview 无法完成账号同步、网络歌词或推荐功能。
 
-```nginx
-location / {
-    try_files $uri $uri/ /index.html;
-}
+外层 Nginx/Caddy 将整个 Tooku 站点转发到同一个 Node 服务，保留客户端 Host；可选 Nginx 模板为 [deploy/default.conf.template](../deploy/default.conf.template)，TOOKU_UPSTREAM 指向 Tooku，NAVIDROME_UPSTREAM 才指向固定音乐服务。保留 Range/If-Range 和响应范围头，不让 API 或音频错误落入 index.html。请求体大小、长请求超时和日志脱敏均需覆盖用户数据及推荐接口；不记录 Authorization、POST body 或带认证参数的完整 URL。根路径、子路径与 HTTPS 分别按实际部署验证，不据示例宣称全部支持。
 
-location /nd/rest/ {
-    proxy_pass http://127.0.0.1:44533/rest/;
-    proxy_http_version 1.1;
-    proxy_buffering off;
-    proxy_read_timeout 300s;
-    proxy_set_header Range $http_range;
-    proxy_set_header If-Range $http_if_range;
-    # 不在包含凭据的请求路径记录默认 access log
-    access_log off;
-}
-```
+[Dockerfile](../Dockerfile) / [compose.yaml](../compose.yaml) 使用 Node 24、非 root 用户和 tooku-data 数据卷，示例仅绑定宿主机 127.0.0.1:8080。容器 localhost 指容器自身；同网络 Navidrome 用服务名，宿主机地址需按平台验证。此电脑未安装 Docker，构建、数据卷权限、上游路径与升级恢复仍待实际验收；升级不能删除持久化卷。完整部署、备份与恢复见 [服务端持久化](13-server-persistence.md)。
 
-这里只展示路由，未包含完整 TLS/CSP/server 配置。转发 query 和 Range，响应 Content-Type/Content-Range/Accept-Ranges 等不能被静态回退篡改。Navidrome 若位于 base path，proxy_pass 按实际路径修改。
-
-Docker 中的 127.0.0.1 指向容器自身；Navidrome 同 Compose 网络时用服务名，连接宿主机时选经平台验证的宿主地址。不能直接把上述本机示例原样搬进容器。禁止将账号密码放入 VITE_* 或静态 runtime config，这些值会公开给浏览器。
-
-固定上游可锁定服务地址但仍需每用户认证；不使用共享管理员凭据代理所有用户。远程浏览器到 Tooku 使用 HTTPS，代理到受控内网服务的链路按实际网络配置保护。
+固定上游仍需每用户认证；不使用共享管理员凭据。独立歌词/推荐不使用该账号认证，同源与限流不等于访问授权，公开部署需外层访问控制与 HTTPS。账号密码、API Key、模型或平台令牌不能放入 VITE_*、静态 runtime config、环境文件或日志。
 
 ## 测试分层
 
 | 层 | 核心内容 | 为什么需要 |
 | --- | --- | --- |
 | 单元测试 | 队列算法、重复 entry、随机/循环、offset、时间单位、Unicode、URL 编码、收听阈值 | 这些错误难以靠截图发现，且会直接改变收听行为 |
-| 契约/适配器 | 成功/failed envelope、缺字段/数组、POST 参数、歌词 v1/v2、不同权限 | 服务声明与实际 DTO 不一定一致 |
+| 契约/适配器 | 成功/failed envelope、缺字段/数组、POST 参数、歌词/目录适配、模型 JSON、不同权限 | 服务声明与实际 DTO 不一定一致 |
 | 交互测试 | IME、拖动/键盘替代、弹窗焦点、写失败回滚、恢复暂停 | 防止看似完成但不能操作 |
-| E2E | 登录→浏览→播放→队列→收藏/测试歌单→退出→换用户 | 验证页面、状态和真实服务的连接 |
+| 隔离服务与存储 | 原生 Node 加载、HTTP 同源/限流/取消、revision、备份恢复、缓存与凭据隔离 | 防止仅打包环境可用，以及跨账号或部署运行错误 |
+| E2E（人工，尚无自动化命令） | 登录→浏览→播放→队列→收藏/测试歌单→退出→换用户 | 验证页面、状态和真实服务的连接 |
 | 实机检查 | 音频格式、移动后台、媒体键、音量、PWA | 自动化浏览器不能替代手机音频策略 |
 
 测试歌单用唯一测试名称，与真实歌单隔离，记录创建和清理的 ID。收藏写入验证需恢复测试前状态；测试默认不修改原有歌单。私人样本必须经过授权，公共 fixture 不包含真实认证或不允许再分发的音频/歌词。
@@ -108,7 +77,8 @@ Docker 中的 127.0.0.1 指向容器自身；Navidrome 同 Compose 网络时用�
 | --- | --- |
 | 音频 | MP3/AAC/FLAC 原始流，浏览器不支持格式的兼容流，多碟，长音频 |
 | 内容 | 中文/繁体/日文、Emoji、组合字符、同名异版、缺封面/缺时长/缺歌手 |
-| 歌词 | 无、静态、LRC、正负 offset、增强逐词、翻译/注音；双语长行 |
+| 歌词 | 无、静态、逐行、正负 offset、本地/网络来源与双语长行、版本选择、全屏/画中画关闭和切号；逐词动画为未实现候选 |
+| 推荐 | 样本覆盖、补量/不足、跨批避重、真实元数据、检测与生成一致性、整批外链进度、搜索兜底、平台地区权限、取消与账号隔离 |
 | 网络 | 本机、局域网、限速、高延迟、断网/恢复、认证失效 |
 | 身份 | 两个账号、两台服务、只读/他人歌单、权限撤销、多标签页 |
 | 库与队列 | 空库、少量曲目、1 万首样本库；1,000 条队列、重复歌曲 |
@@ -142,4 +112,4 @@ Docker 中的 127.0.0.1 指向容器自身；Navidrome 同 Compose 网络时用�
 
 ## 文档维护规则
 
-产品范围变化更新 PRD；协议字段变化更新 API；播放器行为变化同步设计与测试；实际命令变化更新 README。本机服务配置和账号仍由用户管理，规划文档不替代已部署的配置。
+入口、数据归属、启动或主要交互变化，同步 AGENTS.md、README、接入指南和对应组件文档；进度、验证数字和未测边界集中记录在 09 号文档，标日期与代码提交。早期 PRD、设计与排期保留历史提示，不将已取消的交互恢复为现行要求。播放器/协议变化补相关测试和事实说明；本机服务配置和账号仍由用户管理，规划文档不替代已部署配置。

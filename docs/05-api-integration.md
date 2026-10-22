@@ -1,6 +1,8 @@
 # Navidrome 接口对接
 
-基线服务：`http://127.0.0.1:44533`，本轮观测版本 `0.64.1 (285dc4f3)`。本文为实现契约，未登录的检查不证明下列业务接口已联调。
+> 历史协议基线：下文保留早期接口调研与契约，当前适配、权限和降级以 `src/api/client.ts` 及相关测试为准。歌手图片现已使用白名单内的 Navidrome 原生管理员 API；独立歌词/推荐及 Tooku 用户数据不属于 Subsonic，入口和边界见 [开发接入指南](12-agent-development-guide.md)。无账号探测不能证明真实写入权限或全部能力可用。
+
+基线服务：`http://127.0.0.1:44533`，本轮观测版本 `0.64.1 (285dc4f3)`。以下为早期实现契约，未登录的检查不证明下列业务接口已联调。
 
 主要依据：[Navidrome 兼容性表](https://www.navidrome.org/docs/developers/subsonic-api/)、[Subsonic API](https://www.subsonic.org/pages/api.jsp)、[OpenSubsonic 扩展](https://opensubsonic.netlify.app/docs/extensions/)。首版使用公开音乐协议，不依赖 Navidrome 原界面的旧内部接口或仍在设计的 API v1。
 
