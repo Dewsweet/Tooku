@@ -102,3 +102,47 @@ describe('player lifecycle integration', () => {
     expect(api.scrobble).not.toHaveBeenCalled();
   });
 });
+
+describe('system media artwork', () => {
+  let session: { metadata: MediaMetadata | null; playbackState: MediaSessionPlaybackState; setPositionState: ReturnType<typeof vi.fn> };
+  beforeEach(() => {
+    session = { metadata: null, playbackState: 'none', setPositionState: vi.fn() };
+    vi.stubGlobal('navigator', { mediaSession: session });
+    vi.stubGlobal('MediaMetadata', class {
+      title: string; artist: string; album: string; artwork: MediaImage[];
+      constructor(init: MediaMetadataInit = {}) { this.title = init.title ?? ''; this.artist = init.artist ?? ''; this.album = init.album ?? ''; this.artwork = init.artwork ?? []; }
+    });
+  });
+  it('publishes the current cover through the API without adding authenticated URLs to snapshots', () => {
+    const track = { ...songs[0], album: '测试专辑', coverArt: 'cover-one' };
+    const audio = FakeAudio.instance;
+    player.replace([track]);
+    expect(session.metadata).toMatchObject({ title: track.title, artist: track.artist, album: track.album, artwork: [{ src: api.coverUrl('cover-one', 512) }] });
+    expect(session.playbackState).toBe('playing'); expect(FakeAudio.instance).toBe(audio);
+    const snapshots = vi.mocked(saveProfile).mock.calls.filter((call) => call[1] === 'queue').map((call) => call[2]);
+    expect(JSON.stringify(snapshots)).not.toContain('/rest/getCoverArt');
+  });
+  it('retains artwork metadata while the timeline and playback state change', () => {
+    player.replace([{ ...songs[0], coverArt: 'cover-one' }]);
+    const metadata = session.metadata;
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 6000);
+    FakeAudio.instance.tick(13); player.pause();
+    expect(session.metadata).toBe(metadata); expect(session.playbackState).toBe('paused');
+    expect(session.setPositionState).toHaveBeenCalledWith(expect.objectContaining({ position: 13 }));
+  });
+  it('replaces covers even with matching titles and clears artwork for tracks without a cover', () => {
+    player.replace([{ ...songs[0], coverArt: 'cover-one' }, { ...songs[0], id: 'two', coverArt: 'cover-two' }, { ...songs[0], id: 'three' }]);
+    player.next(); expect(session.metadata?.artwork).toEqual([{ src: api.coverUrl('cover-two', 512) }]);
+    player.next(); expect(session.metadata?.artwork).toEqual([]);
+    expect(usePlayer.getState().status).toBe('playing');
+  });
+  it('clears metadata when the last entry is removed, an empty queue is restored or the session ends', () => {
+    const track = { ...songs[0], coverArt: 'cover-one' };
+    player.replace([track]); player.remove(usePlayer.getState().currentId!);
+    expect(session.metadata).toBeNull(); expect(session.playbackState).toBe('none');
+    player.replace([track]); player.restoreQueue({ entries: [], currentId: null, position: 0 });
+    expect(session.metadata).toBeNull(); expect(session.playbackState).toBe('none');
+    player.replace([track]); player.logout();
+    expect(session.metadata).toBeNull(); expect(session.playbackState).toBe('none');
+  });
+});

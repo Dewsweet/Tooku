@@ -161,7 +161,7 @@ class PlayerEngine {
   restoreQueue(snapshot: QueueSnapshot) {
     this.#originalOrder = this.#restoreOrder(snapshot.entries, snapshot.originalOrder);
     update({ entries: snapshot.entries, currentId: snapshot.currentId, position: snapshot.position, shuffle: snapshot.shuffle === true, undo: null }); this.#resume = snapshot.position; this.#back = [];
-    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); }
+    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); this.#media(); }
     this.persist();
   }
   append(tracks: Track[], next = false, source?: PlaybackSource, sourceIndices?: readonly number[]) {
@@ -184,7 +184,7 @@ class PlayerEngine {
     if (entryId === s.currentId) {
       const next = entries[index] ?? (s.repeat === 'all' ? entries[0] : undefined);
       const intent = this.#intent; update({ currentId: next?.entryId ?? null });
-      if (next) this.load(intent); else { this.#generation++; this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle', position: 0, duration: 0 }); }
+      if (next) this.load(intent); else { this.#generation++; this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle', position: 0, duration: 0 }); this.#media(); }
     }
     this.persist();
   }
@@ -272,7 +272,14 @@ class PlayerEngine {
   #media() {
     if (!('mediaSession' in navigator)) return;
     const entry = currentEntry(); const state = usePlayer.getState();
-    if (entry && typeof MediaMetadata !== 'undefined') navigator.mediaSession.metadata = new MediaMetadata({ title: entry.track.title, artist: entry.track.artist, album: entry.track.album });
+    const session = navigator.mediaSession;
+    const cover = this.#api?.coverUrl(entry?.track.coverArt, 512);
+    const metadata = session.metadata;
+    if (!entry) session.metadata = null;
+    else if (typeof MediaMetadata !== 'undefined' && (!metadata || metadata.title !== entry.track.title || metadata.artist !== entry.track.artist || metadata.album !== (entry.track.album ?? '') || metadata.artwork[0]?.src !== cover)) {
+      // Generate authenticated artwork only for the live session; never add its URL to a snapshot.
+      session.metadata = new MediaMetadata({ title: entry.track.title, artist: entry.track.artist, album: entry.track.album, artwork: cover ? [{ src: cover }] : [] });
+    }
     navigator.mediaSession.playbackState = state.status === 'playing' ? 'playing' : entry ? 'paused' : 'none';
     if (state.duration > 0 && Number.isFinite(state.duration)) { try { navigator.mediaSession.setPositionState({ duration: state.duration, position: Math.min(state.position, state.duration), playbackRate: 1 }); } catch { /* capability dependent */ } }
   }

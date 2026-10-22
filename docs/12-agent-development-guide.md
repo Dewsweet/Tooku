@@ -135,7 +135,9 @@ React 页面 / 通用控件
 
 歌手图片写回入口集中在 `src/api/client.ts`：登录时仅对 Navidrome 尝试 `/auth/login`，原生 JWT 与角色只留会话内存，退出清除；密码只传给登录请求。`POST /api/artist/:id/image` 使用 `image` multipart 字段，`DELETE` 恢复默认，写前/后均读取 `/api/artist/:id`。HTTP 权限错误由 Navidrome 最终裁决，不自动重放上传；确认后的预览仅留查询内存，等待上游构建图片。`server/navidromeProxy.ts` 为开发/生产共用路径及方法白名单，仅新增登录与歌手图片所需路由；不开放其余原生管理接口。原生认证失败不阻断 Subsonic 登录，旧版服务器或直连 CORS 配置不支持时无法编辑。协议参照 [Navidrome v0.64.1 上传实现](https://github.com/navidrome/navidrome/blob/v0.64.1/server/nativeapi/artists.go)。
 
-手机页面状态与指针操作集中在 `PlayerPages.tsx`，`player-pages.css` 使用原生横向 overflow 与 scroll-snap 形成左右两个整屏页面，`player.css` 保留桌面/共享控件样式。触摸拖动仍由浏览器处理，不捕获横向触摸；touchend 接管松手收尾，暂时关闭 snap、取消原生惯性，通过 rAF / 160 ms 二次减速滚到目标页，避免浏览器默认 smooth 的长尾。鼠标和键盘也复用该短过渡，减少动态效果时立即到位；原生滚动兜底以 60 ms 静止判定更新状态，避免歌词纵向滚动干扰分页。处理新手势、取消、多指、窗口/断点/动态偏好变化与卸载的动画清理；不要恢复旧手机两行 grid。左滑进入歌词、右滑返回，兼容键盘左右键，不放歌词页左上角返回按钮或底部“歌词”/箭头提示。歌词纵向独立滚动，横向 overscroll 允许传到父级分页；整个封面页使用 pan-x pinch-zoom，封面与空白区支持触摸下滑或鼠标下拖收起，普通按钮、进度条、元信息横向滚动和嵌套 dialog 排除。关闭只调用 Modal 的 `dismissRef`，沿用其动画、减少动态效果、焦点恢复。两 section 均保留挂载，非活动页 inert/aria-hidden；歌词设置通过 portal 挂到外层 dialog/body，避免继承隐藏歌词页的不可交互状态。断点变化保留同一歌词 DOM 和播放器实例。
+手机分页集中在 `PlayerPages.tsx`：触摸拖动仍由浏览器处理，松手后复用 160 ms rAF 收尾，鼠标和键盘同路；减少动态效果时立即到位。位置限制在 0 到一页宽度，根滚动区 overscroll-behavior 为 none，阻止两端回弹。取消旧动画时只取消 rAF，不在新手势/动画中间恢复 scroll-snap；滚动到目标后再恢复 snap、更新活动页与焦点，避免目标聚焦和浏览器吸附争抢。touchcancel 释放控制并以 60 ms 原生滚动静止判定更新最近页，不强制回到触摸起点。鼠标指针只处理横向拖动，触摸不进入鼠标捕获流程；普通按钮、进度条、元信息和嵌套 dialog 排除。下滑收起经实机反馈取消，同时移除专用触摸约束、关闭偏移与 Modal dismissRef，仅保留既有收起按钮/Escape。歌词独立纵向滚动，两页保持挂载，非活动页 inert/aria-hidden；歌词设置 portal 挂到外层 dialog/body。断点变化、关闭和切页不重新接入音频。
+
+系统媒体集成在 `engine.ts` 的 #media：元数据附带当前曲目的封面 URL，由 api.coverUrl(coverArt, 512) 即时生成，省略无法确认的图片类型/实际尺寸提示。比较标题、歌手、专辑与封面后再更新 MediaMetadata，避免时间进度上报反复重置 artwork；无当前歌曲、无封面、空队列恢复与退出需清理旧元数据。认证图片 URL 只交给浏览器媒体会话，不落库、不写快照或日志；没有创建图片下载代理或另一套音频。标准参考 [Media Session](https://www.w3.org/TR/mediasession/)。
 
 ## 5. 数据归属与当前限制
 
