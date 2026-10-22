@@ -11,11 +11,13 @@ html:has(dialog[open]) { overflow: hidden; }
 }
 .dock-track { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .dock-track .now-playing { flex: 1; min-width: 0; gap: 14px; }
-.dock-art { position: relative; flex-shrink: 0; }
-.dock-art .mini-cover { width: 61px; border-radius: 9px; box-shadow: 0 4px 12px #0000000c; transition: transform .3s; }
-.dock-expand { display: grid; place-items: center; position: absolute; inset: 0; color: white; background: #0005; border-radius: 9px; opacity: 0; transition: opacity .2s; }
+.dock-art { position: relative; flex-shrink: 0; border-radius: 9px; }
+.dock-art .mini-cover { width: 61px; border-radius: inherit; box-shadow: 0 4px 12px #0000000c; }
+.dock-expand { display: grid; place-items: center; position: absolute; inset: 0; color: white; background: #0005; border-radius: inherit; opacity: 0; transition: opacity .2s; }
 .now-playing:hover .dock-expand, .now-playing:focus-visible .dock-expand { opacity: 1; }
-.now-playing:hover .mini-cover { transform: translateY(-2px); }
+@media (min-width: 768px) {
+  .now-playing:is(:hover, :focus-visible) .dock-expand > svg { animation: dock-chevron-lift .48s ease-in-out; }
+}
 .now-playing .dock-metadata { overflow: hidden; animation: metadata-in .38s both; }
 .dock-metadata strong { font-size:calc(13px * var(--ui-font-scale, 1)); font-weight: 600; }
 .dock-metadata small { font-size:calc(11px * var(--ui-font-scale, 1)); }
@@ -164,6 +166,7 @@ html:has(dialog[open]) { overflow: hidden; }
 .room-error p { margin: 0; }
 
 @keyframes metadata-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes dock-chevron-lift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes favorite-pop { 45% { transform: scale(1.25); } 75% { transform: scale(.94); } }
 @keyframes symbol-in { from { opacity: .2; scale: .65; } to { opacity: 1; scale: 1; } }
 @keyframes equalizer-dance { from { transform: scaleY(.35); } to { transform: scaleY(1.2); } }
@@ -247,9 +250,10 @@ html:has(dialog[open]) { overflow: hidden; }
   .modal-player .transport.large { margin: 8px 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .modal[open], .modal[open]::backdrop, .modal[open].is-closing, .room-artwork, .room-content, .dock-metadata, .playback-equalizer i, .favorite-pop, .transport-symbol { animation: none !important; }
+  .modal[open], .modal[open]::backdrop, .modal[open].is-closing, .room-artwork, .room-content, .dock-metadata, .dock-expand > svg, .playback-equalizer i, .favorite-pop, .transport-symbol { animation: none !important; }
   .modal-player .cover, .room-lyric { transition: none !important; }
 }
 :root[data-motion=reduced] .room-artwork, :root[data-motion=reduced] .room-content, :root[data-motion=reduced] .room-song-copy, :root[data-motion=reduced] .modal[open], :root[data-motion=reduced] .modal[open]::backdrop, :root[data-motion=reduced] .playback-equalizer i { animation: none !important; }
 
 :root[data-motion=reduced] .room-lyric { transition: none; }
+:root[data-motion=reduced] .dock-expand > svg { animation: none !important; }

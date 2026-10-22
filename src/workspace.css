@@ -121,7 +121,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .workspace-shell .track-actions .icon-button { width: 32px; height: 36px; }
 .workspace-shell .track-row:hover .track-actions, .workspace-shell .track-row:focus-within .track-actions { opacity: 1; }
 .workspace-shell .playback-dock { min-height: var(--dock-height); height: var(--dock-height); grid-template-columns: minmax(190px,1fr) minmax(270px,1.25fr) minmax(190px,1fr); gap: 22px; border-top: 0; background: var(--shell); box-shadow: none; padding: 10px 24px; }
-.workspace-shell .dock-art .mini-cover { width: 54px; border-radius: 7px; }
+.workspace-shell .dock-art { border-radius: 7px; }
+.workspace-shell .dock-art .mini-cover { width: 54px; }
 .workspace-shell .dock-track .now-playing { flex: none; }
 .dock-metadata { display: flex; flex-direction: column; gap: 5px; flex: 0 1 auto; width: max-content; min-width: 0; }
 .dock-metadata strong, .dock-metadata small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
