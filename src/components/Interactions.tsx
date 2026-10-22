@@ -34,9 +34,9 @@ export function Interactions({ children }: { children: ReactNode }) {
     let timer: ReturnType<typeof setTimeout> | undefined; let target: HTMLElement | null = null;
     const hide = () => { clearTimeout(timer); target = null; setHint(null); };
     const show = (e: Event) => {
-      const element = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-tooltip], button[aria-label], a[aria-label]') : null;
+      const element = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-tooltip]') : null;
       if (element === target) return; hide(); if (!element || element.closest('[role="menu"]')) return;
-      target = element; const text = element.dataset.tooltip || element.getAttribute('aria-label'); if (!text) return;
+      target = element; const text = element.dataset.tooltip; if (!text) return;
       timer = setTimeout(() => { if (element.isConnected && !ref.current) setHint({ text, target: element }); }, e.type === 'focusin' ? 200 : 450);
     };
     const leave = (e: Event) => { const related = (e as PointerEvent).relatedTarget; if (!target || !(related instanceof Node) || !target.contains(related)) hide(); };

@@ -10,11 +10,11 @@ export function ArtistLinks({ track, resolve = false }: { track: Track; resolve?
   const query = useQuery({ queryKey: [api?.identity, 'song', track.id], enabled: Boolean(api && resolve && missing), queryFn: ({signal}) => api!.song(track.id, signal) });
   const source = resolve && missing && query.data?.id ? query.data : track;
   const artists = source.artists?.length ? source.artists : [{ id: source.artistId, name: source.artist }];
-  return <>{artists.map((artist, index) => <span key={`${artist.id ?? artist.name}-${index}`}>{index > 0 && ' / '}{artist.id ? <Link to={`/artists/${encodeURIComponent(artist.id)}`} data-tooltip={`查看歌手 ${artist.name}`}>{artist.name}</Link> : <span>{artist.name}</span>}</span>)}</>;
+  return <>{artists.map((artist, index) => <span key={`${artist.id ?? artist.name}-${index}`}>{index > 0 && ' / '}{artist.id ? <Link to={`/artists/${encodeURIComponent(artist.id)}`}>{artist.name}</Link> : <span>{artist.name}</span>}</span>)}</>;
 }
 export function AlbumLink({ track, title = false }: { track: Track; title?: boolean }) {
   const text = title ? track.title : track.album ?? '—';
-  return track.albumId ? <Link to={`/albums/${encodeURIComponent(track.albumId)}`} data-tooltip={`查看专辑 ${track.album ?? track.title}`}>{text}</Link> : <span>{text}</span>;
+  return track.albumId ? <Link to={`/albums/${encodeURIComponent(track.albumId)}`}>{text}</Link> : <span>{text}</span>;
 }
 
 export function PlaybackSourceLink({ entry }: { entry: QueueEntry }) {
@@ -27,5 +27,5 @@ export function PlaybackSourceLink({ entry }: { entry: QueueEntry }) {
   const destination = playbackDestination(entry, entry.track.albumId ?? detail.data?.albumId);
   return destination && api ? <Link to={destination.pathname} state={{ tookuTrack: {
     identity: api.identity, source: destination.source, trackId: destination.trackId, sourceIndex: destination.sourceIndex,
-  } }} data-tooltip="查看播放来源并定位歌曲">{entry.track.title}</Link> : <span>{entry.track.title}</span>;
+  } }}>{entry.track.title}</Link> : <span>{entry.track.title}</span>;
 }

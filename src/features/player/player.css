@@ -27,10 +27,10 @@ html:has(dialog[open]) { overflow: hidden; }
 .transport .icon-button:hover:not(:disabled) { transform: translateY(-1px); }
 .transport .icon-button:active:not(:disabled) { transform: scale(.9); }
 .playback-dock .transport .play-button, .modal-player .transport .play-button {
-  width: 38px; height: 38px; border-radius: 50%; color: white; background: var(--text);
+  width: 38px; height: 38px; border-radius: 50%; color: var(--bg); background: var(--text);
   box-shadow: 0 3px 9px #0000000a; transition: transform .2s, background .2s, box-shadow .2s;
 }
-.transport .play-button:hover:not(:disabled) { transform: scale(1.07); background: var(--accent); box-shadow: 0 5px 16px #e94c6026; }
+.transport .play-button:hover:not(:disabled) { transform: scale(1.07); color: var(--accent-contrast); background: var(--accent); box-shadow: 0 5px 16px #e94c6026; }
 .transport .play-button:active:not(:disabled) { transform: scale(.94); }
 .transport-symbol { display: flex; animation: symbol-in .17s both; }
 .transport-symbol:has(.lucide-play) { transform: translateX(1px); }

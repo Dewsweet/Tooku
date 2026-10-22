@@ -39,6 +39,7 @@ export default function App() {
   useEffect(() => { document.documentElement.style.setProperty('--ui-font-family', fontFamilyCss(fontFamily)); }, [fontFamily]);
   const api = useSession((s) => s.api); const notice = useSession((s) => s.notice); const prefs = usePreferences(); const navigate = useNavigate();
   const [queue, setQueue] = useState(false); const [lyrics, setLyrics] = useState(false); const [adding, setAdding] = useState<Track | null>(null); const [menu, setMenu] = useState(false);
+  const queueTrigger = useRef<HTMLElement | null>(null);
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   useEffect(() => { const media = window.matchMedia('(max-width: 767px)'); const change = () => setMobile(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
   useEffect(() => { if (!menu || !mobile) return; const handle = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenu(false); document.getElementById('tooku-menu-toggle')?.focus(); } }; window.addEventListener('keydown', handle); return () => window.removeEventListener('keydown', handle); }, [menu, mobile]);
@@ -46,7 +47,7 @@ export default function App() {
   const [compactPanel, setCompactPanel] = useState(() => window.matchMedia('(max-width: 1199px)').matches); const [panelOverlay, setPanelOverlay] = useState(false);
   useEffect(() => { const media = window.matchMedia('(max-width: 1199px)'); const change = () => { setCompactPanel(media.matches); setPanelOverlay(false); }; media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
   const panelVisible = compactPanel ? panelOverlay : prefs.sidePanel;
-  useEffect(() => { if (!panelOverlay) return; const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('dialog[open]')) { setPanelOverlay(false); document.getElementById('tooku-panel-toggle')?.focus(); } }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [panelOverlay]);
+  useEffect(() => { if (!panelOverlay && !queue) return; const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('dialog[open]')) { if (queue) setQueue(false); else { setPanelOverlay(false); document.getElementById('tooku-panel-toggle')?.focus(); } } }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [panelOverlay, queue]);
   const location = useLocation(); const contentRef = useRef<HTMLElement>(null);
   useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; setPanelOverlay(false); setMenu(false); }, [location.pathname, location.search, library.libraryId]);
   useEffect(() => { if (api && !player.connectedTo(api)) void player.attach(api); }, [api]);
@@ -79,8 +80,8 @@ export default function App() {
     };
     window.addEventListener('keydown', handle); return () => window.removeEventListener('keydown', handle);
   }, [api, prefs.shortcuts, navigate]);
-  function openQueue() { setQueue(true); setMenu(false); if (compactPanel) setPanelOverlay(true); else prefs.update({ sidePanel: true }); }
-  function toggleQueue() { if (queue && panelVisible) { setQueue(false); if (compactPanel) setPanelOverlay(false); else prefs.update({ sidePanel: false }); } else openQueue(); }
+  function openQueue() { queueTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setQueue(true); setMenu(false); if (compactPanel) setPanelOverlay(true); else prefs.update({ sidePanel: true }); }
+  function toggleQueue() { if (queue && panelVisible) setQueue(false); else openQueue(); }
   if (!api) return <Login />;
   return <div style={{ '--panel-width': panelWidthCss(prefs.panelWidth) } as CSSProperties} className={`app-shell workspace-shell ${!compactPanel && prefs.sidePanel ? 'with-now-panel' : ''} ${panelOverlay ? 'panel-overlay-open' : ''}`}>
     <WorkspaceHeader identity={api.identity} username={api.username} menuOpen={menu} panelOpen={panelVisible} toggleMenu={() => { setPanelOverlay(false); setMenu(!menu); }} togglePanel={() => { setMenu(false); if (compactPanel) setPanelOverlay(!panelOverlay); else prefs.update({sidePanel:!prefs.sidePanel}); }} logout={() => logout(false)} />
@@ -93,7 +94,7 @@ export default function App() {
       <Route path="/recommendations" element={<Recommendations />} />
     </Routes></main><ContentScrollbar viewport={contentRef} scope={JSON.stringify([location.key, library.libraryId])} /></div>
     {!compactPanel && prefs.sidePanel && <PanelResizeHandle />}{panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
-    {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel view={queue ? 'queue' : 'now'} onViewChange={(view) => setQueue(view === 'queue')} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
+    {(prefs.sidePanel || panelOverlay) && <NowPlayingPanel queueOpen={queue && panelVisible} queueTrigger={queueTrigger} closeQueue={() => setQueue(false)} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { setQueue(false); if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
     <div inert={mobile && menu || panelOverlay}><PlayerBar queueOpen={queue && panelVisible} openQueue={toggleQueue} openLyrics={() => currentId && setLyrics(true)} /></div>
     {lyrics && <LyricsPlayer onClose={() => setLyrics(false)} addToPlaylist={setAdding} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
     {notice && <div className="toast" role="status">{notice}<IconButton label="关闭提示" onClick={() => useSession.getState().notify('')}><X size={17} /></IconButton></div>}

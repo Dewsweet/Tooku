@@ -1,5 +1,12 @@
 .workspace-shell .now-panel { display: none; position: fixed; top: var(--header-height); right: var(--gutter); bottom: var(--dock-height); width: var(--panel-width); background: var(--bg); border: 1px solid color-mix(in srgb,var(--line) 60%,transparent); border-radius: 13px; box-shadow: var(--panel-shadow); flex-direction: column; overflow: hidden; }
 @media (min-width:1200px) { .workspace-shell.with-now-panel .now-panel { display: flex; } }
+.now-panel-base { display: flex; flex-direction: column; flex: 1; min-height: 0; transition: opacity .22s ease; }
+.now-panel[data-queue-open=true] .now-panel-base { opacity: .35; }
+.now-panel-queue-layer { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; min-height: 0; background: var(--bg); opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .22s ease, transform .22s cubic-bezier(.2,.75,.3,1); }
+.now-panel-queue-layer[data-open=true] { opacity: 1; transform: translateY(0); pointer-events: auto; }
+@starting-style { .now-panel-queue-layer[data-open=true] { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: reduce) { .now-panel-base, .now-panel-queue-layer { transition: none; } }
+:root[data-motion=reduced] :is(.now-panel-base, .now-panel-queue-layer) { transition: none; }
 .now-panel-heading { display: flex; justify-content: space-between; align-items: center; min-height: 59px; padding: 11px 15px 10px 21px; gap: 10px; flex-shrink: 0; }
 .now-panel-heading h2 { font-size:calc(15px * var(--ui-font-scale, 1)); font-weight: 680; letter-spacing: -.2px; margin: 0; }
 .now-panel-heading > div { display: flex; gap: 2px; }

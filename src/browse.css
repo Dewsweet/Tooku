@@ -43,9 +43,6 @@
 .entity-detail-hero > .page-heading { min-width: 0; flex: 1; align-items: flex-start; flex-direction: column; margin-bottom: 2px; gap: 24px; }
 .entity-detail-hero h1 { overflow-wrap: anywhere; font-size: clamp(27px,3vw,42px); }
 .entity-detail-hero .button-row { gap: 8px; }
-.now-panel-heading .panel-view-tabs { display: flex; align-items: center; gap: 16px; min-width: 0; }
-.now-panel-heading .panel-view-tabs > button { font-size:calc(14px * var(--ui-font-scale, 1)); font-weight: 650; background: transparent; color: var(--muted); padding: 9px 0; white-space: nowrap; }
-.now-panel-heading .panel-view-tabs > button[aria-pressed=true] { color: var(--text); box-shadow: 0 2px 0 var(--accent); }
 .panel-resize-handle { position: absolute; left: 0; top: 9px; bottom: 9px; width: 8px; z-index: 4; cursor: col-resize; touch-action: none; border-radius: 8px; }
 .panel-resize-handle:hover, .panel-resize-handle:focus-visible { background: color-mix(in srgb,var(--accent) 35%,transparent); }
 .is-resizing-panel, .is-resizing-panel * { cursor: col-resize !important; user-select: none !important; }

@@ -25,7 +25,6 @@
 .workspace-shell .track-row { padding: 7px 8px; min-height: 62px; position: relative; transition: background .15s; }
 .workspace-shell .track-row:nth-child(even) { background: transparent; }
 .workspace-shell .track-row:hover, .workspace-shell .track-row:focus-within { background: var(--surface); }
-.workspace-shell .track-row.is-located { background: var(--surface); box-shadow: inset 3px 0 var(--accent); }
 .workspace-shell .track-row[draggable=true] { cursor: grab; user-select: none; -webkit-user-select: none; }
 .workspace-shell .track-row[draggable=true] a, .workspace-shell .track-row[draggable=true] img { -webkit-user-drag: none; }
 .workspace-shell .track-row[draggable=true]:active { cursor: grabbing; }

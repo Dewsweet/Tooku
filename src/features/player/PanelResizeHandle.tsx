@@ -10,7 +10,7 @@ export function PanelResizeHandle() {
     document.documentElement.classList.remove('is-resizing-panel'); start.current = null;
   };
   useEffect(() => () => { const item = start.current; if (item) item.root.style.setProperty('--panel-width', item.css); document.documentElement.classList.remove('is-resizing-panel'); }, []);
-  return <div className="panel-resize-handle" role="separator" aria-label="调整播放侧栏宽度" data-tooltip="拖动调整宽度，双击还原" aria-orientation="vertical" aria-valuemin={280} aria-valuemax={560} aria-valuenow={normalizePanelWidth(width)} tabIndex={0} onDoubleClick={() => usePreferences.getState().update({ panelWidth: 328 })} onPointerDown={(e) => {
+  return <div className="panel-resize-handle" role="separator" aria-label="调整播放侧栏宽度" aria-orientation="vertical" aria-valuemin={280} aria-valuemax={560} aria-valuenow={normalizePanelWidth(width)} tabIndex={0} onDoubleClick={() => usePreferences.getState().update({ panelWidth: 328 })} onPointerDown={(e) => {
     const root = e.currentTarget.closest<HTMLElement>('.workspace-shell'); const aside = root?.querySelector('.now-panel'); if (!aside || !root) return;
     e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const current = aside.getBoundingClientRect().width;
     start.current = { x: e.clientX, width: current, value: current, root, css: root.style.getPropertyValue('--panel-width') }; document.documentElement.classList.add('is-resizing-panel');

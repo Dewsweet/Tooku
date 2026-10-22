@@ -33,5 +33,5 @@ export function useTrackLocation(tracks: Track[], source: PlaybackSource | undef
     });
     return () => cancelAnimationFrame(frame);
   }, [index, location.key]);
-  return { ref, locatedIndex: index };
+  return ref;
 }
