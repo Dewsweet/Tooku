@@ -2,6 +2,18 @@ import { canUseLyricCandidate } from '../../src/domain/lyrics/matching.ts';
 import { songKey, type ListeningSeed, type RecommendationSong } from '../../src/domain/recommendations.ts';
 
 export interface Candidate { song: RecommendationSong; score: number; sources?: string[] }
+const edition = /^(?:(?:album|original|studio)\s+version|(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?|专辑版|录音室版|原版|重制版)$/i;
+function recordingTitle(title: string) {
+  let result = title.normalize('NFKC').replace(/\(([^)]*)\)|\[([^\]]*)\]/g, (full: string, round: string | undefined, square: string | undefined) => edition.test((round ?? square ?? '').trim()) ? '' : full).trim();
+  const suffix = result.match(/\s+[-–—]\s+([^-–—]+)$/);
+  if (suffix && edition.test(suffix[1].trim())) result = result.slice(0, suffix.index).trim();
+  return result;
+}
+export function sameRecommendation(left: Pick<RecommendationSong, 'title' | 'artists'>, right: Pick<RecommendationSong, 'title' | 'artists'>) {
+  const title = recordingTitle(left.title); const other = recordingTitle(right.title);
+  // Only collapse known edition labels. Keep live, cover, remix and unknown annotations distinct.
+  return songKey(title, []) === songKey(other, []) && canUseLyricCandidate({ ...left, title }, { ...right, title: other });
+}
 const names = (song: Pick<RecommendationSong, 'artists'>) => song.artists.map((artist) => songKey('', [artist]));
 const albumKey = (song: Pick<RecommendationSong, 'album'>) => song.album?.trim() ? songKey(song.album, []) : '';
 

@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { getCACertificates } from 'node:tls';
 import { catalogReleaseDate } from '../src/domain/musicMetadata';
 import { listeningSeeds, defaultRecommendationSettings as settings, emptyRecommendationCredentials, isRecommendationProfile, isRecommendationBatch, recommendationCount, recommendationContext, rememberRecommendationBatch, isResolvedSong, isDirectPlatformUrl, songKey, type RecommendationSong, type ListeningSeed } from '../src/domain/recommendations';
-import { balancedSeeds, candidatePool } from '../server/recommendations/ranking';
+import { balancedSeeds, candidatePool, sameRecommendation } from '../server/recommendations/ranking';
 import { selectRecommendations, createRecommendationService as createService, modelCompatibility, readModelJson } from '../server/recommendations/service';
 import { createCatalog, object, text } from '../server/recommendations/catalog';
 import { createRecommendationsApi } from '../server/recommendations/http';
@@ -289,7 +289,7 @@ it('accepts an AI ordering only for real candidates and never places credential 
 });
 
 const discovery = (index: number) => ({ title: `Discovery ${index}`, artists: [`Performer ${index}`], album: `Record ${index}` });
-const modelSongs = (songs: ReturnType<typeof discovery>[]) => ({ choices: [{ message: { content: JSON.stringify({ songs }) } }] });
+const modelSongs = (songs: Pick<RecommendationSong, 'title' | 'artists' | 'album'>[]) => ({ choices: [{ message: { content: JSON.stringify({ songs }) } }] });
 const discoveryCatalog = (count: number) => vi.fn<typeof fetch>(async (input) => {
   const url = new URL(String(input)); const query = url.searchParams.get('s');
   if (url.hostname !== 'music.163.com') return json({ code: 0, data: { song: { list: [] } } });
@@ -297,6 +297,66 @@ const discoveryCatalog = (count: number) => vi.fn<typeof fetch>(async (input) =>
   return json({ code: 200, result: { songs: index === undefined ? [] : [{ id: index + 100, name: discovery(index).title, artists: [{ name: discovery(index).artists[0] }], album: { name: discovery(index).album }, duration: 180000 }] } });
 });
 const aiSettings = { ...settings, mode: 'ai' as const, aiBaseUrl: 'https://example.com/v1', model: 'fixture' };
+
+it.each(['Song (Album Version)', 'Song（录音室版）', 'Song [Original Version]', 'Song - 2011 Remaster', 'Ｓｏｎｇ（Ａｌｂｕｍ Ｖｅｒｓｉｏｎ）'])('recognizes %s as the same recording across recommendation batches', (title) => {
+  expect(sameRecommendation({ title: 'Song', artists: ['Artist A', 'Artist B'] }, { title, artists: ['Artist B', 'Artist A'] })).toBe(true);
+});
+
+it.each(['Song (Live)', 'Song (Cover)', 'Song (Remix)', 'Song (Part II)', 'Song (Acoustic)'])('keeps distinct editions such as %s eligible for discovery', (title) => {
+  expect(sameRecommendation({ title: 'Song', artists: ['Artist'] }, { title, artists: ['Artist'] })).toBe(false);
+});
+
+it('filters recent recording variants in algorithm and AI results while retaining live, cover and distinct works', async () => {
+  const prior = [{ id: 'prior', title: 'Song', artists: ['Performer'] }, { id: 'prior-part', title: 'Cantata (Part I)', artists: ['Composer'] }];
+  const proposals = [{ title: 'Song (Album Version)', artists: ['Performer'] }, { title: 'Song (Live)', artists: ['Performer'] }, { title: 'Song', artists: ['Cover artist'] }, { title: 'Cantata (Part II)', artists: ['Composer'] }];
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'ws.audioscrobbler.com') return json({ similartracks: { track: proposals.map((entry) => ({ name: entry.title, artist: { name: entry.artists[0] }, match: .9 })) } });
+    const found = proposals.find((entry) => url.searchParams.get('s') === `${entry.title} ${entry.artists[0]}`);
+    return json({ code: 200, result: { songs: found ? [{ id: 123, name: found.title, artists: [{ name: found.artists[0] }] }] : [] } });
+  });
+  const complete = vi.fn<typeof modelCompletion>(async () => modelSongs(proposals));
+  const service = createRecommendationService({ fetcher, complete });
+  for (const mode of ['algorithm', 'ai'] as const) {
+    const result = await service.generate([seed], { ...aiSettings, mode, resultCount: 10 }, credentials, ['prior', 'prior-part'], new AbortController().signal, prior);
+    expect(result.songs.map((song) => song.title).sort()).toEqual(['Song (Live)', 'Song', 'Cantata (Part II)'].sort());
+  }
+  const queries = fetcher.mock.calls.map(([input]) => new URL(String(input))).filter((url) => url.hostname === 'music.163.com');
+  expect(queries.some((url) => url.searchParams.get('s') === 'Song (Album Version) Performer')).toBe(false);
+});
+
+it('rechecks recent history after a catalog supplies the canonical title', async () => {
+  const complete = vi.fn<typeof modelCompletion>(async () => modelSongs([{ title: 'Song (Special Edition)', artists: ['Performer'] }]));
+  const fetcher = vi.fn<typeof fetch>(async () => json({ code: 200, result: { songs: [{ id: 123, name: 'Song (Album Version)', artists: [{ name: 'Performer' }] }] } }));
+  const result = await createRecommendationService({ fetcher, complete }).generate([seed], aiSettings, credentials, ['previous'], new AbortController().signal, [{ id: 'previous', title: 'Song', artists: ['Performer'] }]);
+  expect(result.songs).toEqual([]); expect(complete).toHaveBeenCalledTimes(3); expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it.each([4, 10, 26, 29])('stops the Last.fm batch on error %i instead of querying all fifty seeds', async (code) => {
+  const fetcher = vi.fn<typeof fetch>(async () => json({ error: code })); const service = createRecommendationService({ fetcher });
+  const seeds = Array.from({ length: 50 }, (_, index) => ({ ...seed, title: `Seed ${index}` }));
+  const result = await service.generate(seeds, { ...settings, mode: 'algorithm' }, credentials, [], new AbortController().signal);
+  expect(result.songs).toEqual([]); expect(fetcher.mock.calls.length).toBeLessThanOrEqual(4);
+  expect(result.notices[0]).toContain('已停止后续查询');
+  fetcher.mockImplementation(async () => json({ similartracks: { track: Array.from({ length: 15 }, (_, index) => ({ name: `Found ${index}`, artist: { name: `Singer ${index}` }, match: .9 })) } }));
+  const recovered = await service.generate([seed], { ...settings, mode: 'algorithm', resultCount: 10 }, credentials, [], new AbortController().signal);
+  expect(recovered.songs).toHaveLength(10); expect(recovered.notices).toEqual([]);
+});
+
+it.each([401, 403, 429])('also stops Last.fm work on HTTP %i', async (status) => {
+  const fetcher = vi.fn<typeof fetch>(async () => new Response('', { status }));
+  const result = await createRecommendationService({ fetcher }).generate(Array.from({ length: 50 }, (_, index) => ({ ...seed, title: `Seed ${index}` })), { ...settings, mode: 'algorithm' }, credentials, [], new AbortController().signal);
+  expect(result.songs).toEqual([]); expect(fetcher.mock.calls.length).toBeLessThanOrEqual(4); expect(result.notices[0]).toContain('已停止后续查询');
+});
+
+it('continues AI discovery after stopping an invalid Last.fm credential', async () => {
+  const domestic = discoveryCatalog(10);
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => new URL(String(input)).hostname === 'ws.audioscrobbler.com' ? json({ error: 10 }) : domestic(input, init));
+  const complete = vi.fn<typeof modelCompletion>(async () => modelSongs(Array.from({ length: 10 }, (_, index) => discovery(index))));
+  const result = await createRecommendationService({ fetcher, complete }).generate([seed], { ...aiSettings, mode: 'hybrid', resultCount: 10 }, credentials, [], new AbortController().signal);
+  expect(result.songs).toHaveLength(10); expect(result.mode).toBe('ai'); expect(complete).toHaveBeenCalledOnce();
+  expect(result.notices.some((notice) => notice.includes('已停止后续查询'))).toBe(true);
+});
 
 it.each([10, 20, 30] as const)('fills skipped AI candidates to the requested %i songs without rechecking old proposals', async (count) => {
   const half = count / 2; const fetcher = discoveryCatalog(count);

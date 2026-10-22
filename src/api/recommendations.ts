@@ -23,20 +23,19 @@ export class RecommendationsApi {
     };
     // Small groups give all thirty songs a chance within each server-side lookup budget.
     const groups = Array.from({ length: Math.ceil(songs.length / 6) }, (_, index) => songs.slice(index * 6, index * 6 + 6));
-    const results: Awaited<ReturnType<typeof resolve>>[] = new Array(groups.length); const errors: unknown[] = []; let cursor = 0;
+    const results: Awaited<ReturnType<typeof resolve>>[] = new Array(groups.length); let cursor = 0;
     await Promise.all(Array.from({ length: Math.min(2, groups.length) }, async () => {
       while (cursor < groups.length) {
         signal?.throwIfAborted(); const index = cursor++;
         try { results[index] = await resolve(groups[index]); }
         catch (error) {
           if (signal?.aborted) throw error;
-          errors.push(error); results[index] = groups[index].map((song) => ({ id: song.id, links: settings.platforms.map((platform) => ({ platform, url: platformSearchLink(platform, song, settings), kind: 'search', status: 'unavailable' })) }));
+          results[index] = groups[index].map((song) => ({ id: song.id, links: settings.platforms.map((platform) => ({ platform, url: platformSearchLink(platform, song, settings), kind: 'search', status: 'unavailable' })) }));
         }
         signal?.throwIfAborted();
         onGroup?.(results[index]);
       }
     }));
-    if (groups.length && errors.length === groups.length) throw errors[0];
     return results.flat();
   }
   async check(target: 'lastfm' | 'ai' | 'apple' | 'spotify', settings: RecommendationSettings, credentials: RecommendationCredentials, signal?: AbortSignal) {

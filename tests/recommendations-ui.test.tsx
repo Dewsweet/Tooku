@@ -265,6 +265,22 @@ it('resolves thirty platform-link results in bounded groups and keeps successful
   expect(result[12].links[0].status).toBe('not-found');
 });
 
+it('keeps search links when every lookup group fails and does not add retry controls', async () => {
+  const isolated = new RecommendationsApi();
+  const request = vi.spyOn(isolated, 'request').mockRejectedValue(new Error('fixture failure'));
+  const songs = Array.from({ length: 10 }, (_, index) => ({ ...batch.songs[0], id: `fallback-${index}` }));
+  const result = await isolated.links(songs, settings, emptyRecommendationCredentials);
+  expect(request).toHaveBeenCalledTimes(2); expect(result).toHaveLength(10);
+  expect(result.every((song) => song.links.length === 4 && song.links.every((link) => link.kind === 'search' && link.status === 'unavailable'))).toBe(true);
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch: { ...batch, songs } }));
+  vi.mocked(recommendationsApi.links).mockResolvedValueOnce(result);
+  surface(<Recommendations />); fireEvent.click(screen.getAllByRole('button', { name: '选择收听平台：New song' })[0]);
+  await waitFor(() => expect(screen.queryByText('正在核实歌曲链接…')).not.toBeInTheDocument());
+  expect(screen.getByRole('menuitem', { name: '网易云音乐 · 搜索' })).toHaveAttribute('href', expect.stringContaining('music.163.com'));
+  expect(screen.queryByRole('button', { name: /重新核实|重试/ })).not.toBeInTheDocument();
+  expect(recommendationsApi.links).toHaveBeenCalledOnce();
+});
+
 it('stores ordinary settings while keeping credentials out of localStorage and clears them at logout', async () => {
   const view = surface(<RecommendationSettings />);
   const key = crypto.randomUUID(); const modelKey = crypto.randomUUID();

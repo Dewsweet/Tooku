@@ -2,11 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { canUseLyricCandidate } from '../../src/domain/lyrics/matching.ts';
 import { isRecommendationSong, modelEndpoint, recommendationCount, songKey, type ListeningSeed, type RecommendationBatch, type RecommendationCredentials, type RecommendationMemory, type RecommendationSettings, type RecommendationSong } from '../../src/domain/recommendations.ts';
-import { createCatalog, mapLimit, object, text } from './catalog.ts';
+import { CatalogRequestError, createCatalog, mapLimit, object, text } from './catalog.ts';
 import { modelCompletion, RecommendationError, recommendationFailure } from './network.ts';
-import { balancedSeeds, candidatePool, selectRecommendations, type Candidate } from './ranking.ts';
+import { balancedSeeds, candidatePool, sameRecommendation, selectRecommendations, type Candidate } from './ranking.ts';
 export { selectRecommendations } from './ranking.ts';
 const idFor = (title: string, artists: string[]) => createHash('sha256').update(songKey(title, artists)).digest('hex').slice(0, 24);
+class LastfmBatchError extends RecommendationError {}
 export function modelCompatibility(base: string) {
   // Only the official host receives vendor-specific options; other compatible APIs stay generic.
   return new URL(base).hostname === 'api.deepseek.com' ? { thinking: { type: 'disabled' }, response_format: { type: 'json_object' } } : {};
@@ -33,9 +34,14 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
     if (wait) await delay(wait, undefined, { signal });
     const url = new URL('https://ws.audioscrobbler.com/2.0/');
     url.search = new URLSearchParams({ method: 'track.getSimilar', artist: seed.artists[0], track: seed.title, api_key: key, autocorrect: '1', limit: '20', format: 'json' }).toString();
-    const data = await catalog.json(url, {}, signal, 10000);
+    let data: Record<string, unknown>;
+    try { data = await catalog.json(url, {}, signal, 10000); }
+    catch (error) { if (error instanceof CatalogRequestError) throw new LastfmBatchError(error.upstreamStatus === 429 ? 'Last.fm 请求过于频繁，请稍后重试' : 'Last.fm 认证失败，请检查 API Key'); throw error; }
     if ([6, 7].includes(Number(data.error))) return [];
-    if (data.error) throw new RecommendationError(({ 4: 'Last.fm 认证失败，请检查 API Key', 10: 'Last.fm API Key 无效，请填写 API key 而非 Shared secret', 26: 'Last.fm API Key 已停用', 29: 'Last.fm 请求过于频繁，请稍后重试', 11: 'Last.fm 服务暂不可用', 16: 'Last.fm 暂未完成查询，请稍后重试' } as Record<number, string>)[Number(data.error)] ?? 'Last.fm 查询未完成，请稍后重试');
+    if (data.error) {
+      const code = Number(data.error); const ErrorType = [4, 10, 26, 29].includes(code) ? LastfmBatchError : RecommendationError;
+      throw new ErrorType(({ 4: 'Last.fm 认证失败，请检查 API Key', 10: 'Last.fm API Key 无效，请填写 API key 而非 Shared secret', 26: 'Last.fm API Key 已停用', 29: 'Last.fm 请求过于频繁，请稍后重试', 11: 'Last.fm 服务暂不可用', 16: 'Last.fm 暂未完成查询，请稍后重试' } as Record<number, string>)[code] ?? 'Last.fm 查询未完成，请稍后重试');
+    }
     if (!data.similartracks || typeof data.similartracks !== 'object') throw new RecommendationError('Last.fm 响应格式无效');
     const value = object(data.similartracks).track;
     const tracks = value === undefined || value === '' ? [] : Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : undefined;
@@ -71,23 +77,31 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
   }
   async function generate(seeds: ListeningSeed[], settings: RecommendationSettings, credentials: RecommendationCredentials, excluded: string[], signal: AbortSignal, recentSongs: RecommendationMemory[] = []): Promise<RecommendationBatch> {
     const notices: string[] = []; let candidates: Candidate[] = []; let usedAi = false; const count = recommendationCount(settings);
+    const isRecent = (song: RecommendationSong) => recentSongs.some((previous) => sameRecommendation(previous, song));
+    const pool = (items: Candidate[], blocked = excluded, limit = 180) => candidatePool(items.filter(({ song }) => !isRecent(song)), seeds, blocked, limit);
     if (settings.mode !== 'ai' && credentials.lastfmKey) {
-      const chosen = balancedSeeds(seeds); const budget = AbortSignal.any([signal, AbortSignal.timeout(60000)]);
-      const responses = await mapLimit(chosen, 4, async (seed) => { try { budget.throwIfAborted(); return { songs: await lastfm(seed, credentials.lastfmKey, budget), error: '' }; } catch (error) { return { songs: [], error: recommendationFailure(error) }; } });
+      const chosen = balancedSeeds(seeds); const stop = new AbortController(); let stopped: LastfmBatchError | undefined;
+      const budget = AbortSignal.any([signal, stop.signal, AbortSignal.timeout(60000)]);
+      const query = async (seed: ListeningSeed) => {
+        try { budget.throwIfAborted(); return await lastfm(seed, credentials.lastfmKey, budget); }
+        catch (error) { if (error instanceof LastfmBatchError && !stopped) { stopped = error; stop.abort(); } throw stopped ?? error; }
+      };
+      const responses = await mapLimit(chosen, 4, async (seed) => { try { return { songs: await query(seed), error: '' }; } catch (error) { return { songs: [], error: recommendationFailure(error) }; } });
       const failures = responses.filter((response) => response.error);
-      if (failures.length) notices.push(`Last.fm ${responses.length - failures.length}/${responses.length} 首查询完成，${failures.length} 首未完成：${failures[0].error}`);
+      if (failures.length) notices.push(`Last.fm ${responses.length - failures.length}/${responses.length} 首查询完成，${failures.length} 首未完成：${failures[0].error}${stopped ? '；已停止后续查询' : ''}`);
       const initial = responses.flatMap((response) => response.songs);
-      candidates = candidatePool(initial, seeds, excluded);
+      candidates = pool(initial);
       // A second, bounded hop follows unfamiliar performers instead of repeatedly mining one album.
       const familiar = new Set(seeds.flatMap((seed) => seed.artists.map((artist) => songKey('', [artist]))));
       if (candidates.length < count * 3 && initial.length && !budget.aborted) {
         const starters = candidatePool(initial, seeds, []).map((candidate) => ({ candidate, order: random(), familiar: candidate.song.artists.some((artist) => familiar.has(songKey('', [artist]))) })).sort((a, b) => Number(a.familiar) - Number(b.familiar) || a.order - b.order).map(({ candidate }) => candidate);
         const artists = new Set<string>(); const explore = starters.filter(({ song }) => { const key = songKey('', [song.artists[0]]); if (artists.has(key)) return false; artists.add(key); return true; }).slice(0, 8);
         const extended = await mapLimit(explore, 4, async (candidate) => {
-          try { budget.throwIfAborted(); const found = await lastfm({ ...candidate.song, weight: 1, plays: 1 }, credentials.lastfmKey, budget); return found.map((entry) => ({ ...entry, score: entry.score * .75, sources: candidate.sources, song: { ...entry.song, reason: '沿近期收听的相似音乐继续探索' } })); }
+          try { const found = await query({ ...candidate.song, weight: 1, plays: 1 }); return found.map((entry) => ({ ...entry, score: entry.score * .75, sources: candidate.sources, song: { ...entry.song, reason: '沿近期收听的相似音乐继续探索' } })); }
           catch { return []; }
         });
-        candidates = candidatePool([...candidates, ...extended.flat()], seeds, excluded);
+        candidates = pool([...candidates, ...extended.flat()]);
+        if (stopped) notices.push(`Last.fm 探索查询已停止：${stopped.message}`);
       }
     }
     const hasAi = Boolean(settings.aiBaseUrl && settings.model.trim() && credentials.aiKey.trim());
@@ -117,16 +131,16 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
               const song: RecommendationSong = { id: idFor(title, artists), title, artists, ...(text(value.album) ? { album: text(value.album) } : {}), reason: references.length ? `从《${references[0].title.slice(0, 100)}》延伸发现` : '根据近期收听推荐，已核实歌曲', origin: 'ai' };
               if (!isRecommendationSong(song)) return [];
               avoid.set(song.id, { id: song.id, title: song.title, artists: song.artists });
-              if (attempted.has(song.id) || seeds.some((seed) => canUseLyricCandidate(seed, song))) return [];
+              if (attempted.has(song.id) || isRecent(song) || seeds.some((seed) => canUseLyricCandidate(seed, song))) return [];
               attempted.add(song.id);
               return [{ song, score: 2, sources: references.map((seed) => songKey(seed.title, seed.artists)) }];
             });
             const budget = AbortSignal.any([signal, AbortSignal.timeout(35000)]);
-            const unique = candidatePool(proposals, seeds, excluded, 50);
+            const unique = pool(proposals, excluded, 50);
             const verified = await mapLimit(unique, 4, async (candidate) => { try { budget.throwIfAborted(); const song = await catalog.verify(candidate.song, settings, credentials, budget); return song ? { ...candidate, song: { ...song, id: idFor(song.title, song.artists) } } : undefined; } catch { return undefined; } });
             const additions = verified.filter((candidate): candidate is Candidate => candidate !== undefined);
             additions.forEach(({ song }) => { attempted.add(song.id); avoid.set(song.id, { id: song.id, title: song.title, artists: song.artists }); });
-            verifiedCount = additions.length; candidates = candidatePool([...candidates, ...additions], seeds, excluded);
+            verifiedCount = additions.length; candidates = pool([...candidates, ...additions]);
             if (verifiedCount < unique.length) skipped = true;
           }
           if (!ranked && !verifiedCount && (!Array.isArray(response.songs) || !response.songs.length)) throw new RecommendationError('模型未返回可用的新候选或有效排序');
@@ -165,5 +179,5 @@ export function createRecommendationService(options: { fetcher?: typeof fetch; c
     } else throw new RecommendationError('检测来源无效', 400);
     return { ok: true, message: target === 'ai' ? '连接成功，JSON 输出正常' : '连接成功', checkedAt: Date.now() };
   }
-  return { generate, links: catalog.links, check };
+  return { generate, links: catalog.links, check, close: catalog.close };
 }

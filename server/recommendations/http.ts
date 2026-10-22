@@ -39,5 +39,5 @@ export function createRecommendationsApi(service = createRecommendationService()
       send(error instanceof RecommendationError ? error.status : 502, { error: error instanceof RecommendationError ? error.message : '推荐服务暂未完成，请稍后再试' });
     } finally { controllers.delete(controller); res.off('close', disconnect); }
   }
-  return { handle, close() { for (const controller of controllers) controller.abort(); controllers.clear(); rates.clear(); } };
+  return { handle, close() { for (const controller of controllers) controller.abort(); controllers.clear(); rates.clear(); service.close(); } };
 }
