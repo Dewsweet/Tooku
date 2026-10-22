@@ -70,6 +70,7 @@
   margin: 0 0 32px;
 }
 .login-card form { display: flex; flex-direction: column; gap: 24px; }
+.login-card .login-credentials { margin-top: 24px; }
 .login-card label { font-size: 1rem; font-weight: 500; gap: 10px; }
 .login-card input:not([type=range]):not([type=checkbox]) {
   width: 100%;

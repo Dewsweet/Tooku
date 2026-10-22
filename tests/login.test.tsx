@@ -27,8 +27,93 @@ function form() {
   fireEvent.change(screen.getByLabelText('服务器地址'), { target: { value: window.location.origin } });
   fireEvent.change(screen.getByLabelText('用户名'), { target: { value: ' fixture ' } });
   fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'synthetic-password' } });
-  const form = document.querySelector('form'); if (!form) throw new Error('Missing login form'); return form;
+  return screen.getByRole('form', { name: '登录音乐库' });
 }
+
+function fillWithoutEvents(label: string, value: string) {
+  const input = screen.getByLabelText(label);
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  if (!(input instanceof HTMLInputElement) || !setter) throw new Error('Missing native input setter');
+  setter.call(input, value);
+}
+
+it('separates server configuration from credentials and identifies the username/password fields', () => {
+  const login = form(); const connection = screen.getByRole('form', { name: '服务器连接' });
+  const server = screen.getByLabelText('服务器地址');
+  expect(server.closest('form')).toBe(connection);
+  expect(server).toHaveAttribute('id', 'navidrome-server');
+  expect(server).toHaveAttribute('autocomplete', 'off'); expect(server).toHaveAttribute('data-bwignore', 'true');
+  expect([...login.querySelectorAll('input')].map((input) => input.name)).toEqual(['username', 'password']);
+  expect(screen.getByLabelText('用户名')).toHaveAttribute('id', 'username');
+  expect(screen.getByLabelText('用户名')).toHaveAttribute('autocomplete', 'username');
+  expect(screen.getByLabelText('密码')).toHaveAttribute('id', 'password');
+  expect(screen.getByLabelText('密码')).toHaveAttribute('autocomplete', 'current-password');
+  expect(login).toHaveAttribute('method', 'post');
+});
+
+it('reads credentials autofilled without React events without changing the saved server address', async () => {
+  const login = form();
+  fillWithoutEvents('用户名', 'autofilled-fixture'); fillWithoutEvents('密码', 'synthetic-autofilled-password');
+  fireEvent.submit(login);
+  await waitFor(() => expect(useSession.getState().api?.username).toBe('autofilled-fixture'));
+  expect(MusicApi.prototype.connect).toHaveBeenCalledWith('synthetic-autofilled-password');
+  expect(useSession.getState().api?.base).toBe(`${window.location.origin}/nd`);
+  expect(localStorage.getItem('tooku-login-server')).toBe(window.location.origin);
+});
+
+it('preserves autofilled credentials and focuses an invalid server address before connecting', async () => {
+  const login = form();
+  fireEvent.change(screen.getByLabelText('服务器地址'), { target: { value: 'invalid address' } });
+  fillWithoutEvents('用户名', 'autofilled-fixture'); fillWithoutEvents('密码', 'synthetic-autofilled-password');
+  fireEvent.submit(login);
+  expect(await screen.findByRole('alert')).toHaveTextContent('服务地址');
+  expect(screen.getByLabelText('服务器地址')).toHaveFocus();
+  expect(screen.getByLabelText('服务器地址')).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByLabelText('用户名')).toHaveValue('autofilled-fixture');
+  expect(screen.getByLabelText('密码')).toHaveValue('synthetic-autofilled-password');
+  expect(MusicApi.prototype.connect).not.toHaveBeenCalled();
+  // Change the credential fields without hiding the still-invalid server feedback.
+  fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'edited-fixture' } });
+  expect(screen.getByRole('alert')).toHaveTextContent('服务地址');
+  fireEvent.change(screen.getByLabelText('服务器地址'), { target: { value: window.location.origin } });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('服务器地址')).not.toHaveAttribute('aria-invalid');
+});
+
+it('does not submit while confirming Chinese input and allows submission after composition ends', async () => {
+  const login = form(); const username = screen.getByLabelText('用户名');
+  fireEvent.compositionStart(username);
+  expect(fireEvent.keyDown(username, { key: 'Enter', isComposing: true })).toBe(false);
+  fireEvent.submit(login); expect(MusicApi.prototype.connect).not.toHaveBeenCalled();
+  fireEvent.compositionEnd(username);
+  expect(fireEvent.keyDown(username, { key: 'Enter', keyCode: 229 })).toBe(false);
+  fireEvent.submit(login); await waitFor(() => expect(MusicApi.prototype.connect).toHaveBeenCalledTimes(1));
+});
+
+it('submits only the server connection check from the connection form', async () => {
+  form();
+  fireEvent.submit(screen.getByRole('form', { name: '服务器连接' }));
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('服务可达'));
+  expect(MusicApi.prototype.connect).not.toHaveBeenCalled(); expect(enterWorkspace).not.toHaveBeenCalled();
+});
+
+it('keeps the legacy proxy address valid after separating the forms', async () => {
+  const login = form(); const server = screen.getByLabelText('服务器地址');
+  fireEvent.change(server, { target: { value: '/nd' } });
+  if (!(server instanceof HTMLInputElement)) throw new Error('Missing server input');
+  expect(server.checkValidity()).toBe(true);
+  fireEvent.submit(login);
+  await waitFor(() => expect(useSession.getState().api?.base).toBe(`${window.location.origin}/nd`));
+});
+
+it('rejects a whitespace-only username before login and clears credential errors on editing', async () => {
+  const login = form(); fireEvent.change(screen.getByLabelText('用户名'), { target: { value: '   ' } });
+  fireEvent.submit(login);
+  expect(await screen.findByRole('alert')).toHaveTextContent('请输入用户名和密码');
+  expect(screen.getByLabelText('用户名')).toHaveFocus(); expect(MusicApi.prototype.connect).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'fixture' } });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
 
 it('waits for connection, recovery and player attachment before transitioning', async () => {
   const login = form();
