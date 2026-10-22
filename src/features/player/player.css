@@ -197,25 +197,13 @@ html:has(dialog[open]) { overflow: hidden; }
   .modal-player .transport.large { gap: 15px; }
 }
 @media (max-width: 767px) {
-  .playback-dock { min-height: 128px; padding: 9px 16px max(9px, env(safe-area-inset-bottom)); grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; }
-  .dock-track { gap: 3px; }
-  .dock-track .now-playing { gap: 10px; max-width: none; }
-  .dock-art .mini-cover { width: 45px; border-radius: 7px; }
-  .dock-track .favorite-control { min-width: 44px; width: 44px; }
-  .dock-metadata strong { font-size:calc(12px * var(--ui-font-scale, 1)); }
-  .dock-metadata small { font-size:calc(10px * var(--ui-font-scale, 1)); }
-  .playback-dock .player-center { grid-column: 1/-1; grid-row: 2; display: flex; flex-direction: row-reverse; align-items: center; gap: 10px; margin-top: 6px; }
-  .playback-dock .transport { gap: 0; margin: 0; }
-  .playback-dock .transport .play-button { min-width: 44px; width: 44px; height: 44px; min-height: 44px; }
-  .playback-dock .transport .icon-button:not(.play-button) { width: 44px; min-width: 44px; }
-  .playback-dock .transport > .mode-button { display: none; }
-  .playback-dock .player-right > .icon-button { display: none; }
-  .playback-dock .player-right > .icon-button[aria-label^="播放队列"] { display: inline-flex; }
-  .playback-dock .player-right > .desktop-lyrics-button { display: inline-flex; }
-  .playback-dock .seek-control { flex: 1; font-size:calc(9px * var(--ui-font-scale, 1)); gap: 4px; }
-  .seek-control .seek-track, .seek-control input[type=range] { height: 38px; }
-  .seek-control input::-webkit-slider-thumb { opacity: 1; width: 10px; height: 10px; margin-top: -3.5px; }
-  .seek-control .duration-time { min-width: 32px; font-size:calc(9px * var(--ui-font-scale, 1)); }
+  .playback-dock { grid-template-columns: minmax(0, 1fr) auto; }
+  .dock-track .now-playing { max-width: none; }
+  .dock-art .mini-cover { width: 44px; }
+  .playback-dock .player-right { gap: 0; }
+  .playback-dock .player-right > .icon-button { display: inline-flex; width: 40px; min-width: 40px; height: 44px; padding: 0; }
+  .playback-dock .player-right .play-button { background: transparent; color: var(--text); }
+  .playback-dock .player-error { position: absolute; left: 10px; right: 10px; bottom: calc(100% + 6px); padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); box-shadow: var(--panel-shadow); }
   .modal-queue { width: 100vw; max-width: 100vw; top: auto; bottom: 0; height: 80dvh; border-radius: 19px 19px 0 0; padding: 20px 15px max(20px, env(safe-area-inset-bottom)); }
   .modal-queue[open] { animation-name: room-enter; }
   .modal-queue[open].is-closing { animation-name: room-exit; }

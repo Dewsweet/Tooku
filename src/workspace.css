@@ -154,21 +154,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .folder-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 767px) {
-  .workspace-shell { --header-height: 104px; --dock-height: 128px; --gutter: 7px; }
-  .workspace-header { display: flex; flex-wrap: wrap; align-content: center; gap: 6px 8px; padding: 6px 10px; }
-  .header-brand { gap: 3px; flex: 1; }
-  .header-brand .menu-toggle { display: flex; width: 33px; min-width: 33px; }
-  .header-logo > span:last-child, .header-search-key, .header-settings, .profile-trigger > svg { display: none; }
-  .header-logo .tooku-mark { width: 31px; height: 31px; }
-  .header-discovery { flex: 1 0 100%; order: 1; gap: 6px; }
-  .header-home { width: 36px; height: 36px; }
+  .workspace-shell { --header-height: calc(56px + env(safe-area-inset-top, 0px)); --dock-height: calc(72px + env(safe-area-inset-bottom, 0px)); --gutter: 7px; }
+  .workspace-header { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; padding: calc(6px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 6px max(8px, env(safe-area-inset-left, 0px)); }
+  .header-brand { flex: 0 0 auto; }
+  .header-brand .menu-toggle { display: flex; width: 40px; min-width: 40px; height: 44px; }
+  .header-search-key, .header-settings, .profile-trigger > svg { display: none; }
+  .header-discovery { flex: 1; min-width: 0; gap: 4px; }
+  .header-home { width: 40px; height: 44px; flex-shrink: 0; }
   .header-home svg { width: 19px; }
-  .header-search { height: 38px; padding: 0 10px; gap: 6px; }
+  .header-search { min-width: 0; height: 40px; padding: 0 8px; gap: 4px; }
   .header-search > button > svg { width: 18px; }
-  .header-search input:not([type=range]) { font-size:calc(12px * var(--ui-font-scale, 1)); }
-  .header-actions { gap: 4px; }
-  .header-actions > .icon-button { width: 32px; min-width: 32px; }
-  .profile-trigger { padding: 2px; }
+  .header-search input:not([type=range]) { font-size: max(16px, calc(14px * var(--ui-font-scale, 1))); }
+  .header-actions { flex: 0 0 auto; }
+  .profile-trigger { width: 40px; min-height: 44px; justify-content: center; padding: 4px; }
   .profile-avatar { width: 30px; height: 30px; font-size:calc(12px * var(--ui-font-scale, 1)); }
   .workspace-shell .sidebar { width: 242px; top: var(--header-height); bottom: 7px; left: 7px; z-index: 50; transform: translateX(calc(-100% - 15px)); transition: transform .24s cubic-bezier(.2,.75,.3,1); }
   .workspace-shell .sidebar.open { transform: translateX(0); }
@@ -176,13 +174,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .workspace-shell .app-main { left: var(--gutter); right: var(--gutter); border-radius: 11px; }
   .workspace-shell .content { padding: 23px 17px 32px; }
   .workspace-shell h1 { font-size:calc(26px * var(--ui-font-scale, 1)); }
-  .workspace-shell .album-grid, .workspace-shell .playlist-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 25px 15px; }
-  .workspace-shell .playback-dock { height: var(--dock-height); min-height: var(--dock-height); grid-template-columns: minmax(0,1fr) auto; padding: 8px 13px max(8px,env(safe-area-inset-bottom)); gap: 0 6px; }
+  .workspace-shell .album-grid, .workspace-shell .artist-grid, .workspace-shell .playlist-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 25px 15px; }
+  .workspace-shell .playback-dock { height: var(--dock-height); min-height: var(--dock-height); grid-template-columns: minmax(0,1fr) auto; padding: 8px max(10px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); gap: 6px; }
   .workspace-shell .dock-art .mini-cover { width: 44px; }
   .workspace-shell .dock-track .now-playing { max-width: none; }
   .workspace-shell .dock-track { gap: 8px; }
   .workspace-shell .dock-metadata strong { font-size:calc(13px * var(--ui-font-scale, 1)); }
-  .workspace-shell .dock-track .favorite-control { min-width: 38px; width: 38px; margin-left: 0; }
   .track-table-heading { display: none !important; }
   .workspace-shell .track-row { grid-template-columns: 26px minmax(0,1fr) 40px; gap: 6px; padding: 9px 0; }
   .workspace-shell .track-actions { opacity: 1; grid-column: 2/4; justify-content: flex-start; margin-top: 3px; }

@@ -32,15 +32,21 @@ export function Progress({ context = 'dock' }: { context?: 'dock' | 'room' }) {
   </div>;
 }
 
+export function PlayPauseButton({ large = false }: { large?: boolean }) {
+  const status = usePlayer((state) => state.status); const currentId = usePlayer((state) => state.currentId);
+  const active = ['playing', 'buffering', 'loading'].includes(status);
+  return <IconButton label={active ? '暂停' : '播放'} className={`icon-button play-button ${active ? 'is-active' : ''}`} disabled={!currentId} onClick={() => player.toggle()}>
+      {status === 'buffering' || status === 'loading' ? <LoaderCircle className="spin" size={large ? 28 : 23} /> : <span key={active ? 'pause' : 'play'} className="transport-symbol">{active ? <Pause size={large ? 28 : 22} fill="currentColor" /> : <Play size={large ? 28 : 22} fill="currentColor" />}</span>}
+    </IconButton>;
+}
+
 export function Transport({ large = false }: { large?: boolean }) {
-  const status = usePlayer((s) => s.status); const currentId = usePlayer((s) => s.currentId); const shuffle = usePlayer((s) => s.shuffle); const repeat = usePlayer((s) => s.repeat);
-  const active = ['playing', 'buffering', 'loading'].includes(status); const repeatLabel = { off: '关闭', all: '列表', one: '单曲' }[repeat];
+  const currentId = usePlayer((s) => s.currentId); const shuffle = usePlayer((s) => s.shuffle); const repeat = usePlayer((s) => s.repeat);
+  const repeatLabel = { off: '关闭', all: '列表', one: '单曲' }[repeat];
   return <div className={`transport ${large ? 'large' : ''}`}>
     <IconButton label="随机播放" className={`icon-button mode-button ${shuffle ? 'selected' : ''}`} aria-pressed={shuffle} disabled={!currentId} onClick={() => player.shuffle()}><Shuffle size={19} /></IconButton>
     <IconButton label="上一首" disabled={!currentId} onClick={() => player.previous()}><SkipBack size={large ? 25 : 21} fill="currentColor" /></IconButton>
-    <IconButton label={active ? '暂停' : '播放'} className={`icon-button play-button ${active ? 'is-active' : ''}`} disabled={!currentId} onClick={() => player.toggle()}>
-      {status === 'buffering' || status === 'loading' ? <LoaderCircle className="spin" size={large ? 28 : 23} /> : <span key={active ? 'pause' : 'play'} className="transport-symbol">{active ? <Pause size={large ? 28 : 22} fill="currentColor" /> : <Play size={large ? 28 : 22} fill="currentColor" />}</span>}
-    </IconButton>
+    <PlayPauseButton large={large} />
     <IconButton label="下一首" disabled={!currentId} onClick={() => player.next()}><SkipForward size={large ? 25 : 21} fill="currentColor" /></IconButton>
     <IconButton label={`循环：${repeatLabel}`} aria-pressed={repeat !== 'off'} className={`icon-button mode-button ${repeat !== 'off' ? 'selected' : ''}`} disabled={!currentId} onClick={() => player.repeat()}>{repeat === 'one' ? <Repeat1 size={19} /> : <Repeat size={19} />}</IconButton>
   </div>;
@@ -64,13 +70,13 @@ function Volume() {
   return <div className="volume-control"><IconButton label={volume === 0 ? '取消静音' : '静音'} onClick={() => { if (volume > 0) { previous.current = volume; player.volume(0); } else player.volume(previous.current || 0.7); }}><Icon size={19} /></IconButton><input type="range" aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} min={0} max={1} step={0.01} value={volume} style={{ '--progress': `${volume * 100}%` } as CSSProperties} onChange={(e) => player.volume(Number(e.target.value))} /></div>;
 }
 
-export function PlayerBar({ openQueue, openLyrics, queueOpen = false }: { openQueue: () => void; openLyrics: () => void; queueOpen?: boolean }) {
+export function PlayerBar({ openQueue, openLyrics, queueOpen = false, mobile = false }: { openQueue: () => void; openLyrics: () => void; queueOpen?: boolean; mobile?: boolean }) {
   const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId);
   return <footer className={`player-bar playback-dock ${current ? 'has-track' : ''}`} aria-label="音乐播放器">
     <div className="dock-track"><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
-      <div key={current?.entryId} className="dock-metadata"><strong>{current ? <PlaybackSourceLink entry={current} /> : '选择一首歌'}</strong><small>{current && <ArtistLinks track={current.track} resolve />}</small></div><Favorite track={current?.track} compact /></div>
-    <div className="player-center"><Transport /><Progress /></div>
-    <div className="player-right"><IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton><Volume /><DesktopLyricsButton track={current?.track} /><FullscreenButton disabled={!current} openPlayer={openLyrics} /></div>
+      <div key={current?.entryId} className="dock-metadata"><strong>{current ? <PlaybackSourceLink entry={current} /> : '选择一首歌'}</strong><small>{current && <ArtistLinks track={current.track} resolve />}</small></div>{!mobile && <Favorite track={current?.track} compact />}</div>
+    {!mobile && <div className="player-center"><Transport /><Progress /></div>}
+    <div className="player-right"><IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton>{!mobile && <Volume />}<DesktopLyricsButton track={current?.track} />{mobile ? <PlayPauseButton /> : <FullscreenButton disabled={!current} openPlayer={openLyrics} />}</div>
     {state.error && <div className="player-error" role="alert"><span>{state.error}</span><button onClick={() => player.play()}>重试</button><button onClick={() => player.mode('compatible')}>兼容模式</button></div>}
   </footer>;
 }

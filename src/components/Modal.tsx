@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type MouseEventHandler } f
 import { ChevronDown, X } from 'lucide-react';
 import { IconButton } from './Common';
 
-export function Modal({ title, children, onClose, headerActions, onContextMenu, className = '', wide = false, variant = 'default', busy = false }: { title: string; children: ReactNode; onClose: () => void; headerActions?: ReactNode; onContextMenu?: MouseEventHandler<HTMLDialogElement>; className?: string; wide?: boolean; variant?: 'default' | 'player' | 'queue'; busy?: boolean }) {
+export function Modal({ title, children, onClose, headerActions, onContextMenu, className = '', wide = false, variant = 'default', busy = false }: { title: string; children: ReactNode; onClose: () => void; headerActions?: ReactNode; onContextMenu?: MouseEventHandler<HTMLDialogElement>; className?: string; wide?: boolean; variant?: 'default' | 'player' | 'queue' | 'mobile-queue'; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null); const close = useRef(onClose);
   const pending = useRef(busy); pending.current = busy;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
