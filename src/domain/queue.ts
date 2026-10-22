@@ -1,9 +1,10 @@
 import type { PlaybackSource, QueueEntry, Track } from './models';
+import { createId } from './ids';
 
 // A full source list has sequential positions; [] explicitly means unknown positions.
 export const entriesFor = (tracks: Track[], source?: PlaybackSource, sourceIndices?: readonly number[]): QueueEntry[] => tracks.map((track, index) => {
   const sourceIndex = sourceIndices ? sourceIndices[index] : index;
-  return { entryId: crypto.randomUUID(), track, ...(source ? { source: { ...source }, ...(sourceIndex !== undefined ? { sourceIndex } : {}) } : {}) };
+  return { entryId: createId(), track, ...(source ? { source: { ...source }, ...(sourceIndex !== undefined ? { sourceIndex } : {}) } : {}) };
 });
 export const samePlaybackSource = (a?: PlaybackSource, b?: PlaybackSource) => Boolean(a && b && a.kind === b.kind && a.id === b.id && a.libraryId === b.libraryId);
 export function moveEntry(entries: QueueEntry[], from: number, to: number) {

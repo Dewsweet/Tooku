@@ -16,6 +16,8 @@
 
 手机局域网调试使用 `npm.cmd run dev:lan` 或 `./start-tooku.cmd --lan`，显式监听 `0.0.0.0`；普通启动仍监听 `127.0.0.1`。`scripts/network-listener.mjs` 负责复用范围判断和 IPv4 地址展示，启动状态记录 `host`，旧状态按仅本机兼容。发现健康的仅本机服务时，LAN 启动提示正常停止后重启，不自动结束进程或并行启动另一份数据服务；已开启 LAN 的服务可继续复用。手机选择终端中电脑 Wi-Fi 网卡对应的 `LAN` 地址，登录填写同一 Tooku 根地址即可走 `/nd`；实际端口以终端为准。保持 Vite 主机校验与 API 同源校验，不为联网调试修改 Navidrome、防火墙或持久化身份规则。
 
+局域网 HTTP 页面可能缺少仅安全上下文开放的 `crypto.randomUUID()`。前端内部 ID 统一用 `src/domain/ids.ts` 的 `createId()`，以 `getRandomValues()` 生成 UUID v4 兼容，不能用 `Math.random()` 或改写全局 crypto；播放器模块初始化、播放次数、队列重复项和文件夹均使用该入口。已有 ID 不迁移、不重写。排查网络时先区分健康端点不可达和页面脚本白屏；防火墙规则类别必须与实际 WLAN 类别一致，读取规则不代表已经完成手机实测。
+
 ## 2. 当前架构
 
 Tooku 0.1.0 是 SPA 与 Node.js / SQLite 用户数据服务，技术栈以 [package.json](../package.json) 为准：React、TypeScript、Vite、React Router、TanStack Query、Zustand、idb、Lucide React、Vitest 与 Testing Library。后端只用 Node 内置模块；未引入第二套 UI、状态或播放框架。

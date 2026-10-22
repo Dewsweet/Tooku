@@ -11,6 +11,7 @@ import { CreatePlaylist } from './CreatePlaylist';
 import { useOrganizationDrag } from './useOrganizationDrag';
 import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { useSession } from '../../state/session';
+import { createId } from '../../domain/ids';
 
 export function FolderEditor({ id, parent = null, onClose }: { id?: string; parent?: string | null; onClose: () => void }) {
   const api = useApi(); const { libraryId, profile } = useMusicLibrary(); const change = useLibrary((s) => s.change); const navigate = useNavigate();
@@ -19,7 +20,7 @@ export function FolderEditor({ id, parent = null, onClose }: { id?: string; pare
   function save(event: FormEvent) {
     event.preventDefault(); if (!libraryId || !name.trim()) return;
     if (profile.folders.some((f) => f.id !== id && f.libraryId === libraryId && f.parentId === parentId && f.name === name.trim())) { setError('这个位置已经有同名文件夹。'); return; }
-    change(api.identity, (p) => id ? { ...reparentFolder(p, id, parentId), folders: reparentFolder(p, id, parentId).folders.map((f) => f.id === id ? { ...f, name: name.trim() } : f) } : { ...p, folders: [...p.folders, { id: crypto.randomUUID(), name: name.trim(), libraryId, parentId }] }); onClose();
+    change(api.identity, (p) => id ? { ...reparentFolder(p, id, parentId), folders: reparentFolder(p, id, parentId).folders.map((f) => f.id === id ? { ...f, name: name.trim() } : f) } : { ...p, folders: [...p.folders, { id: createId(), name: name.trim(), libraryId, parentId }] }); onClose();
   }
   return <Modal title={id ? '管理文件夹' : '新建文件夹'} onClose={onClose}><form onSubmit={save}><label>名称<input required autoFocus maxLength={80} value={name} onChange={(e) => setName(e.target.value)} /></label>{id && <label>位置<Select aria-label="文件夹位置" value={parentId ?? ''} onChange={(value) => setParentId(value || null)}><option value="">/</option>{profile.folders.filter((f) => f.libraryId === libraryId && !forbidden.has(f.id)).map((f) => <option key={f.id} value={f.id}>{folderPath(profile.folders, f.id)}</option>)}</Select></label>}{error && <p role="alert" className="form-error">{error}</p>}<div className="button-row"><button className="primary-button" disabled={!name.trim()}>保存</button>{id && <button type="button" className="subtle-button" data-tooltip="歌单与子文件夹会移到上一级，不删除服务器歌单" onClick={() => { change(api.identity, (p) => removeFolder(p, id)); onClose(); navigate('/playlists'); }}><Trash2 size={16} />删除文件夹</button>}</div></form></Modal>;
 }

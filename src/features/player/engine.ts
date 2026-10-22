@@ -5,6 +5,7 @@ import { entriesFor, moveEntry, nextEntry, samePlaybackSource, shouldScrobble, s
 import { isPlaybackSource, isSourceIndex } from '../../domain/userData';
 import { readProfile, saveProfile } from '../../storage/local';
 import { useSession } from '../../state/session';
+import { createId } from '../../domain/ids';
 
 type Status = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'blocked' | 'error';
 type QueueSnapshot = Pick<PlayerSnapshot, 'entries' | 'currentId' | 'position' | 'shuffle' | 'originalOrder'>;
@@ -39,7 +40,7 @@ class PlayerEngine {
   #mediaEnabled = false;
   #lastReport = 0;
   #channel: BroadcastChannel | null = null;
-  #tabId = crypto.randomUUID();
+  #tabId = createId();
   connectedTo(api: MusicApi) { return this.#api === api; }
   currentTime() { return this.#source && this.#audio ? this.#audio.currentTime : usePlayer.getState().position; }
 
@@ -192,7 +193,7 @@ class PlayerEngine {
     this.#init(); const audio = this.#audio!; const generation = ++this.#generation;
     this.#intent = false; this.#source = ''; audio.pause();
     this.#intent = play; this.#resume = resume; this.#previousTime = resume; this.#listened = 0;
-    this.#occurrenceId = crypto.randomUUID(); this.#startedAt = Date.now(); this.#submission = 'none'; this.#announced = false; this.#insertCursor = null;
+    this.#occurrenceId = createId(); this.#startedAt = Date.now(); this.#submission = 'none'; this.#announced = false; this.#insertCursor = null;
     update({ status: 'loading', error: '', position: resume, duration: entry.track.duration ?? 0 });
     this.#source = this.#api.streamUrl(entry.track.id, usePlayer.getState().mode); audio.src = this.#source; audio.load(); this.#media(); this.#stateReport(true, 'starting');
     if (play) await this.#start(generation); this.persist();
