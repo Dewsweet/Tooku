@@ -43,6 +43,7 @@ React 页面 / 通用控件
 | 列宽 | `src/components/TrackColumns.tsx` | 歌单/专辑与推荐表头共用 `TrackColumnHandle` 和偏好；指针与键盘操作，预览宽度与提交偏好分离 |
 | 右键菜单、图标提示 | `src/components/Interactions.tsx` | `useContextMenu()`、`data-tooltip`；弹窗内浮层、定位翻转和焦点恢复 |
 | 基础弹窗和选择器 | `src/components/Modal.tsx`、`Select.tsx` | 原生 dialog 与 popover；不要退回未统一样式的控件 |
+| 账户与设置 | `src/pages/Settings.tsx`、`src/features/settings/SettingsSection.tsx`、`settings.css` | 六类导航、统一设置分区/状态/操作；分类切换保留推荐草稿与检测，不重建音频 |
 | 封面与头像 | `EntityArtwork.tsx`、`ProfileAvatar.tsx`、`AvatarEditor.tsx` | 歌单本地封面覆盖、加载失败回退；头像圆形预览，歌单与歌手图片方形预览 |
 | 歌曲/歌手独立链接 | `src/components/TrackLinks.tsx` | 歌曲在底栏跳专辑，歌手跳歌手；不要把整组信息包成同一个链接 |
 | 首页和搜索 | `src/pages/Home.tsx`、`Search.tsx` | 数据按当前曲库筛选，保留综合搜索分类和真实统计 |
@@ -80,6 +81,7 @@ React 页面 / 通用控件
 
 - 主页图标左侧提供后退/前进，只遍历本次登录工作区已访问的页面；无可用历史时禁用，搜索替换不新增历史。主页图标只在当前主页显示选中效果，搜索栏尾部不显示回车图标。窄屏头部分为两行以保留搜索宽度。
 - 设置通过头像菜单进入，菜单可快速切换真实曲库；右侧版块配置按钮不属于新增账户设置入口。
+- 设置页分为账户与音乐库、外观、播放与操作、网络歌词、音乐推荐、用户数据。宽内容区采用左侧分类导航，窄内容区将分类放在顶部，按主体实际宽度适配。播放侧栏的显示、内容与顺序集中在播放分类；同步、备份恢复与本机快照集中在用户数据。分类切换不卸载表单，保留推荐草稿及检测结果；推荐配置仍需显式保存，密钥仍仅在会话内存。
 - 独立歌曲页已取消，旧 `/songs` 兼容地址转到 `/search?type=songs`。主页筛选为全部、歌单、专辑、歌手；歌手卡片复用 `components/ArtistGrid.tsx` 并进入现有歌手详情页。主页不显示底部曲库名与“浏览所有歌曲”小字。综合搜索保留歌曲分类，已有歌曲默认视图配置在主页回退到全部，不改写存储数据。
 - 专辑页沿用每批 30 张的接口，在距中部滚动区底部 600px 时自动读取下一批，不显示“加载更多”按钮；小曲库自然读完，大曲库随滚动继续读取。延迟加载封面、跳过屏外卡片绘制，重复整页停止追加；后续批次失败保留已有内容，只由用户重试。
 - 歌手列表保持圆形卡片；详情统一为柔化背景、方形前景图片、大号歌手名、播放/随机/收藏和专辑区。旧版私人图片仍优先展示；管理员原生会话可悬停/键盘聚焦显示“选择照片”，点击打开文件选择与共享裁剪弹窗。新图由 `MusicApi.saveArtistImage` 上传 Navidrome，读回核实后清除该歌手的旧私人覆盖；不批量迁移，不写 Tooku 账号文档。右键可恢复服务器默认、重新读取或移除旧私人图片。写入结果未知时停止写入，先“重新读取”再人工核实。歌手图使用 `getArtist` 明确返回的 `coverArt` 经 `MusicApi.coverUrl` 生成图片地址；缺图/图片失败依次尝试该歌手本库专辑封面、主题渐变；专辑封面以方形主体和柔化横幅展示，不作为真实歌手照。封面按稳定专辑 ID 选择，排除明确属于其他专辑歌手的记录，所有图片失败后停止重试。播放和专辑区使用纯色背景。所有路由的主浏览区隐藏原生滚动条，由 `ContentScrollbar` 在右缘叠加无箭头、透明轨道和 8 px 半透明滑块，贴边且悬停变亮，不占内容宽度，也不替换主滚动容器；左栏与播放侧栏复用 `ScrollArea`，弹窗、菜单、横向表格使用全站原生回退样式；支持轨道点击、拖动、方向键、翻页键及 Home/End。Navidrome 的图片源取决于服务端本地图与外部元数据设置，当前页面展示旧版私人图片与 Navidrome 图片，管理员可手动上传到 Navidrome，不存图片认证 URL；联网来源仅通过独立脚本试验，尚未自动接入页面。播放仅在主动点击后读取本库歌手专辑，全部成功后统一交给 `player`，切页/切库取消未完成操作。
@@ -185,6 +187,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/pages/home.css` | 独立主页 |
 | `src/components/filter-pills.css` | 主页/收藏共用圆角筛选，含选中、悬停、窄屏与减少动态效果 |
 | `src/pages/album-browse.css`、`artist-detail.css` | 专辑自动加载表面、歌手横幅及详情布局 |
+| `src/features/settings/settings.css` | 设置分类、分区、行、开关、推荐表单和同步/备份操作；设置样式从全局与歌词/推荐页面样式中收拢 |
 
 这是一份现状地图，不要求继续把所有业务样式堆进通用文件。按任务逐步收敛组件的样式责任，避免重复规则、不断追加覆盖和大范围 `!important`。修改表格断点时结合主体容器宽度，不能只看整个 viewport。
 
@@ -209,6 +212,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | 歌词整理、平台服务、来源协调与迟到响应 | `tests/lyrics-normalize.test.ts`、`tests/lyrics-service.test.ts`、`tests/lyrics-source.test.tsx` |
 | 推荐样本、多样性/补量/避重、模型协议与 HTTP 边界 | `tests/recommendations.test.ts` |
 | 推荐页/主页入口、平台菜单、列宽与设置检测 | `tests/recommendations-ui.test.tsx` |
+| 设置分类键盘访问、未保存草稿/检测保留、播放连续性 | `tests/settings-ui.test.tsx` |
 | 推荐缓存过期、并发/取消、凭据地区隔离及令牌复用 | `tests/recommendation-cache.test.ts` |
 | 专辑自动分页、失败重试、重复页 | `tests/album-browse.test.tsx` |
 | 全站浮动滚动条几何、拖动、键盘及清理 | `tests/content-scrollbar.test.tsx` |

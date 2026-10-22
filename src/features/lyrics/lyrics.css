@@ -56,9 +56,6 @@
 .lyric-version-duration { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .lyric-candidates svg { color: var(--accent); flex-shrink: 0; }
 .lyric-empty { color: var(--muted); padding: 30px 12px; text-align: center; }
-.lyrics-service-row { gap: 12px; flex-wrap: wrap; }
-.lyrics-service-row > div { display: flex; align-items: center; gap: 12px; }
-.lyrics-service-row details { width: 100%; color: var(--muted); font-size: 13px; }
 .panel-module-lyrics .lyric-translation { font-size: .72em; }
 @media (max-width: 540px) {
   .modal.lyrics-settings-modal { padding: 20px; }

@@ -5,6 +5,7 @@ import { QueryState, useApi } from '../../components/Common';
 import { LyricsApiContext } from '../lyrics/useLyrics';
 import { defaultLyricsSettings, providerIds, providerNames, type ProviderObservation } from '../../domain/lyrics/types';
 import { useLyricsProfiles } from '../../state/lyrics';
+import { SettingsSection } from './SettingsSection';
 
 function observation(value: ProviderObservation) {
   if (!value.checkedAt || Date.now() - value.checkedAt > 1800000) return '未检测';
@@ -44,11 +45,10 @@ export function NetworkLyricsSettings() {
       if (!controller.signal.aborted) setBusy(false);
     }
   }
-  return <section className="settings-section">
-    <h2>网络歌词</h2>
+  return <SettingsSection title="网络歌词">
     <label className="setting-row">
-      <strong>启用网络歌词</strong>
-      <input type="checkbox" checked={settings.enabled} onChange={(e) => update(api.identity, (s) => ({ ...s, enabled: e.target.checked }))} />
+      <span className="setting-copy"><strong>启用网络歌词</strong><span className="setting-description">优先读取本地歌词，明确缺失时自动查询网络来源。</span></span>
+      <input aria-label="启用网络歌词" className="settings-switch" role="switch" type="checkbox" checked={settings.enabled} onChange={(e) => update(api.identity, (s) => ({ ...s, enabled: e.target.checked }))} />
     </label>
     <div className="setting-row">
       <strong>来源优先顺序</strong>
@@ -59,9 +59,10 @@ export function NetworkLyricsSettings() {
         <option value="qq">仅 QQ 音乐</option>
       </Select>
     </div>
+    <div className="settings-subsection"><h3>服务与来源</h3>
     <QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} pendingText="正在连接歌词服务…" />
-    {query.data && <div className="setting-row">
-      <strong role="status">{query.data.enabled ? query.data.cache === 'memory' ? '服务运行中 · 内存缓存' : '服务运行中' : '服务已停用'}</strong>
+    {query.data && <div className="settings-status-row">
+      <span className="settings-status" role="status">{query.data.enabled ? query.data.cache === 'memory' ? '服务运行中 · 内存缓存' : '服务运行中' : '服务已停用'}</span>
       <button className="subtle-button" disabled={busy || !settings.enabled || !query.data.enabled} onClick={check}>{busy ? '检测中…' : '检测'}</button>
     </div>}
     {providerIds.map((id) => {
@@ -69,9 +70,9 @@ export function NetworkLyricsSettings() {
       const label = (kind: 'search' | 'lyrics') => query.data?.enabled === false ? '已停用' : state ? observation(state[kind]) : '未检测';
       return <div className="setting-row lyrics-service-row" key={id}>
         <strong>{providerNames[id]}</strong>
-        <div role="status"><span>搜索：{label('search')}</span><span>歌词：{label('lyrics')}</span></div>
+        <div className="lyrics-service-status" role="status"><span>搜索：{label('search')}</span><span>歌词：{label('lyrics')}</span></div>
         {state && <details>
-          <summary>详情</summary>
+          <summary>检测详情</summary>
           {(['search', 'lyrics'] as const).map((kind) => <div key={kind}>
             <p>{kind === 'search' ? '搜索' : '歌词'} · {date(state[kind].checkedAt)}{state[kind].elapsedMs !== undefined ? ` · ${state[kind].elapsedMs} ms` : ''}</p>
             <p>上次成功 · {date(state[kind].successAt)}</p>
@@ -79,6 +80,7 @@ export function NetworkLyricsSettings() {
         </details>}
       </div>;
     })}
+    </div>
     {error && <p className="form-error" role="alert">{error}</p>}
-  </section>;
+  </SettingsSection>;
 }
