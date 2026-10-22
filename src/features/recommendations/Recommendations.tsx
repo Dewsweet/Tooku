@@ -49,6 +49,6 @@ function RecommendationsView() {
     {error && <p className="form-error" role="alert">{error}</p>}
     {busy && <p className="recommendation-status" role="status">正在挑选并核实音乐，略过的候选会继续补充，请稍候…</p>}
     {!!batch?.notices.length && <div className="recommendation-notices">{batch.notices.map((notice) => <p className="recommendation-status" key={notice}>{notice}</p>)}</div>}
-    {batch?.songs.length ? <RecommendationSongTable key={batch.id} songs={batch.songs} settings={settings} /> : <Empty title={!seeds.length ? '听些音乐，再来发现新歌' : busy ? '正在寻找适合你的音乐' : '下一首喜欢的歌，等你发现'}>{!seeds.length ? '达到收听阈值后，会使用最近的收听记录生成推荐。' : '配置服务后，点击生成推荐。'}</Empty>}
+    {batch?.songs.length ? <RecommendationSongTable key={batch.id} songs={batch.songs} settings={settings} /> : <Empty title={busy ? '正在寻找适合你的音乐' : '暂无推荐'}>从最近在听推荐新歌</Empty>}
   </div>;
 }

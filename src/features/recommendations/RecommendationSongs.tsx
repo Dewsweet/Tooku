@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock3, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { formatTime, useApi } from '../../components/Common';
 import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { recommendationsApi } from '../../api/recommendations';
 import { emptyRecommendationCredentials, platformNames, platformSearchLink, type RecommendationSettings, type RecommendationSong, type ResolvedSong } from '../../domain/recommendations';
 import { useRecommendationSecrets } from '../../state/recommendations';
+import { normalizeTrackColumns, usePreferences } from '../../state/preferences';
+import { TrackColumnHandle, columnVariables } from '../../components/TrackColumns';
 
 export function RecommendationSongTable({ songs, settings, label = '推荐歌曲' }: { songs: RecommendationSong[]; settings: RecommendationSettings; label?: string }) {
   const api = useApi(); const secrets = useRecommendationSecrets();
@@ -14,6 +16,7 @@ export function RecommendationSongTable({ songs, settings, label = '推荐歌曲
 }
 function SongTableView({ songs, settings, label }: { songs: RecommendationSong[]; settings: RecommendationSettings; label: string }) {
   const api = useApi(); const menu = useContextMenu(); const secrets = useRecommendationSecrets();
+  const columns = usePreferences((state) => state.trackColumns);
   const credentials = secrets.identity === api.identity ? secrets.credentials : emptyRecommendationCredentials;
   const [resolved, setResolved] = useState<Record<string, ResolvedSong>>({});
   const opened = useRef<{ id: string; update: (result?: ResolvedSong, pending?: boolean) => void } | null>(null);
@@ -42,7 +45,7 @@ function SongTableView({ songs, settings, label }: { songs: RecommendationSong[]
     const handle = menu(event, items(song, cached, !cached && links.isFetching));
     opened.current = { id: song.id, update: (result, pending) => handle.update(items(song, result, pending)) };
   }
-  return <div className="recommendation-table-wrap">{links.error && <p className="recommendation-status">链接核实暂未完成，仍可搜索歌曲。<button className="text-button" onClick={() => { void links.refetch(); }}>重新核实</button></p>}<table className="recommendation-table" aria-label={label}><thead><tr><th className="recommendation-position">#</th><th>歌曲</th><th className="recommendation-artist-column">歌手</th><th className="recommendation-album-column">专辑</th><th className="recommendation-date-column">发行日期</th><th className="recommendation-time-column"><Clock3 size={16} aria-label="时长" /></th></tr></thead><tbody>{songs.map((song, index) => {
+  return <div className="recommendation-table-wrap" data-track-columns style={columnVariables(normalizeTrackColumns(columns)) as CSSProperties}>{links.error && <p className="recommendation-status">链接核实暂未完成，仍可搜索歌曲。<button className="text-button" onClick={() => { void links.refetch(); }}>重新核实</button></p>}<table className="recommendation-table" aria-label={label}><thead><tr><th className="recommendation-position">#</th><th className="track-column-label track-column-0" aria-label="歌曲">歌曲<TrackColumnHandle index={0} name="歌曲" /></th><th className="recommendation-artist-column track-column-label track-column-1" aria-label="歌手">歌手<TrackColumnHandle index={1} name="歌手" /></th><th className="recommendation-album-column track-column-label track-column-2" aria-label="专辑">专辑<TrackColumnHandle index={2} name="专辑" /></th><th className="recommendation-date-column">发行日期</th><th className="recommendation-time-column track-column-label track-column-3" aria-label="时间">时间<TrackColumnHandle index={3} name="时间" /></th></tr></thead><tbody>{songs.map((song, index) => {
     const detail = resolved[song.id] ?? links.data?.find((entry) => entry.id === song.id); const duration = detail?.durationMs ?? song.durationMs; const date = detail?.releaseDate ?? song.releaseDate;
     return <tr key={song.id} onClick={(event) => open(event, song)} onContextMenu={(event) => open(event, song)}><td className="recommendation-position">{index + 1}</td><td><button className="track-title recommendation-song-trigger" aria-label={`选择收听平台：${song.title}`} aria-haspopup="menu" onClick={(event) => { event.stopPropagation(); open(event, song); }}>{song.title}</button><span className="recommendation-mobile-artist">{song.artists.join(' / ')}</span></td><td className="recommendation-artist-column">{song.artists.join(' / ')}</td><td className="recommendation-album-column">{detail?.album || song.album || '—'}</td><td className="recommendation-date-column">{date ? <time dateTime={date}>{date}</time> : '—'}</td><td className="recommendation-time-column"><span className="track-duration">{duration ? formatTime(duration / 1000) : '—'}</span></td></tr>;
   })}</tbody></table></div>;

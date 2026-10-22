@@ -8,15 +8,13 @@
 .recommendation-actions .styled-select { min-width: 96px; }
 .recommendation-actions .primary-button { white-space: nowrap; }
 .recommendation-table-wrap { min-width: 0; container-type: inline-size; }
-.recommendation-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 13px; }
-.recommendation-table th { color: var(--muted); font-size: 12px; font-weight: 400; height: 42px; border-bottom: 1px solid var(--line); padding: 0 12px; }
-.recommendation-table td { padding: 7px 12px; height: 62px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recommendation-table th:nth-child(2) { width: 34%; }
-.recommendation-table .recommendation-position { width: 42px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; padding-left: 8px; }
-.recommendation-table .recommendation-artist-column { width: 23%; }
-.recommendation-table .recommendation-date-column { width: 110px; }
-.recommendation-table .recommendation-time-column { width: 66px; text-align: right; padding-right: 8px; font-variant-numeric: tabular-nums; }
-.recommendation-time-column svg { vertical-align: middle; }
+.recommendation-table { display: block; width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 13px; }
+.recommendation-table thead, .recommendation-table tbody { display: block; }
+.recommendation-table tr { display: grid; grid-template-columns: 42px minmax(90px, var(--track-title-width)) minmax(75px, var(--track-artist-width)) minmax(85px, var(--track-album-width)) 110px minmax(48px, var(--track-time-width)); }
+.recommendation-table th { min-width: 0; align-content: center; text-align: left; color: var(--muted); font-size: 12px; font-weight: 400; height: 42px; border-bottom: 1px solid var(--line); padding: 0 12px; }
+.recommendation-table td { min-width: 0; align-content: center; padding: 7px 12px; height: 62px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recommendation-table .recommendation-position { text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; padding-left: 8px; }
+.recommendation-table .recommendation-time-column { text-align: right; padding-right: 8px; font-variant-numeric: tabular-nums; }
 .recommendation-table tbody tr { cursor: pointer; }
 .recommendation-table tbody tr:hover, .recommendation-table tbody tr:focus-within { background: var(--surface); }
 .recommendation-table tbody td:first-child { border-radius: 6px 0 0 6px; }
@@ -24,9 +22,9 @@
 .recommendation-song-trigger { display: block; width: 100%; min-width: 0; min-height: 36px; text-align: left; padding: 4px 0; background: transparent; color: var(--text); font-size: 14px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recommendation-mobile-artist { display: none; color: var(--muted); font-size: 12px; }
 .recommendation-table .track-duration { font-size: 12px; margin: 0; }
-@container (max-width: 1000px) { .recommendation-table .recommendation-date-column { display: none; } }
-@container (max-width: 620px) { .recommendation-table .recommendation-album-column { display: none; } .recommendation-table th:nth-child(2) { width: auto; } .recommendation-table .recommendation-artist-column { width: 28%; } }
-@container (max-width: 420px) { .recommendation-table .recommendation-artist-column { display: none; } .recommendation-mobile-artist { display: block; overflow: hidden; text-overflow: ellipsis; } }
+@container (max-width: 1000px) { .recommendation-table .recommendation-date-column { display: none; } .recommendation-table tr { grid-template-columns: 42px minmax(90px, var(--track-title-width)) minmax(75px, var(--track-artist-width)) minmax(85px, var(--track-album-width)) minmax(48px, var(--track-time-width)); } }
+@container (max-width: 620px) { .recommendation-table .recommendation-album-column { display: none; } .recommendation-table tr { grid-template-columns: 42px minmax(90px, var(--track-title-width)) minmax(75px, var(--track-artist-width)) minmax(48px, var(--track-time-width)); } }
+@container (max-width: 420px) { .recommendation-table .recommendation-artist-column { display: none; } .recommendation-table tr { grid-template-columns: 32px minmax(0, var(--track-title-width)) minmax(48px, var(--track-time-width)); } .recommendation-mobile-artist { display: block; overflow: hidden; text-overflow: ellipsis; } }
 .recommendation-sources { padding: 18px 20px; margin-bottom: 20px; border-radius: 12px; background: var(--surface); }
 .recommendation-sources > p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .recommendation-sources ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 22px; list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; }

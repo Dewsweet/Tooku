@@ -12,6 +12,7 @@ import { defaultRecommendationSettings as settings, emptyRecommendationCredentia
 import { useRecommendationProfiles, useRecommendationSecrets } from '../src/state/recommendations';
 import { useSession } from '../src/state/session';
 import { useLibrary } from '../src/state/library';
+import { usePreferences } from '../src/state/preferences';
 import { player, usePlayer } from '../src/features/player/engine';
 
 let api: MusicApi; let client: QueryClient;
@@ -22,6 +23,7 @@ beforeEach(() => {
   vi.spyOn(api, 'libraries').mockResolvedValue([{ id: 'music', name: 'Music' }]);
   vi.spyOn(api, 'search').mockResolvedValue({ songs: [{ id: 'local-one', title: 'New song', artist: 'Artist', duration: 180 }], artists: [], albums: [] });
   useLibrary.setState({ profiles: {} }); useRecommendationProfiles.setState({ profiles: {} });
+  usePreferences.setState({ trackColumns: [2.8, 1.5, 1.8, .6] });
   usePlayer.setState({ ...usePlayer.getInitialState(), position: 23, history: [{ occurrenceId: 'occurrence', track: { id: 'seed', title: 'Seed', artist: 'Artist' }, listenedAt: Date.now(), submitted: true }] });
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(recommendationsApi, 'generate').mockResolvedValue(structuredClone(batch));
@@ -34,11 +36,62 @@ const configure = () => useRecommendationSecrets.getState().update(api.identity,
 
 it('requires listening data and configuration, and does not generate automatically', async () => {
   surface(<Recommendations />);
+  expect(screen.getByText('暂无推荐')).toBeInTheDocument();
+  expect(screen.getByText('从最近在听推荐新歌')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '生成推荐' })).toBeDisabled();
   expect(screen.getByText(/请从头像进入/)).toBeInTheDocument(); expect(recommendationsApi.generate).not.toHaveBeenCalled();
   act(configure); expect(screen.getByRole('button', { name: '生成推荐' })).toBeEnabled();
   act(() => usePlayer.setState({ history: [] }));
-  expect(screen.getByRole('button', { name: '生成推荐' })).toBeDisabled(); expect(screen.getByText('听些音乐，再来发现新歌')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '生成推荐' })).toBeDisabled(); expect(screen.getByText('暂无推荐')).toBeInTheDocument();
+  expect(screen.getByText('从最近在听推荐新歌')).toBeInTheDocument();
+});
+
+it('uses a text time heading and shared keyboard column sizing without restarting playback or lookups', async () => {
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
+  surface(<Recommendations />);
+  const time = screen.getByRole('columnheader', { name: '时间' });
+  expect(time).toHaveTextContent('时间'); expect(time.querySelector('svg')).toBeNull();
+  await waitFor(() => expect(recommendationsApi.links).toHaveBeenCalledOnce());
+  const handle = screen.getByRole('separator', { name: '调整歌曲列宽' });
+  fireEvent.keyDown(handle, { key: 'ArrowRight' });
+  expect(usePreferences.getState().trackColumns[0]).toBeCloseTo(2.95);
+  expect(usePreferences.getState().trackColumns[1]).toBeCloseTo(1.35);
+  const container = screen.getByRole('table', { name: '推荐歌曲' }).parentElement!;
+  expect(parseFloat(container.style.getPropertyValue('--track-title-width'))).toBeCloseTo(2.95);
+  fireEvent.keyDown(handle, { key: 'Home' });
+  expect(usePreferences.getState().trackColumns).toEqual([2.8, 1.5, 1.8, .6]);
+  expect(recommendationsApi.links).toHaveBeenCalledOnce(); expect(recommendationsApi.generate).not.toHaveBeenCalled();
+  expect(usePlayer.getState().position).toBe(23);
+});
+
+it('previews column dragging, saves on release, and restores cancelled or unmounted drags', () => {
+  useRecommendationProfiles.getState().update(api.identity, () => ({ settings, batch }));
+  const view = surface(<Recommendations />); const initial = [...usePreferences.getState().trackColumns];
+  const container = screen.getByRole('table', { name: '推荐歌曲' }).parentElement!;
+  const labels = container.querySelectorAll<HTMLElement>('.track-column-label');
+  labels.forEach((label, index) => {
+    Object.defineProperty(label, 'offsetWidth', { value: initial[index] * 100 });
+    vi.spyOn(label, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, initial[index] * 100, 42));
+  });
+  const handle = screen.getByRole('separator', { name: '调整歌曲列宽' });
+  Object.defineProperty(handle, 'setPointerCapture', { value: vi.fn() });
+  const pointer = (type: string, x: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, { clientX: { value: x }, pointerId: { value: 1 } }); fireEvent(handle, event);
+  };
+  pointer('pointerdown', 100); pointer('pointermove', 143);
+  expect(document.documentElement).toHaveClass('is-resizing-columns');
+  expect(parseFloat(container.style.getPropertyValue('--track-title-width'))).toBeCloseTo(3.23);
+  expect(usePreferences.getState().trackColumns).toEqual(initial);
+  pointer('pointerup', 143); expect(usePreferences.getState().trackColumns[0]).toBeCloseTo(3.23);
+  expect(document.documentElement).not.toHaveClass('is-resizing-columns');
+  fireEvent.doubleClick(handle); expect(usePreferences.getState().trackColumns).toEqual(initial);
+  pointer('pointerdown', 100); pointer('pointermove', 143); pointer('pointercancel', 143);
+  expect(container.style.getPropertyValue('--track-title-width')).toBe('2.8fr');
+  expect(usePreferences.getState().trackColumns).toEqual(initial);
+  pointer('pointerdown', 100); pointer('pointermove', 143); view.unmount();
+  expect(document.documentElement).not.toHaveClass('is-resizing-columns');
+  expect(usePreferences.getState().trackColumns).toEqual(initial);
 });
 
 it('generates only on click, retains results across navigation and provides all four search links', async () => {
