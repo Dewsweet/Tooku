@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" color="#c83e55">
+  <title>Tooku</title>
+  <desc>T 与向远处展开的声波，寓意音乐的传播与回响。</desc>
+  <g stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 20h18M17 20v24"/>
+    <path d="M35 19c13 7 13 19 0 26"/>
+    <path d="M44 10c19 10 19 34 0 44"/>
+  </g>
+</svg>

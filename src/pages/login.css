@@ -1,0 +1,94 @@
+.login-page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  background: radial-gradient(ellipse at 16% 46%, var(--soft), transparent 56%), var(--bg);
+}
+.login-header {
+  width: min(100%, 1280px);
+  margin: 0 auto;
+  padding: 36px 48px;
+}
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: calc(28px * var(--ui-font-scale, 1));
+  font-weight: 750;
+  letter-spacing: -1px;
+  border-radius: 8px;
+}
+.login-brand .tooku-mark { width: 42px; height: 42px; color: var(--accent); }
+.login-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  align-items: center;
+  gap: clamp(48px, 8vw, 120px);
+  width: min(100%, 1160px);
+  padding: 40px 48px 100px;
+  margin: auto;
+}
+.login-copy { min-width: 0; }
+.login-art {
+  display: grid;
+  place-items: center;
+  width: 208px;
+  height: 208px;
+  margin: 0 0 28px -8px;
+  color: var(--accent);
+}
+.login-art .tooku-mark { width: 100%; height: 100%; }
+.login-copy h1 {
+  font-size: calc(clamp(40px, 4.4vw, 56px) * var(--ui-font-scale, 1));
+  line-height: 1.45;
+  font-weight: 650;
+  letter-spacing: -.055em;
+  margin: 0;
+}
+.login-card {
+  min-width: 0;
+  padding: 40px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 20px 64px color-mix(in srgb, var(--text) 5%, transparent);
+}
+.login-card h2 {
+  font-size: calc(26px * var(--ui-font-scale, 1));
+  font-weight: 650;
+  letter-spacing: -.04em;
+  margin: 0 0 32px;
+}
+.login-card form { display: flex; flex-direction: column; gap: 24px; }
+.login-card label { font-size: 1rem; font-weight: 500; gap: 10px; }
+.login-card input:not([type=range]):not([type=checkbox]) {
+  width: 100%;
+  min-height: 50px;
+  font-size: calc(15px * var(--ui-font-scale, 1));
+  padding: 13px 15px;
+  background: var(--surface);
+  border-color: transparent;
+  border-radius: 10px;
+}
+.login-card input:not([type=range]):not([type=checkbox]):hover { border-color: var(--line); }
+.login-card input:focus-visible { outline-width: 2px; outline-offset: 2px; }
+.login-card .form-error { margin: 0; font-size: 1rem; color: var(--status-error); }
+.login-card .login-submit {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 8px;
+  border-radius: 10px;
+  font-size: calc(15px * var(--ui-font-scale, 1));
+}
+@media (max-width: 900px) {
+  .login-header { padding: 28px 28px 16px; }
+  .login-main { grid-template-columns: minmax(0, 1fr); gap: 36px; max-width: 484px; padding: 24px 28px 48px; }
+  .login-art { display: none; }
+  .login-copy h1 { font-size: calc(36px * var(--ui-font-scale, 1)); line-height: 1.4; }
+  .login-card { padding: 28px; border-radius: 20px; }
+}
+@media (max-width: 380px) {
+  .login-main { padding-inline: 20px; }
+  .login-card { padding: 24px 20px; }
+}

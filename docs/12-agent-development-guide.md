@@ -191,6 +191,8 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
 | `src/components/content-scrollbar.css`、`src/scrollbars.css` | 主浏览区/侧栏浮动滚动条、其余滚动区域原生回退 |
 | `src/pages/home.css` | 独立主页 |
+| `src/pages/login.css` | 登录页品牌主视觉、表单与响应式；不恢复功能标签和说明小字 |
+| `public/tooku.svg`、`src/components/TookuMark.tsx`、`tooku-mark.css` | T 与延展声波组成的品牌标志；SVG 同时作为 favicon，组件用同一素材的 CSS mask 跟随主题色，不另画一份 |
 | `src/components/filter-pills.css` | 主页/收藏共用圆角筛选，含选中、悬停、窄屏与减少动态效果 |
 | `src/pages/album-browse.css`、`artist-detail.css` | 专辑自动加载表面、歌手横幅及详情布局 |
 | `src/features/settings/settings.css` | 设置分类、分区、行、开关、推荐表单和同步/备份操作；设置样式从全局与歌词/推荐页面样式中收拢 |
