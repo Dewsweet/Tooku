@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Moon, Sun, Check, RefreshCw, ExternalLink, UserRound, Palette, SlidersHorizontal, Captions, Sparkles, Database } from 'lucide-react';
+import { Moon, Sun, RefreshCw, ExternalLink, UserRound, Palette, SlidersHorizontal, Captions, Sparkles, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Select } from '../components/Select';
 import { PageTitle, QueryState, useApi } from '../components/Common';
@@ -16,8 +16,8 @@ import { UserDataSettings } from '../features/settings/UserDataSettings';
 import { NetworkLyricsSettings } from '../features/settings/NetworkLyricsSettings';
 import { RecommendationSettings } from '../features/settings/RecommendationSettings';
 import { SettingsSection } from '../features/settings/SettingsSection';
+import { AccentColorControl } from '../features/settings/AccentColorControl';
 
-const accents = [{ name: '莓红', value: '#c83e55' }, { name: '海蓝', value: '#3365c4' }, { name: '鸢紫', value: '#7051b8' }, { name: '松绿', value: '#207a61' }, { name: '琥珀', value: '#a65d21' }];
 const categories = [
   { id: 'account', name: '账户与音乐库', icon: UserRound },
   { id: 'appearance', name: '外观', icon: Palette },
@@ -78,13 +78,6 @@ export function Settings({ logout }: { logout: () => void }) {
               }}>{library.libraries.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
             </div>
             <QueryState pending={library.isPending} error={library.error} retry={() => library.refetch()} />
-            {library.libraries.length > 0 && <div className="settings-subsection"><h3>默认浏览入口</h3>
-              {library.libraries.map((item) => <div className="setting-row" key={item.id}><strong>{item.name}</strong>
-                <Select aria-label={`${item.name} 浏览入口`} value={library.profile.views[item.id] ?? 'playlists'} onChange={(value) => useLibrary.getState().change(api.identity, (p) => ({ ...p, views: { ...p.views, [item.id]: value as 'playlists' | 'songs' | 'albums' } }))}>
-                  <option value="playlists">歌单</option><option value="songs">歌曲</option><option value="albums">专辑</option>
-                </Select>
-              </div>)}
-            </div>}
             <div className="settings-footer"><p className="settings-note">头像、目录与偏好按账号保存，可在「用户数据」中查看同步状态。音乐与歌单内容由 Navidrome 管理。</p>
               <a className="text-button settings-external" href={serverUrl} target="_blank" rel="noreferrer">在 Navidrome 管理曲库与用户<ExternalLink size={15} /></a>
             </div>
@@ -96,9 +89,7 @@ export function Settings({ logout }: { logout: () => void }) {
               <button aria-pressed={prefs.theme === 'light'} onClick={() => prefs.update({ theme: 'light' })}><Sun size={18} />浅色</button>
               <button aria-pressed={prefs.theme === 'dark'} onClick={() => prefs.update({ theme: 'dark' })}><Moon size={18} />深色</button>
             </div></div>
-            <div className="setting-row"><strong>主题色</strong><div className="accent-options" role="group" aria-label="主题色">
-              {accents.map((color) => <button key={color.value} aria-label={color.name} data-tooltip={color.name} aria-pressed={prefs.accent === color.value} style={{ background: color.value }} onClick={() => prefs.update({ accent: color.value })}>{prefs.accent === color.value && <Check size={18} />}</button>)}
-            </div></div>
+            <AccentColorControl />
             <label className="setting-row"><span className="setting-copy"><strong>减少动态效果</strong><span className="setting-description">减少界面过渡与文字滚动。</span></span><input aria-label="减少动态效果" className="settings-switch" type="checkbox" role="switch" checked={prefs.reducedMotion} onChange={(e) => prefs.update({ reducedMotion: e.target.checked })} /></label>
           </SettingsSection>
         </div>

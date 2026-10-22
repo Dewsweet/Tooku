@@ -3,6 +3,7 @@
   --shell: #eff0f3; --bg: #fff; --surface: #f5f5f7; --sidebar: #fafafb;
   --line: #e9e9ee; --text: #24252b; --muted: #74757f; --hover: #ededf2;
   --soft: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  --status-success: #207a4d; --status-error: #c43b4d;
   --panel-shadow: 0 4px 22px #22253805, 0 1px 3px #22253803;
   --card-shadow: 0 8px 20px #26263610, 0 2px 5px #26263605;
 }
@@ -11,6 +12,7 @@
   --shell: #090a0c; --bg: #151619; --surface: #202126; --sidebar: #151619;
   --line: #ffffff0c; --text: #f4f4f6; --muted: #a6a6b1; --hover: #2b2c32;
   --soft: color-mix(in srgb, var(--accent) 13%, var(--bg));
+  --status-success: #68c891; --status-error: #f0828e;
   --panel-shadow: 0 4px 24px #00000015; --card-shadow: 0 8px 24px #00000032;
 }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline-color: color-mix(in srgb, var(--accent) 55%, transparent); }

@@ -14,7 +14,7 @@ import './home.css';
 
 export function Home() {
   const api = useApi(); const { active, libraryId, defaultId, profile, error: libraryError, isPending: libraryPending, refetch: reloadLibraries } = useMusicLibrary();
-  const [filter, setFilter] = useState<'all' | 'playlists' | 'albums' | 'artists'>(profile.views[libraryId ?? ''] === 'albums' ? 'albums' : 'all'); const [busy, setBusy] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'playlists' | 'albums' | 'artists'>('all'); const [busy, setBusy] = useState<string | null>(null);
   const current = usePlayer((s) => s.entries.find((e) => e.entryId === s.currentId)); const status = usePlayer((s) => s.status);
   const recent = useQuery({ queryKey: [api.identity, 'home', libraryId, 'newest'], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.albums('newest', 0, signal, libraryId) });
   const familiar = useQuery({ queryKey: [api.identity, 'home', libraryId, 'frequent'], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.albums('frequent', 0, signal, libraryId) });

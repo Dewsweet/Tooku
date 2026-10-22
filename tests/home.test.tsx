@@ -9,7 +9,7 @@ import { Home } from '../src/pages/Home';
 
 afterEach(() => { useSession.getState().setSession(null); useLibrary.setState({ profiles: {} }); vi.restoreAllMocks(); });
 
-function renderHome(artists: { id: string; name: string; albumCount?: number }[]) {
+function renderHome(artists: { id: string; name: string; albumCount?: number }[], legacyView: 'songs' | 'albums' = 'songs') {
   const api = new MusicApi('https://example.test', 'fixture', 'not-real');
   vi.spyOn(api, 'libraries').mockResolvedValue([{ id: 'home-library', name: 'Music Library' }]);
   vi.spyOn(api, 'albums').mockResolvedValue([]);
@@ -17,7 +17,7 @@ function renderHome(artists: { id: string; name: string; albumCount?: number }[]
   const artistQuery = vi.spyOn(api, 'artists').mockResolvedValue(artists);
   vi.spyOn(api, 'libraryOverview').mockResolvedValue({ albums: 0, songs: 0, duration: 0 });
   const songs = vi.spyOn(api, 'songs').mockResolvedValue([]);
-  useLibrary.getState().change(api.identity, (profile) => ({ ...profile, activeId: 'home-library', views: { 'home-library': 'songs' } }));
+  useLibrary.getState().change(api.identity, (profile) => ({ ...profile, activeId: 'home-library', views: { 'home-library': legacyView } }));
   useSession.getState().setSession(api);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(<QueryClientProvider client={client}><MemoryRouter><Home /></MemoryRouter></QueryClientProvider>);
@@ -43,5 +43,15 @@ it('shows an empty state for a library without artists', async () => {
   const { api, client, unmount } = renderHome([]);
   fireEvent.click(screen.getByRole('button', { name: '歌手' }));
   await waitFor(() => expect(screen.getByText('这个音乐库还没有歌手')).toBeInTheDocument());
+  unmount(); client.clear(); api.dispose();
+});
+
+it('opens the full home regardless of an old per-library default view without rewriting it', async () => {
+  const { api, client, unmount } = renderHome([], 'albums');
+  await screen.findByText('Music Library', { exact: false });
+  const filters = within(screen.getByRole('group', { name: '主页内容' }));
+  expect(filters.getByRole('button', { name: '全部' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('heading', { name: '你的歌单' })).toBeVisible();
+  expect(useLibrary.getState().profiles[api.identity].views['home-library']).toBe('albums');
   unmount(); client.clear(); api.dispose();
 });

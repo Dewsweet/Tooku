@@ -43,6 +43,8 @@ it('supports keyboard category navigation and keeps hidden settings out of the f
   const user = userEvent.setup(); const nav = surface();
   await screen.findByRole('combobox', { name: '当前音乐库' });
   expect(nav.getByRole('button', { name: '账户与音乐库' })).toHaveAttribute('aria-current', 'true');
+  expect(screen.queryByText('默认浏览入口')).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: /浏览入口/ })).not.toBeInTheDocument();
   expect(screen.queryByRole('combobox', { name: '推荐模式' })).not.toBeInTheDocument();
   nav.getByRole('button', { name: '外观' }).focus();
   await user.keyboard('{Enter}');
@@ -54,6 +56,41 @@ it('supports keyboard category navigation and keeps hidden settings out of the f
   expect(screen.getByRole('switch', { name: '显示播放侧栏' })).toBeVisible();
   fireEvent.click(screen.getByRole('switch', { name: '显示播放侧栏' }));
   expect(usePreferences.getState().sidePanel).toBe(false);
+});
+
+it('applies custom colors without persisting incomplete values and restores the default', async () => {
+  const nav = surface();
+  fireEvent.click(nav.getByRole('button', { name: '外观' }));
+  const hex = screen.getByRole('textbox', { name: '主题色值' });
+  fireEvent.change(screen.getByLabelText('选择主题色'), { target: { value: '#123456' } });
+  expect(hex).toHaveValue('#123456');
+  expect(usePreferences.getState().accent).toBe('#123456');
+  fireEvent.change(hex, { target: { value: '#12' } });
+  fireEvent.blur(hex);
+  expect(hex).toHaveAttribute('aria-invalid', 'true');
+  expect(usePreferences.getState().accent).toBe('#123456');
+  expect(localStorage.getItem('tooku-preferences')).toContain('#123456');
+  fireEvent.change(hex, { target: { value: '#Aa88FF' } });
+  expect(usePreferences.getState().accent).toBe('#aa88ff');
+  act(() => usePreferences.getState().update({ accent: '#334455' }));
+  expect(hex).toHaveValue('#334455');
+  fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
+  expect(usePreferences.getState().accent).toBe(usePreferences.getInitialState().accent);
+  await waitFor(() => expect(hex).toHaveAttribute('aria-invalid', 'false'));
+});
+
+it('shows available, failed and stale lyric observations as labelled status lights', async () => {
+  const now = Date.now();
+  vi.mocked(lyricsApi.status).mockResolvedValue({ version: 1, enabled: true, cache: 'memory', providers: [
+    { id: 'netease', search: { checkedAt: now, successAt: now }, lyrics: { checkedAt: now, error: 'timeout' } },
+    { id: 'qq', search: { checkedAt: now - 1801000, successAt: now - 1801000 }, lyrics: {} },
+  ] });
+  const nav = surface();
+  fireEvent.click(nav.getByRole('button', { name: '网络歌词' }));
+  expect(await screen.findByLabelText('搜索：可用')).toHaveAttribute('data-state', 'available');
+  expect(screen.getByLabelText('歌词：请求超时')).toHaveAttribute('data-state', 'error');
+  expect(screen.getByLabelText('搜索：未检测')).toHaveAttribute('data-state', 'unknown');
+  expect(screen.getAllByText('检测详情')).toHaveLength(2);
 });
 
 it('preserves unsaved recommendation drafts and in-flight checks across categories without changing playback', async () => {

@@ -12,6 +12,9 @@ function observation(value: ProviderObservation) {
   if (value.error) return ({ timeout: '请求超时', 'rate-limited': '限流', 'login-required': '需要登录', unavailable: '暂不可用', protocol: '返回异常', disabled: '已停用' })[value.error];
   return value.successAt && Date.now() - value.successAt <= 1800000 ? '可用' : '未验证';
 }
+function signal(label: string) {
+  return label === '可用' ? 'available' : ['未检测', '未验证', '已停用'].includes(label) ? 'unknown' : 'error';
+}
 const date = (time?: number) => time ? new Date(time).toLocaleString('zh-CN') : '尚无记录';
 
 export function NetworkLyricsSettings() {
@@ -70,11 +73,15 @@ export function NetworkLyricsSettings() {
       const label = (kind: 'search' | 'lyrics') => query.data?.enabled === false ? '已停用' : state ? observation(state[kind]) : '未检测';
       return <div className="setting-row lyrics-service-row" key={id}>
         <strong>{providerNames[id]}</strong>
-        <div className="lyrics-service-status" role="status"><span>搜索：{label('search')}</span><span>歌词：{label('lyrics')}</span></div>
+        <div className="lyrics-service-status" role="status">{(['search', 'lyrics'] as const).map((kind) => {
+          const status = label(kind);
+          return <span className="lyrics-service-signal" key={kind} data-state={signal(status)} data-tooltip={status} aria-label={`${kind === 'search' ? '搜索' : '歌词'}：${status}`}><span className="status-light" aria-hidden="true" />{kind === 'search' ? '搜索' : '歌词'}<span className="lyrics-signal-label">{status}</span></span>;
+        })}</div>
         {state && <details>
           <summary>检测详情</summary>
           {(['search', 'lyrics'] as const).map((kind) => <div key={kind}>
             <p>{kind === 'search' ? '搜索' : '歌词'} · {date(state[kind].checkedAt)}{state[kind].elapsedMs !== undefined ? ` · ${state[kind].elapsedMs} ms` : ''}</p>
+            <p>状态 · {label(kind)}</p>
             <p>上次成功 · {date(state[kind].successAt)}</p>
           </div>)}
         </details>}

@@ -76,27 +76,28 @@ function SettingsView() {
     <p className="settings-notice">生成时向所选服务发送近期收听和已推荐歌曲的歌名、歌手，以及专辑与偏好摘要。密钥仅本次会话有效，刷新或退出后需重新填写。</p>
     <form onSubmit={(event) => { event.preventDefault(); edit(); if (!isRecommendationSettings(draft)) { setError('请使用不含凭据、查询参数的 HTTPS 模型地址，并检查地区配置'); return; } dirty.current = false; try { useRecommendationProfiles.getState().update(api.identity, (current) => ({ ...current, settings: draft })); useSession.getState().notify('推荐设置已保存'); } catch { setError('本机设置未能保存，本次会话仍可使用；请在用户数据中核实同步或导出备份'); } }}>
       <div className="settings-subsection recommendation-preferences"><h3>推荐偏好</h3><div className="recommendation-settings-grid">
-        <label className="recommendation-field"><span>推荐模式</span><Select aria-label="推荐模式" value={draft.mode} onChange={(mode) => { edit(); setDraft({ ...draft, mode: mode as RecommendationMode }); }}><option value="hybrid">混合推荐</option><option value="algorithm">算法推荐</option><option value="ai">AI 推荐</option></Select></label>
+        <label className="recommendation-field"><span>推荐模式</span><Select aria-label="推荐模式" value={draft.mode} onChange={(mode) => { edit(); setDraft({ ...draft, mode: mode as RecommendationMode }); }}><option value="hybrid">混合推荐</option><option value="algorithm">Last.fm 推荐</option><option value="ai">AI 推荐</option></Select></label>
         <label className="recommendation-field"><span>收听样本</span><Select aria-label="收听样本" value={String(draft.sampleSize)} onChange={(value) => { edit(); setDraft({ ...draft, sampleSize: Number(value) }); }}><option value="30">最近 30 首</option><option value="40">最近 40 首</option><option value="50">最近 50 首</option></Select></label>
         <label className="recommendation-field"><span>推荐数量</span><Select aria-label="推荐数量" value={String(recommendationCount(draft))} onChange={(value) => { edit(); setDraft({ ...draft, resultCount: Number(value) }); }}><option value="10">10 首</option><option value="20">20 首</option><option value="30">30 首</option></Select></label>
-        <label className="recommendation-field"><span>探索新歌手</span><Select aria-label="探索新歌手" value={String(draft.exploration)} onChange={(value) => { edit(); setDraft({ ...draft, exploration: Number(value) }); }}><option value="0">不限比例</option><option value="0.1">少量 · 10%</option><option value="0.3">适量 · 30%</option><option value="0.5">均衡 · 50%</option><option value="0.7">发现 · 70%</option><option value="1">探索 · 100%</option></Select></label>
+        <label className="recommendation-field"><span>新歌手目标占比</span><Select aria-label="新歌手目标占比" aria-describedby="recommendation-exploration-help" value={String(draft.exploration)} onChange={(value) => { edit(); setDraft({ ...draft, exploration: Number(value) }); }}><option value="0">不设目标</option><option value="0.1">10%</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="0.7">70%</option><option value="1">100%</option></Select></label>
       </div>
+      <p className="settings-note" id="recommendation-exploration-help">优先安排未出现在本次收听样本中的歌手，实际占比取决于可用候选。</p>
       <fieldset className="recommendation-platforms"><legend>显示平台</legend>{musicPlatforms.map((platform) => <label key={platform}><input type="checkbox" checked={draft.platforms.includes(platform)} disabled={draft.platforms.length === 1 && draft.platforms.includes(platform)} onChange={() => { edit(); setDraft({ ...draft, platforms: draft.platforms.includes(platform) ? draft.platforms.filter((id) => id !== platform) : musicPlatforms.filter((id) => id === platform || draft.platforms.includes(id)) }); }} />{platformNames[platform]}</label>)}</fieldset></div>
-      <div className="recommendation-service"><div className="recommendation-service-heading"><h3>相似歌曲 · Last.fm</h3>{detect('lastfm', 'Last.fm')}</div>{credential('Last.fm API Key', 'lastfmKey')}<p className="settings-note">填写 Last.fm 的 API key，无需 Shared secret。</p></div>
+      <div className="recommendation-service"><div className="recommendation-service-heading"><h3>Last.fm</h3>{detect('lastfm', 'Last.fm')}</div>{credential('Last.fm API Key', 'lastfmKey')}<p className="settings-note">按近期收听查找相似歌曲。</p></div>
       <div className="recommendation-service"><div className="recommendation-service-heading"><h3>AI 模型</h3>{detect('ai', 'AI 模型')}</div>
         <div className="recommendation-settings-grid"><label className="recommendation-field"><span>模型服务地址</span><input type="url" autoComplete="off" placeholder="https://api.example.com/v1" maxLength={512} value={draft.aiBaseUrl} onChange={(event) => { edit('ai'); setDraft({ ...draft, aiBaseUrl: event.target.value.trim() }); }} /></label><label className="recommendation-field"><span>模型名称</span><input autoComplete="off" maxLength={120} value={draft.model} onChange={(event) => { edit('ai'); setDraft({ ...draft, model: event.target.value }); }} /></label></div>
-        {credential('模型 API Key', 'aiKey')}<p className="settings-note">支持兼容 Chat Completions 的公网 HTTPS 接口。DeepSeek 请填写 https://api.deepseek.com/v1；旧的根地址会自动统一到同一接口，检测与生成采用相同配置。<a href="https://api-docs.deepseek.com/quick_start" target="_blank" rel="noreferrer">填写说明</a></p>
+        {credential('模型 API Key', 'aiKey')}<p className="settings-note">支持兼容 Chat Completions 的 HTTPS 接口。</p>
       </div>
-      <div className="recommendation-service"><div className="recommendation-service-heading"><h3>Apple Music · 可选</h3>{detect('apple', 'Apple Music')}</div>{credential('Apple Music Developer Token', 'appleToken')}
+      <details className="recommendation-service recommendation-optional"><summary>Apple Music <span>可选</span></summary><div className="recommendation-service-heading">{detect('apple', 'Apple Music')}</div>{credential('Apple Music Developer Token', 'appleToken')}
         <label className="recommendation-field recommendation-region"><span>商店地区</span><input autoComplete="off" maxLength={2} placeholder="cn" value={draft.appleStorefront} onChange={(event) => { edit('apple'); setDraft({ ...draft, appleStorefront: event.target.value.toLowerCase() }); }} /></label>
-      </div>
-      <div className="recommendation-service"><div className="recommendation-service-heading"><h3>Spotify · 可选</h3>{detect('spotify', 'Spotify')}</div>
+      </details>
+      <details className="recommendation-service recommendation-optional"><summary>Spotify <span>可选</span></summary><div className="recommendation-service-heading">{detect('spotify', 'Spotify')}</div>
         <div className="recommendation-settings-grid">{credential('Spotify Client ID', 'spotifyClientId')}{credential('Spotify Client Secret', 'spotifyClientSecret')}</div>
         <label className="recommendation-field recommendation-region"><span>市场地区</span><input autoComplete="off" maxLength={2} placeholder="US" value={draft.spotifyMarket} onChange={(event) => { edit('spotify'); setDraft({ ...draft, spotifyMarket: event.target.value.toUpperCase() }); }} /></label>
-      </div>
-      <p className="settings-note">Apple Music、Spotify 未配置或无法核实版本时，提供平台搜索入口。地区代码如 cn / us，Spotify 使用大写。</p>
+      </details>
+      <p className="settings-note">可选平台未配置时，仍可使用平台搜索入口。</p>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="settings-form-actions"><span>推荐配置需保存后生效</span><button type="submit" className="primary-button" disabled={checking}>保存推荐设置</button></div>
+      <div className="settings-form-actions"><button type="submit" className="primary-button" disabled={checking}>保存推荐设置</button></div>
     </form>
   </SettingsSection>;
 }

@@ -320,6 +320,29 @@ it('shows missing configuration next to each check without sending requests', ()
   expect(recommendationsApi.check).not.toHaveBeenCalled();
 });
 
+it('collapses optional platform credentials and preserves edits and checks when reopened', async () => {
+  surface(<RecommendationSettings />);
+  const apple = screen.getByText('Apple Music', { selector: 'summary' });
+  const spotify = screen.getByText('Spotify', { selector: 'summary' });
+  expect(apple.closest('details')).not.toHaveAttribute('open');
+  expect(spotify.closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByRole('button', { name: '检测 Spotify' })).not.toBeVisible();
+  fireEvent.click(spotify);
+  fireEvent.change(screen.getByLabelText('Spotify Client ID'), { target: { value: 'synthetic-client' } });
+  fireEvent.change(screen.getByLabelText('Spotify Client Secret'), { target: { value: 'synthetic-secret' } });
+  fireEvent.click(screen.getByRole('button', { name: '检测 Spotify' }));
+  await screen.findByText('Spotify · 连接成功');
+  fireEvent.click(spotify); fireEvent.click(spotify);
+  expect(screen.getByLabelText('Spotify Client ID')).toHaveValue('synthetic-client');
+  expect(screen.getByText('Spotify · 连接成功')).toBeVisible();
+  expect(screen.queryByRole('link', { name: '填写说明' })).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: '新歌手目标占比' })).toHaveAccessibleDescription(/本次收听样本/);
+  fireEvent.click(screen.getByRole('combobox', { name: '推荐模式' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Last.fm 推荐' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存推荐设置' }));
+  expect(useRecommendationProfiles.getState().profiles[api.identity].settings.mode).toBe('algorithm');
+});
+
 it('keeps per-service progress and results visible until related settings change', async () => {
   let resolve!: (value: string) => void;
   vi.mocked(recommendationsApi.check).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));

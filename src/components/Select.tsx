@@ -4,7 +4,7 @@ import { Check, ChevronDown } from 'lucide-react';
 
 type Props = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange' | 'value' | 'children'> & { value: string | number; onChange: (value: string) => void; children: ReactNode };
 type Option = { value: string; label: ReactNode; disabled: boolean };
-export function Select({ value, onChange, children, disabled, id, className = '', 'aria-label': label, title, ...rest }: Props) {
+export function Select({ value, onChange, children, disabled, id, className = '', 'aria-label': label, 'aria-describedby': describedBy, title, ...rest }: Props) {
   const options: Option[] = Children.toArray(children).flatMap((child) => isValidElement<{ value?: string | number; disabled?: boolean; children?: ReactNode }>(child) ? [{ value: String(child.props.value ?? child.props.children ?? ''), label: child.props.children, disabled: Boolean(child.props.disabled) }] : []);
   const generated = useId(); const listId = `${generated}-options`; const button = useRef<HTMLButtonElement>(null); const popup = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false); const [active, setActive] = useState(0); const [host, setHost] = useState<HTMLElement | null>(null); const [position, setPosition] = useState({ top: 0, left: 0, width: 180, maxHeight: 280 });
@@ -31,7 +31,7 @@ export function Select({ value, onChange, children, disabled, id, className = ''
     document.addEventListener('pointerdown', outside); return () => document.removeEventListener('pointerdown', outside);
   }, [open]);
   useEffect(() => { if (open) popup.current?.querySelector<HTMLElement>(`[data-option-index="${active}"]`)?.scrollIntoView?.({ block: 'nearest' }); }, [open, active]);
-  return <><button type="button" id={id} ref={button} className={`styled-select ${className}`} role="combobox" aria-label={label} aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open ? `${generated}-${active}` : undefined} aria-haspopup="listbox" data-tooltip={title} disabled={disabled} onClick={() => open ? close() : show()} onBlur={(event) => { if (!popup.current?.contains(event.relatedTarget as Node)) setOpen(false); }} onKeyDown={(event) => {
+  return <><button type="button" id={id} ref={button} className={`styled-select ${className}`} role="combobox" aria-label={label} aria-describedby={describedBy} aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open ? `${generated}-${active}` : undefined} aria-haspopup="listbox" data-tooltip={title} disabled={disabled} onClick={() => open ? close() : show()} onBlur={(event) => { if (!popup.current?.contains(event.relatedTarget as Node)) setOpen(false); }} onKeyDown={(event) => {
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     else if (event.key === 'Tab') setOpen(false);
     else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (open) choose(active); else show(); }

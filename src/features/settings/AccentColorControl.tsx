@@ -1,0 +1,29 @@
+import { useEffect, useId, useState } from 'react';
+import { usePreferences } from '../../state/preferences';
+
+const isColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value);
+
+export function AccentColorControl() {
+  const accent = usePreferences((s) => s.accent);
+  const fallback = usePreferences.getInitialState().accent;
+  const value = isColor(accent) ? accent : fallback;
+  const [draft, setDraft] = useState(value);
+  const [invalid, setInvalid] = useState(false);
+  const errorId = useId();
+  useEffect(() => { setDraft(value); setInvalid(false); }, [value]);
+  function apply(color: string) {
+    setDraft(color); setInvalid(false);
+    usePreferences.getState().update({ accent: color.toLowerCase() });
+  }
+  return <div className="setting-row"><strong>主题色</strong><div className="accent-control">
+    <div className="accent-inputs">
+      <input type="color" aria-label="选择主题色" value={value} onChange={(event) => apply(event.target.value)} />
+      <input className="accent-hex" aria-label="主题色值" aria-invalid={invalid} aria-describedby={invalid ? errorId : undefined} autoComplete="off" spellCheck={false} maxLength={7} value={draft} onChange={(event) => {
+        const next = event.target.value; setDraft(next); setInvalid(false);
+        if (isColor(next)) apply(next);
+      }} onBlur={() => setInvalid(!isColor(draft))} />
+      <button type="button" className="text-button" onClick={() => apply(fallback)}>恢复默认</button>
+    </div>
+    {invalid && <p id={errorId} role="alert">请输入六位颜色值，如 #c83e55</p>}
+  </div></div>;
+}

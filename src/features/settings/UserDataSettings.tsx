@@ -20,19 +20,19 @@ export function UserDataSettings() {
   }
   const local = localUserData(); const connected = Boolean(syncOwner());
   return <SettingsSection title="用户数据">
-    <div className="settings-status-row"><div><strong role="status">{state.message}</strong><p className="settings-note">同步头像、封面、目录、偏好、队列与历史。</p></div><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => void run(refreshUserSync)}>重新连接</button></div>
-    {state.status === 'local' && <p className="settings-notice">使用 /nd 连接部署配置中的音乐服务后，可开启服务器保存。</p>}
-    {connected && <><div className="settings-subsection"><h3>设备与服务器</h3>
-      <div className="setting-row"><div><strong>此设备</strong><Summary data={local} /></div><button className="subtle-button" disabled={busy || state.status === 'saving' || !local || !state.remote} onClick={() => local && setPreview({ title: '将此设备数据保存到服务器', data: local, source: 'local' })}>预览导入</button></div>
-      <div className="setting-row"><div><strong>服务器{state.remote ? ` · 版本 ${state.remote.revision}` : ''}</strong><Summary data={state.remote?.data ?? null} /></div>{state.remote?.data && <button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => state.remote?.data && setPreview({ title: '使用服务器数据', data: state.remote.data, source: 'server' })}>预览使用</button>}</div>
-      <p className="settings-note">空白端自动迁移或读取；两端有不同数据时需选择版本。恢复会替换所列用户数据，保留导入前副本；队列在下次登录时恢复，当前播放保持不变。服务器离线时继续使用本地数据。</p>
+    <div className="settings-status-row"><div><strong role="status">{state.status === 'local' ? '仅保存在此浏览器' : state.message}</strong><p className="settings-note">管理此账号的头像、封面、目录、偏好、歌词与推荐设置、队列和收听历史。</p></div><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => void run(refreshUserSync)}>重新连接</button></div>
+    {state.status === 'local' && <p className="settings-notice">当前连接未启用服务器同步。</p>}
+    {connected && <><div className="settings-subsection"><h3>同步与版本</h3>
+      <div className="setting-row"><div><strong>此浏览器的数据</strong><p>当前正在使用的设置与记录。</p><Summary data={local} /></div><button className="subtle-button" disabled={busy || state.status === 'saving' || !local || !state.remote} onClick={() => local && setPreview({ title: '用此浏览器数据覆盖服务器', data: local, source: 'local' })}>保存到服务器</button></div>
+      <div className="setting-row"><div><strong>服务器已保存的数据{state.remote ? ` · 版本 ${state.remote.revision}` : ''}</strong><p>同一账号在其他浏览器登录时读取的数据。</p><Summary data={state.remote?.data ?? null} /></div>{state.remote?.data && <button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => state.remote?.data && setPreview({ title: '从服务器恢复到此浏览器', data: state.remote.data, source: 'server' })}>从服务器恢复</button>}</div>
+      <p className="settings-note">平时自动保存与读取；两端数据冲突时，选择要保留的一份。操作前会显示覆盖范围，服务器离线时仍可使用此浏览器的数据。</p>
       </div>
       <div className="settings-subsection"><h3>备份与恢复</h3><p className="settings-note">备份包含推荐设置与最近结果，恢复旧备份会重置它们；服务密钥不进入备份。歌单内容保存在 Navidrome。</p>
       <div className="settings-action-list">
-        <div className="setting-row"><strong>导出备份</strong><div className="button-row"><button className="subtle-button" aria-label="导出此设备备份" disabled={busy} onClick={() => void run(() => download('local'))}>此设备</button><button className="subtle-button" aria-label="导出服务器备份" disabled={busy || !state.remote?.data} onClick={() => void run(() => download('server'))}>服务器</button></div></div>
+        <div className="setting-row"><strong>导出备份</strong><div className="button-row"><button className="subtle-button" aria-label="导出此浏览器备份" disabled={busy} onClick={() => void run(() => download('local'))}>此浏览器</button><button className="subtle-button" aria-label="导出服务器备份" disabled={busy || !state.remote?.data} onClick={() => void run(() => download('server'))}>服务器</button></div></div>
         <div className="setting-row"><strong>从文件恢复</strong><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => input.current?.click()}>选择备份文件</button></div>
       </div>
-      <details className="settings-recovery"><summary>恢复旧版本</summary><div className="button-row"><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => void run(async () => { const versions = await previousUserData(); const data = versions[0]?.data; if (!data) throw new Error('暂无服务器上一版本。'); setPreview({ title: `恢复服务器版本 ${versions[0].revision}`, data, source: 'local' }); })}>恢复服务器上一版本</button><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => void run(async () => { const data = await displacedLocalData(); if (!isUserData(data)) throw new Error('暂无导入前的本地副本。'); setPreview({ title: '恢复导入前的本地副本', data, source: 'local' }); })}>恢复导入前副本</button></div></details>
+      <details className="settings-recovery"><summary>恢复旧版本</summary><div className="button-row"><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => void run(async () => { const versions = await previousUserData(); const data = versions[0]?.data; if (!data) throw new Error('暂无服务器上一版本。'); setPreview({ title: `恢复服务器版本 ${versions[0].revision}`, data, source: 'local' }); })}>恢复服务器上一版本</button><button className="subtle-button" disabled={busy || state.status === 'saving'} onClick={() => void run(async () => { const data = await displacedLocalData(); if (!isUserData(data)) throw new Error('暂无上次覆盖前的数据。'); setPreview({ title: '恢复上次覆盖前的数据', data, source: 'local' }); })}>恢复上次覆盖前的数据</button></div></details>
       </div>
     </>}
     <input ref={input} type="file" accept="application/json,.json" hidden aria-label="选择用户数据备份" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; void run(async () => {
@@ -43,6 +43,12 @@ export function UserDataSettings() {
       setPreview({ title: '从备份恢复', data: backup.data, source: 'local' });
     }); }} />
     {error && <p className="form-error" role="alert">{error}</p>}
-    {preview && <Modal title={preview.title} onClose={() => !busy && setPreview(null)}><Summary data={preview.data} /><p>将替换头像、封面、目录、外观及播放快照。此设备原数据保留为导入前副本，服务器保留最近两个旧版本。</p><p>此操作不修改 Navidrome 的音乐、歌单或收藏。</p>{error && <p className="form-error" role="alert">{error}</p>}<div className="button-row"><button className="subtle-button" disabled={busy} onClick={() => setPreview(null)}>取消</button><button className="primary-button" disabled={busy} onClick={() => void run(async () => { await chooseUserData(preview.source, preview.source === 'local' ? preview.data : undefined); setPreview(null); })}>{busy ? '正在保存…' : '确认使用'}</button></div></Modal>}
+    {preview && <Modal title={preview.title} busy={busy} onClose={() => !busy && setPreview(null)}>
+      <p>{preview.source === 'server' ? '将使用服务器保存的数据，替换此浏览器的头像、封面、目录、偏好、歌词与推荐设置及播放记录。服务器数据保持不变。' : '将用以下数据覆盖服务器和此浏览器的头像、封面、目录、偏好、歌词与推荐设置及播放记录。其他浏览器下次登录时会读取这份数据。'}</p>
+      <Summary data={preview.data} />
+      <p>此浏览器原数据保留为恢复前副本；覆盖服务器时，服务器保留最近两个旧版本。当前音乐继续播放，队列在下次登录时恢复。</p><p>Navidrome 的音乐、歌单和收藏保持不变。</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="button-row"><button className="subtle-button" disabled={busy} onClick={() => setPreview(null)}>取消</button><button className="primary-button" disabled={busy} onClick={() => void run(async () => { await chooseUserData(preview.source, preview.source === 'local' ? preview.data : undefined); setPreview(null); })}>{busy ? '正在保存…' : preview.source === 'server' ? '确认恢复到此浏览器' : '确认覆盖并同步'}</button></div>
+    </Modal>}
   </SettingsSection>;
 }
