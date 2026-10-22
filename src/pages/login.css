@@ -73,11 +73,36 @@
   font-size: calc(15px * var(--ui-font-scale, 1));
   padding: 13px 15px;
   background: var(--surface);
-  border-color: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
   border-radius: 10px;
 }
-.login-card input:not([type=range]):not([type=checkbox]):hover { border-color: var(--line); }
-.login-card input:focus-visible { outline-width: 2px; outline-offset: 2px; }
+.login-card input:not([type=range]):not([type=checkbox]):focus { background: color-mix(in srgb, var(--text) 11%, var(--bg)); }
+.login-server-field { display: flex; flex-direction: column; gap: 10px; }
+.login-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.login-connection-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 3px 0;
+  border-radius: 4px;
+}
+.login-connection-button:hover:not(:disabled) { color: var(--muted); }
+.login-connection-button[aria-disabled=true] { opacity: .6; cursor: wait; }
+.login-connection-result { display: flex; align-items: baseline; gap: 8px; font-size: 1rem; color: var(--muted); line-height: 1.65; overflow-wrap: anywhere; }
+.login-connection-result:empty { display: none; }
+.login-connection-light { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--status-pending); }
+.login-connection-result[data-status=success] .login-connection-light { background: var(--status-success); }
+.login-connection-result[data-status=error] { color: var(--status-error); }
+.login-connection-result[data-status=error] .login-connection-light { background: var(--status-error); }
+@media (forced-colors: active) {
+  .login-card input:not([type=range]):not([type=checkbox]):focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+}
 .login-card .form-error { margin: 0; font-size: 1rem; color: var(--status-error); }
 .login-card .login-submit {
   background: #000;

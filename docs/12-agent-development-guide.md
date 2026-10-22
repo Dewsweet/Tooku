@@ -28,7 +28,9 @@ React 页面 / 通用控件
   └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
 ```
 
-开发环境由 Vite 挂载业务 API，并固定转发 `/nd/rest` 及白名单内的原生登录/歌手图片接口。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录默认显示当前站点完整 HTTP(S) 地址，`normalizeServer` 将同源根地址映射到原有 `/nd`，旧 `/nd` 输入与身份继续兼容；其他完整 Navidrome 地址（包括不同端口、协议及独立基路径）仍直连，只保存本地。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+开发环境由 Vite 挂载业务 API，并固定转发 `/nd/rest` 及白名单内的原生登录/歌手图片接口。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址默认留空，填写完整 HTTP(S) 地址；`normalizeServer` 将同源根地址映射到原有 `/nd`，旧 `/nd` 输入与身份继续兼容；其他完整 Navidrome 地址（包括不同端口、协议及独立基路径）仍直连，只保存本地。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+
+登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。8 秒超时，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
 
 用户数据 `/api/tooku` 通过验证过的账号会话隔离；`/api/lyrics` 与 `/api/recommendations` 是独立同源限流服务，不依赖 Navidrome 登录，同源检查不等于账号授权。公开部署由外层入口控制访问，不能把它们改成任意代理。歌词的 SQLite 公共缓存与推荐的受限进程内存缓存均不进入账号备份。
 
@@ -191,7 +193,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
 | `src/components/content-scrollbar.css`、`src/scrollbars.css` | 主浏览区/侧栏浮动滚动条、其余滚动区域原生回退 |
 | `src/pages/home.css` | 独立主页 |
-| `src/pages/login.css` | 登录页品牌主视觉、表单与响应式；始终亮色，复用 `workspace.css` 的亮色 token，不恢复功能标签和说明小字；常规字号标明 Navidrome 第三方音乐播放器 |
+| `src/pages/login.css` | 登录页品牌主视觉、无边框表单、连接检测状态与响应式；始终亮色，复用 `workspace.css` 的亮色 token；聚焦以底色提示，强制高对比模式保留系统焦点；常规字号标明 Navidrome 第三方音乐播放器 |
 | `src/features/session/enterWorkspace.ts`、`login-transition.css` | 连接、同步恢复和单次播放器接入成功后，用 View Transitions 共享左上角标志/文字，其余页面交叉淡入淡出；同步提交 DOM、绘制前恢复主题，完成后聚焦主区；动画不可用或失败不阻断登录，尊重应用/系统减少动态效果 |
 | `public/tooku.svg`、`src/components/TookuMark.tsx`、`tooku-mark.css` | 落日、远山与湖面组成的无文字彩色标志；SVG 同时作为 favicon，组件直接显示同一素材，保留渐变与层次，不随主题色重着色 |
 | `src/components/filter-pills.css` | 主页/收藏共用圆角筛选，含选中、悬停、窄屏与减少动态效果 |

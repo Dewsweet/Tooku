@@ -39,7 +39,9 @@ export class ApiError extends Error {
 }
 export function normalizeServer(input: string, origin = window.location.origin) {
   const trimmed = input.trim();
-  const url = new URL(trimmed === '/nd' ? `${origin}/nd` : trimmed);
+  let url: URL;
+  try { url = new URL(trimmed === '/nd' ? `${origin}/nd` : trimmed); }
+  catch { throw new ApiError('请输入完整的 http/https 服务地址。'); }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new ApiError('请输入完整的 http/https 服务地址，不包含账号、查询参数或锚点。');
   }
@@ -48,6 +50,34 @@ export function normalizeServer(input: string, origin = window.location.origin) 
   return base === origin ? `${origin}/nd` : base;
 }
 export function authToken(password: string, salt: string) { return md5(password + salt); }
+
+/** Anonymous protocol probe: no session, credentials, extension discovery or account writes. */
+export async function testServerConnection(input: string, signal?: AbortSignal): Promise<{ latencyMs: number }> {
+  const base = normalizeServer(input);
+  const timeout = AbortSignal.timeout(8000);
+  const started = performance.now();
+  try {
+    const params = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json' });
+    const response = await fetch(`${base}/rest/ping.view?${params}`, {
+      credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
+      signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
+    });
+    if (!response.ok && response.status !== 401 && response.status !== 403) throw new ApiError(`连接失败（HTTP ${response.status}）。`);
+    const body: unknown = await response.json().catch(() => { throw new ApiError('未识别到音乐服务，请检查服务器地址。'); });
+    const result = object(object(body)['subsonic-response']);
+    const code = num(object(result.error).code);
+    // Requiring authentication is an expected response to an anonymous ping.
+    const requiresAccount = result.status === 'failed' && code !== undefined && [10, 40, 41, 42, 43, 44, 50].includes(code);
+    if (!(response.ok && result.status === 'ok') && !requiresAccount) throw new ApiError('未识别到音乐服务，请检查服务器地址。');
+    return { latencyMs: Math.max(1, Math.round(performance.now() - started)) };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (timeout.aborted) throw new ApiError('连接超时，请检查地址或稍后重试。');
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('无法连接，请检查地址、网络或跨域访问设置。');
+  }
+}
+
 type Params = Record<string, string | number | boolean | string[] | undefined>;
 
 export class MusicApi {
