@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode, type MouseEventHandler } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type MouseEventHandler, type Ref } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { IconButton } from './Common';
 
-export function Modal({ title, children, onClose, headerActions, onContextMenu, className = '', wide = false, variant = 'default', busy = false }: { title: string; children: ReactNode; onClose: () => void; headerActions?: ReactNode; onContextMenu?: MouseEventHandler<HTMLDialogElement>; className?: string; wide?: boolean; variant?: 'default' | 'player' | 'queue' | 'mobile-queue'; busy?: boolean }) {
+export function Modal({ title, children, onClose, dismissRef, headerActions, onContextMenu, className = '', wide = false, variant = 'default', busy = false }: { title: string; children: ReactNode; onClose: () => void; dismissRef?: Ref<() => void>; headerActions?: ReactNode; onContextMenu?: MouseEventHandler<HTMLDialogElement>; className?: string; wide?: boolean; variant?: 'default' | 'player' | 'queue' | 'mobile-queue'; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null); const close = useRef(onClose);
   const pending = useRef(busy); pending.current = busy;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -13,6 +13,7 @@ export function Modal({ title, children, onClose, headerActions, onContextMenu, 
     if (document.documentElement.dataset.motion === 'reduced' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { close.current(); return; }
     setClosing(true); timer.current = setTimeout(() => close.current(), 190);
   };
+  useImperativeHandle(dismissRef, () => () => requestClose.current(), []);
   useEffect(() => { close.current = onClose; }, [onClose]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null; const dialog = ref.current!;

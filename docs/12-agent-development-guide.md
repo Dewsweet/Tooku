@@ -51,7 +51,7 @@ React 页面 / 通用控件
 | 列宽 | `src/components/TrackColumns.tsx` | 歌单/专辑与推荐表头共用 `TrackColumnHandle` 和偏好；指针与键盘操作，预览宽度与提交偏好分离 |
 | 右键菜单、图标提示 | `src/components/Interactions.tsx`、`useTooltips.ts`、`popover.ts` | `useContextMenu()`、`data-tooltip`；鼠标/键盘与触摸长按分离，安全浮层打开、定位翻转和焦点恢复 |
 | 界面异常恢复 | `src/components/WorkspaceBoundary.tsx`、`src/main.tsx` | 边界包裹 Interactions/App，Router/Query Provider 与会话/播放单例留在外侧；恢复只重建 UI，不重新登录或接入音频 |
-| 基础弹窗和选择器 | `src/components/Modal.tsx`、`Select.tsx` | 原生 dialog 与 popover；不要退回未统一样式的控件 |
+| 基础弹窗和选择器 | `src/components/Modal.tsx`、`Select.tsx` | 原生 dialog 与 popover；dismissRef 让移动手势复用同一关闭流程，不复制动画或焦点恢复 |
 | 账户与设置 | `src/pages/Settings.tsx`、`src/features/settings/SettingsSection.tsx`、`settings.css` | 六类导航、统一设置分区/状态/操作；分类切换保留推荐草稿与检测，不重建音频 |
 | 界面字体与设备字号 | `src/fonts.css`、`src/state/display.ts`、`src/assets/fonts/` | 两款思源原始 WOFF2 按需加载，也可选系统黑体/宋体；字体与字号不进入账号同步与备份 |
 | 封面与头像 | `EntityArtwork.tsx`、`ProfileAvatar.tsx`、`AvatarEditor.tsx` | 歌单本地封面覆盖、加载失败回退；头像圆形预览，歌单与歌手图片方形预览 |
@@ -69,7 +69,7 @@ React 页面 / 通用控件
 | 左栏文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 横线排序、变色移入文件夹、末尾横线移到根目录；主体管理页不参与拖放 |
 | API 与统一模型 | `src/api/client.ts`、`src/domain/models.ts` | HTTP/业务错误分开，DTO 转换集中；不要照抄旧文档示意字段名 |
 | 播放引擎与算法 | `src/features/player/engine.ts`、`src/domain/queue.ts` | 单实例媒体、异步竞争、队列条目身份与有效收听 |
-| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx` | UI 发命令，不创建音频；展开界面只显示歌词，三点菜单集中歌曲操作 |
+| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx`、`PlayerPages.tsx`、`player-pages.css` | UI 发命令，不创建音频；桌面左右布局，手机控制/歌词上下整屏切换，三点菜单集中歌曲操作 |
 | 浏览器全屏 | `src/features/player/FullscreenButton.tsx` | 顶部/底栏复用；Fullscreen API 进入根节点、同步退出状态、重新提升原生弹窗，保持 DOM、查询与音频；不支持时禁用 |
 | 桌面歌词 | `src/features/player/DesktopLyrics.tsx`、`desktop-lyrics.css` | 底栏按钮打开 Document Picture-in-Picture；Portal 共用歌词查询与状态，当前句原文/译文同步显示，静态歌词手动滚动；窗口位置由浏览器控制，保留用户拖动位置；关闭、切账号与迟到请求清理，不接管音频 |
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`MobileQueueSheet.tsx`、`PanelResizeHandle.tsx` | 完整队列覆盖在原侧栏内，关闭恢复；分栏拖动条由 App 放在面板间隙 |
@@ -131,9 +131,11 @@ React 页面 / 通用控件
 
 复用 `IconButton` 的中文名称和应用 tooltip。使用 `data-tooltip` 提供其他提示，默认上方浮现、边缘翻转。统一菜单须在深浅主题中可读、可用 Esc 关闭、可通过键盘访问；弹窗内浮层不应被遮挡或变成不可点击。
 
-展开播放器采用柔化封面铺底，左侧大封面、歌曲信息与播放控制，右侧大字歌词；不显示品牌、动态歌词标签、音频格式、普通播放状态和底部下一首预告等小字。左侧封面与控制区固定，按剩余空间缩放封面，内部列显式 `minmax(0, 1fr)`，元信息和控制区域宽度受限；超长歌曲名/歌手名用 `ScrollingText.tsx` 在单行区域内自动往返滚动，悬停/聚焦暂停，减少动态效果时手动横向查看。任何窗口尺寸下均不依靠左侧或整个播放器滚动；窄屏改为固定上下分区。布局按 CSS 可用宽高适配 1K / 2K / 4K 与浏览器缩放；封面、列间距和歌词字号使用有上下限的视口尺寸，主体最大宽度 2880 px，歌词阅读区最高为 64dvh / 1160 px，避免大屏铺满整屏。进度时间分别左、右对齐。来源、歌词设置、浏览器全屏和收起图标统一放在顶部一行，无胶囊外框，竖线分组；QQ 来源使用同色企鹅图标；歌词设置分为显示/版本两页，显示页不放预览；弹窗固定标题，内部内容滚动避开 12 px 圆角，输入框统一 44 px 高的主题表面与焦点边框，并在滚动层预留边框空间；显示页“自动识别”、重置/刷新同行、保存单独一行，版本页先输入歌曲标题与歌手，再选择平台并搜索，不放刷新；仅右侧歌词容器滚动，右上角收起；不放歌词/队列切换、音量或底部歌词设置；显示与版本调整集中在顶部歌词设置面板。展开页右键与收藏右侧三点按钮复用同一当前歌曲菜单，内部输入框保留文本编辑菜单；三点按钮复用统一菜单，可查看专辑、歌手、歌单，以及打开已有添加歌单弹窗；页面跳转时收起播放器，不改变音频。缺少专辑/歌手 ID 时尝试已有 song 查询补全，仍缺失则禁用对应入口；查看歌单只打开当前队列出现项的 `source.kind=playlist` 所指歌单；无来源时禁用，不跳总管理页，也不通过歌曲成员关系猜测播放来源。异常状态仍提供必要反馈。共用歌词仅在手动浏览时显示“同步”，闲置 5 秒后恢复自动跟随并收起按钮；展开页通过继承的 `--lyric-anchor: .42` 将当前歌词组中心放在阅读区中部略上，侧栏与窄屏为 .5；首尾使用独立 `--lyric-before` / `--lyric-after` 留白，使第一句、最后一句和换行长句也能对齐锚点。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
+展开播放器采用柔化封面铺底，左侧大封面、歌曲信息与播放控制，右侧大字歌词；不显示品牌、动态歌词标签、音频格式、普通播放状态和底部下一首预告等小字。左侧封面与控制区固定，按剩余空间缩放封面，内部列显式 `minmax(0, 1fr)`，元信息和控制区域宽度受限；超长歌曲名/歌手名用 `ScrollingText.tsx` 在单行区域内自动往返滚动，悬停/聚焦暂停，减少动态效果时手动横向查看。桌面不依靠左侧或整个播放器滚动；手机改为封面/控制与歌词两个整屏页面，通过受控竖向手势切换，不再上下各占一半。布局按 CSS 可用宽高适配 1K / 2K / 4K 与浏览器缩放；封面、列间距和歌词字号使用有上下限的视口尺寸，主体最大宽度 2880 px，歌词阅读区最高为 64dvh / 1160 px，避免大屏铺满整屏。进度时间分别左、右对齐。来源、歌词设置、浏览器全屏和收起图标统一放在顶部一行，无胶囊外框，竖线分组；QQ 来源使用同色企鹅图标；歌词设置分为显示/版本两页，显示页不放预览；弹窗固定标题，内部内容滚动避开 12 px 圆角，输入框统一 44 px 高的主题表面与焦点边框，并在滚动层预留边框空间；显示页“自动识别”、重置/刷新同行、保存单独一行，版本页先输入歌曲标题与歌手，再选择平台并搜索，不放刷新；仅右侧歌词容器滚动，右上角收起；不放歌词/队列切换、音量或底部歌词设置；显示与版本调整集中在顶部歌词设置面板。展开页右键与收藏右侧三点按钮复用同一当前歌曲菜单，内部输入框保留文本编辑菜单；三点按钮复用统一菜单，可查看专辑、歌手、歌单，以及打开已有添加歌单弹窗；页面跳转时收起播放器，不改变音频。缺少专辑/歌手 ID 时尝试已有 song 查询补全，仍缺失则禁用对应入口；查看歌单只打开当前队列出现项的 `source.kind=playlist` 所指歌单；无来源时禁用，不跳总管理页，也不通过歌曲成员关系猜测播放来源。异常状态仍提供必要反馈。共用歌词仅在手动浏览时显示“同步”，闲置 5 秒后恢复自动跟随并收起按钮；展开页通过继承的 `--lyric-anchor: .42` 将当前歌词组中心放在阅读区中部略上，侧栏与窄屏为 .5；首尾使用独立 `--lyric-before` / `--lyric-after` 留白，使第一句、最后一句和换行长句也能对齐锚点。调整尺寸或字体后重新计算，不滚动整页。系统和应用的减少动态效果设置均需考虑。
 
 歌手图片写回入口集中在 `src/api/client.ts`：登录时仅对 Navidrome 尝试 `/auth/login`，原生 JWT 与角色只留会话内存，退出清除；密码只传给登录请求。`POST /api/artist/:id/image` 使用 `image` multipart 字段，`DELETE` 恢复默认，写前/后均读取 `/api/artist/:id`。HTTP 权限错误由 Navidrome 最终裁决，不自动重放上传；确认后的预览仅留查询内存，等待上游构建图片。`server/navidromeProxy.ts` 为开发/生产共用路径及方法白名单，仅新增登录与歌手图片所需路由；不开放其余原生管理接口。原生认证失败不阻断 Subsonic 登录，旧版服务器或直连 CORS 配置不支持时无法编辑。协议参照 [Navidrome v0.64.1 上传实现](https://github.com/navidrome/navidrome/blob/v0.64.1/server/nativeapi/artists.go)。
+
+手机页面状态与指针预览集中在 `PlayerPages.tsx`，`player-pages.css` 负责 `[data-mobile-page]` 下的整屏轨道布局，`player.css` 保留桌面/共享控件样式；不要恢复旧手机两行 grid。控制页允许竖向翻页/收起，进度条、按钮、元信息横向滚动和嵌套 dialog 排除；歌词内容保留原生滚动，仅顶部返回区域识别下滑，另提供按钮替代。处理取消、捕获丢失、窗口变化与短拖回弹；关闭只调用 Modal 的 `dismissRef`，沿用其动画、减少动态效果、焦点恢复。两 section 均保留挂载，非活动页 inert/aria-hidden；歌词设置通过 portal 挂到外层 dialog/body，避免继承隐藏歌词页的不可交互状态。断点变化保留同一歌词 DOM 和播放器实例。
 
 ## 5. 数据归属与当前限制
 
