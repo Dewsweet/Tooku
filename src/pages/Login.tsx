@@ -6,12 +6,13 @@ import { player } from '../features/player/engine';
 import { connectUserSync, disconnectUserSync, useUserSync } from '../storage/userSync';
 import { TookuMark } from '../components/TookuMark';
 import { enterWorkspace } from '../features/session/enterWorkspace';
+import { readLoginServer, rememberLoginServer } from '../storage/loginServer';
 import './login.css';
 
 type ConnectionState = { status: 'checking' } | { status: 'success'; latencyMs: number } | { status: 'error'; message: string };
 
 export function Login() {
-  const [server, setServer] = useState(''); const [username, setUsername] = useState(''); const [password, setPassword] = useState('');
+  const [server, setServer] = useState(readLoginServer); const [username, setUsername] = useState(''); const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false); const [error, setError] = useState('');
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const connectionRequest = useRef<AbortController | null>(null);
@@ -45,6 +46,7 @@ export function Login() {
       api = connected;
       const version = await connected.connect(password); setPassword(''); await connectUserSync(connected); await player.attach(connected);
       await enterWorkspace(() => {
+        rememberLoginServer(server);
         useSession.getState().setSession(connected, version);
         const sync = useUserSync.getState(); useSession.getState().notify(['review', 'offline'].includes(sync.status) ? `${sync.message} 入口：头像 → 账户与设置 → 用户数据。` : '');
       });

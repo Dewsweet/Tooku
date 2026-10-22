@@ -1,5 +1,5 @@
 :root, .login-page {
-  --accent: var(--accent-base, #c83e55); --accent-contrast: #fff;
+  --accent: var(--text); --accent-contrast: #fff;
   --shell: #eff0f3; --bg: #fff; --surface: #f5f5f7; --sidebar: #fafafb;
   --line: #e9e9ee; --text: #24252b; --muted: #74757f; --hover: #ededf2;
   --soft: color-mix(in srgb, var(--accent) 8%, var(--bg));
@@ -7,6 +7,7 @@
   --panel-shadow: 0 4px 22px #22253805, 0 1px 3px #22253803;
   --card-shadow: 0 8px 20px #26263610, 0 2px 5px #26263605;
 }
+:root { --accent: var(--accent-base, #c83e55); }
 :root[data-theme=dark] {
   --accent: color-mix(in srgb, var(--accent-base, #c83e55) 78%, #fff); --accent-contrast: #19191c;
   --shell: #090a0c; --bg: #151619; --surface: #202126; --sidebar: #151619;

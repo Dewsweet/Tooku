@@ -6,6 +6,10 @@
   color: var(--text);
   background: radial-gradient(ellipse at 16% 46%, var(--soft), transparent 56%), var(--bg);
 }
+.login-page::selection, .login-page ::selection {
+  background: color-mix(in srgb, var(--text) 18%, var(--bg));
+  color: var(--text);
+}
 .login-header {
   width: min(100%, 1280px);
   margin: 0 auto;

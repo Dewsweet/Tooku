@@ -32,8 +32,11 @@ it('keeps login light without overwriting the saved dark preference, even when a
   expect(screen.getByRole('heading', { name: '登录音乐库' })).toBeVisible();
   expect(screen.getByText('Navidrome 第三方音乐播放器')).toBeVisible();
   expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+  expect(document.documentElement.style.getPropertyValue('--accent-base')).toBe('#24252b');
   act(() => usePreferences.getState().update({ accent: '#3365c4' }));
   expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+  expect(document.documentElement.style.getPropertyValue('--accent-base')).toBe('#24252b');
   expect(usePreferences.getState().theme).toBe('dark');
+  expect(usePreferences.getState().accent).toBe('#3365c4');
   expect(JSON.parse(localStorage.getItem('tooku-preferences') ?? '{}').state.theme).toBe('dark');
 });

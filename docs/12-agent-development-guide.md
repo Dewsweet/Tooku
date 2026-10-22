@@ -28,7 +28,7 @@ React 页面 / 通用控件
   └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
 ```
 
-开发环境由 Vite 挂载业务 API，并固定转发 `/nd/rest` 及白名单内的原生登录/歌手图片接口。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址默认留空，填写完整 HTTP(S) 地址；`normalizeServer` 将同源根地址映射到原有 `/nd`，旧 `/nd` 输入与身份继续兼容；其他完整 Navidrome 地址（包括不同端口、协议及独立基路径）仍直连，只保存本地。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+开发环境由 Vite 挂载业务 API，并固定转发 `/nd/rest` 及白名单内的原生登录/歌手图片接口。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址首次留空，成功后由 `src/storage/loginServer.ts` 保存安全的地址并在返回/刷新时回填；拒绝认证信息、查询、锚点及异常内容，浏览器存储不可用不阻断登录，不保存账号密码、不进入账号同步/备份。`normalizeServer` 将同源根地址映射到原有 `/nd`，旧 `/nd` 输入与身份继续兼容；其他完整 Navidrome 地址（包括不同端口、协议及独立基路径）仍直连，只保存本地。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
 
 登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。8 秒超时，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
 
@@ -131,6 +131,7 @@ React 页面 / 通用控件
 | 文件夹及展开状态、歌单位置/混排、曲库视图与选中库 | SQLite 自动保存/恢复；localStorage 缓存：`tooku-library-organization` | 内部按真实 `libraryId` 组织；不是音乐服务端目录 |
 | 明暗、主题色、布局、列宽、歌词和快捷键偏好 | SQLite 账号文档 / IndexedDB sync；`tooku-preferences` 作为当前偏好与设备回退 | 切号还原设备回退，账号修改存在各自 sync 缓存 |
 | 界面字体与基础字号 | localStorage `tooku-display` | 此浏览器的设备显示偏好，切账号保留；不进入用户账号文档或备份 |
+| 上次成功登录的服务器地址 | localStorage `tooku-login-server` | 仅安全服务基址，无账号/密码/查询/锚点；返回或刷新登录页回填，不进入账号同步或备份 |
 | 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
 | 同步基线、未上传数据、导入前副本 | IndexedDB `profiles` 中 `sync` / `before-import` | 原数据保留；清除本机播放快照不清迁移基线 |
 | 查询结果 | TanStack Query 内存 | 按身份与相关库隔离，不等于持久化服务端数据 |
@@ -193,7 +194,7 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 | `src/features/player/player.css`、`panel.css` | 完整播放器、歌词与右侧模块 |
 | `src/components/content-scrollbar.css`、`src/scrollbars.css` | 主浏览区/侧栏浮动滚动条、其余滚动区域原生回退 |
 | `src/pages/home.css` | 独立主页 |
-| `src/pages/login.css` | 登录页品牌主视觉、无边框表单、连接检测状态与响应式；始终亮色，复用 `workspace.css` 的亮色 token；聚焦以底色提示，强制高对比模式保留系统焦点；常规字号标明 Navidrome 第三方音乐播放器 |
+| `src/pages/login.css` | 登录页品牌主视觉、无边框表单、连接检测状态与响应式；复用 `workspace.css` 的亮色 token 并固定中性强调色，背景/文本选中/控件焦点均不使用用户主题；强制高对比模式保留系统焦点 |
 | `src/features/session/enterWorkspace.ts`、`login-transition.css` | 连接、同步恢复和单次播放器接入成功后，用 View Transitions 共享左上角标志/文字，其余页面交叉淡入淡出；同步提交 DOM、绘制前恢复主题，完成后聚焦主区；动画不可用或失败不阻断登录，尊重应用/系统减少动态效果 |
 | `public/tooku.svg`、`src/components/TookuMark.tsx`、`tooku-mark.css` | 落日、远山与湖面组成的无文字彩色标志；SVG 同时作为 favicon，组件直接显示同一素材，保留渐变与层次，不随主题色重着色 |
 | `src/components/filter-pills.css` | 主页/收藏共用圆角筛选，含选中、悬停、窄屏与减少动态效果 |

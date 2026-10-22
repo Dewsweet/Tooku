@@ -10,6 +10,7 @@ import { enterWorkspace } from '../src/features/session/enterWorkspace';
 
 vi.mock('../src/features/session/enterWorkspace', () => ({ enterWorkspace: vi.fn(async (commit: () => void) => commit()) }));
 beforeEach(() => {
+  localStorage.clear();
   useSession.setState({ api: null, version: '', notice: '' });
   vi.spyOn(MusicApi.prototype, 'connect').mockResolvedValue('fixture-version');
   vi.spyOn(sync, 'connectUserSync').mockResolvedValue();
@@ -19,6 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup(); useSession.getState().api?.dispose(); useSession.setState({ api: null, version: '', notice: '' }); vi.restoreAllMocks();
+  localStorage.clear();
 });
 function form() {
   render(<Login />);
@@ -48,6 +50,29 @@ it('starts with a blank address and does not test or log in automatically', () =
   expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled();
   expect(connectionApi.testServerConnection).not.toHaveBeenCalled();
   expect(MusicApi.prototype.connect).not.toHaveBeenCalled();
+});
+
+it('restores only the server address when returning after a successful login', async () => {
+  fireEvent.submit(form());
+  await waitFor(() => expect(useSession.getState().api).not.toBeNull());
+  cleanup(); useSession.getState().api?.dispose(); useSession.getState().setSession(null);
+  render(<Login />);
+  expect(screen.getByLabelText('服务器地址')).toHaveValue(window.location.origin);
+  expect(screen.getByLabelText('用户名')).toHaveValue('');
+  expect(screen.getByLabelText('密码')).toHaveValue('');
+  expect(localStorage.getItem('tooku-login-server')).toBe(window.location.origin);
+});
+
+it('does not overwrite the saved address on a failed login or a connection check', async () => {
+  localStorage.setItem('tooku-login-server', 'https://saved.example.test');
+  vi.mocked(MusicApi.prototype.connect).mockRejectedValue(new Error('测试连接失败'));
+  const login = form();
+  fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('服务可达'));
+  expect(localStorage.getItem('tooku-login-server')).toBe('https://saved.example.test');
+  fireEvent.submit(login);
+  expect(await screen.findByRole('alert')).toHaveTextContent('测试连接失败');
+  expect(localStorage.getItem('tooku-login-server')).toBe('https://saved.example.test');
 });
 
 it('tests the server without requiring credentials or creating a session', async () => {
