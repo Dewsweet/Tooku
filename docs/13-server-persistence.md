@@ -12,9 +12,11 @@ Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm
 
 客户端先通过同源 `/api/tooku/connection` 判断登录地址是否对应部署配置的固定上游。当前 Tooku 站点、旧 `/nd`、正式 `/api/navidrome` 以及与 `NAVIDROME_UPSTREAM` 匹配的真实地址均建立同步，并统一通过 `/api/navidrome` 传输；`/nd` 只保留旧版本兼容。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；浏览器 `MusicApi.identity` 仍按规范化后的输入地址生成，因此直接填写 `http://127.0.0.1:44533` 能读取此前该身份下的 localStorage/IndexedDB。恢复会话会取回这份地址；旧会话未保存地址时按原 `/nd` 身份恢复。「测试连接」只做地址解析和匿名 ping，不创建会话或同步数据。后端只验证 `NAVIDROME_UPSTREAM` 配置的固定地址，不代理客户端任意 URL。认证时将当前会话的 Subsonic token/salt 放在 POST 表单中，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。数据库 owner 是 `[规范化固定上游地址, 规范用户名]` 的 SHA-256。修改部署上游地址会改变命名空间，迁移部署时应保留该地址配置。不同输入身份仍访问同一服务端账号记录，首次出现真实数据差异时沿用冲突保护。
 
-固定上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据转发的 `X-Forwarded-Proto` 判断 HTTPS；不要在不可信入口启用此选项。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、上游改变或退出后需要重新登录。
+固定上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据单值 `X-Forwarded-Proto: https` 判断 HTTPS；逗号链、客户端伪造的 Forwarded/Host 信息不参与判断，不要在不可信入口启用此选项。最终入口确认全站 HTTPS 后可设置 `TOOKU_HSTS=true`，只在可信 HTTPS 请求发送 `Strict-Transport-Security: max-age=31536000`。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、上游改变或退出后需要重新登录。
 
-`server/navidromeProxy.ts` 为固定白名单请求注入会话对应的认证，前端媒体 URL 不包含 token/salt。账号数据请求绑定已验证 owner；媒体/推荐请求绑定当前登录名。旧标签页遇到另一个账号的 Cookie 会被拒绝，不能读写新账号数据或撤销新账号会话。登录、创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。直连其他完整 Navidrome 地址仅会话登录、账号数据仅本地，也支持本地备份恢复；不保存任意外部服务器凭据，不开放任意代理。
+`server/navidromeProxy.ts` 为固定白名单请求注入会话对应的认证，前端媒体 URL 不包含 token/salt。代理在请求侧移除 Cookie、Authorization、Forwarded/X-Forwarded-*、Tooku 内部身份头及逐跳头，在响应侧移除上游 Cookie、服务指纹和逐跳头；保留播放所需的 Range/Content-Range。原生登录只接受不超过 64 KiB 的 JSON，歌手图片只接受带 boundary、正文不超过 2 MiB 加封装余量的 multipart。账号数据请求绑定已验证 owner；媒体/推荐请求绑定当前登录名。旧标签页遇到另一个账号的 Cookie 会被拒绝，不能读写新账号数据或撤销新账号会话。登录、创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。直连其他完整 Navidrome 地址仅会话登录、账号数据仅本地，也支持本地备份恢复；不保存任意外部服务器凭据，不开放任意代理。
+
+生产 Node 入口统一发送 CSP、`frame-ancestors 'none'`、X-Frame-Options、Permissions-Policy、no-referrer 与 nosniff。CSP 允许同源应用资源、data/blob 图片、blob 媒体，以及 HTTP(S) Navidrome 的 API、图片和音频；禁止对象、跨源表单、页面嵌入和非本站脚本。新增或调整图片、音频、Worker、画中画及外部连接入口时，应先更新共享 `server/security.ts` 并执行安全头回归，不能在页面局部绕过。
 
 ## 首次迁移与日常保存
 

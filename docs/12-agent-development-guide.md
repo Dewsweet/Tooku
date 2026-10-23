@@ -34,6 +34,8 @@ React 页面 / 通用控件
 
 开发环境由 Vite 挂载业务 API，并通过 `/api/navidrome/rest` 固定转发协议请求及白名单内的原生登录/歌手图片接口；旧 `/nd` 路由仅保留兼容。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址首次留空，成功后由 `src/storage/loginServer.ts` 保存安全的地址并在返回/刷新时回填；拒绝认证信息、查询、锚点及异常内容，浏览器存储不可用不阻断登录，不保存账号密码、不进入账号同步/备份。连接准备阶段只把当前站点、旧 `/nd` 和与固定 `NAVIDROME_UPSTREAM` 匹配的真实地址解析为受管连接；浏览器 `identity` 继续采用规范化后的输入地址以读取旧 localStorage/IndexedDB，恢复会话也保存该地址。未匹配配置的其他完整 Navidrome 地址仍直连，只保存本地。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
 
+生产浏览器安全头及 Origin/HTTPS 判断集中在 `server/security.ts`；API handler 复用 `sameOriginRequest`，不能各自重新解析不可信 Origin。固定上游转发的头清理、原生登录/图片正文边界和路径白名单集中在 `server/navidromeProxy.ts`。只有受控 HTTPS 反向代理可启用 `TOOKU_TRUST_PROXY=true`，HSTS 另需 `TOOKU_HSTS=true`；部署调整后回归 Secure Cookie、单值 X-Forwarded-Proto、CSP 对直连 Navidrome 音频/封面/API 和画中画歌词的影响。
+
 登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。8 秒超时，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
 
 `Login.tsx` 保持连接配置与凭据为两个独立 POST 表单，`username` / `password` 的 id/name 和标准 autocomplete 不随文案变更；服务器地址使用不含 login 字样的 `navidrome-server` 标识，关闭自动补全并加 `data-bwignore` 提示，继续支持旧 `/nd` 文本输入。提交以 FormData 和实际服务器输入值为准，兼容密码管理器未派发 React change 的填写，并在重绘前同步内存草稿；不新增凭据持久化。参考 [Bitwarden 字段识别说明](https://contributing.bitwarden.com/architecture/deep-dives/autofill/generating-fill-scripts/)，独立表单和明确的字段名是主要措施；[Bitwarden 当前源码](https://github.com/bitwarden/clients/blob/main/apps/browser/src/autofill/services/collect-autofill-content.service.ts) 中 `data-bwignore` 受用户选项控制，不应仅依赖它，也不使用隐藏诱饵或临时只读字段。真实扩展自动填写需人工验收。
