@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createUserApi } from '../server/api';
-import { createNavidromeProxy } from '../server/navidromeProxy';
+import { createNavidromeProxy, createPlaybackProxy } from '../server/navidromeProxy';
 import { CredentialVault, sessionLifetime } from '../server/vault';
 import { createRecommendationsApi } from '../server/recommendations/http';
 import { createRecommendationService } from '../server/recommendations/service';
@@ -26,9 +26,11 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
   const verify = options.verify ?? vi.fn(async ({ u }: { u: string }) => u.toLowerCase());
   const users = createUserApi({ ...options, verify }); let closed = false;
   const proxy = createNavidromeProxy(options.upstream ?? 'http://127.0.0.1:1', users);
+  const playback = createPlaybackProxy(options.upstream ?? 'http://127.0.0.1:1', users);
   const running = await listen(createServer((req, res) => {
     const next = () => { res.writeHead(404); res.end(); };
-    if (req.url?.startsWith('/api/navidrome/') || req.url?.startsWith('/nd/')) void proxy(req, res, next);
+    if (req.url?.startsWith('/api/tooku-stream/')) void playback(req, res, next);
+    else if (req.url?.startsWith('/api/navidrome/') || req.url?.startsWith('/nd/')) void proxy(req, res, next);
     else void users.handle(req, res, next);
   }));
   const close = async () => { if (closed) return; closed = true; await running.close(); users.close(); }; cleanups.push(close);
@@ -123,7 +125,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     writeFileSync(key, randomBytes(32)); expect(() => new CredentialVault(file)).toThrow();
     writeFileSync(key, original); const restored = new CredentialVault(file); expect(restored.credentials('owner').credentials.aiKey).toBe('synthetic-key'); restored.close();
   });
-  it('authenticates media and form-POST requests through the same proxy without browser auth URLs', async () => {
+  it('authenticates protocol GET and form-POST requests through the same proxy without browser auth URLs', async () => {
     const seen: { url: URL; body: string; headers: IncomingHttpHeaders }[] = [];
     const upstream = await listen(createServer(async (req, res) => {
       const chunks: Buffer[] = [];
@@ -136,7 +138,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     const app = await fixture({ filename: ':memory:', upstream: upstream.origin }); const login = await app.login();
     let firstResponse: Response | undefined;
     for (const method of ['GET', 'POST']) {
-      const response = await fetch(`${app.origin}/api/navidrome/rest/stream.view?id=song&tookuSession=1`, { method, headers: { Cookie: login.cookie, Authorization: 'Bearer browser-value', 'X-Forwarded-For': '203.0.113.4', 'X-Forwarded-Host': 'spoofed.test', 'X-Forwarded-Proto': 'https', 'Content-Type': 'application/x-www-form-urlencoded' }, body: method === 'POST' ? 'songId=a&songId=a' : undefined });
+      const response = await fetch(`${app.origin}/api/navidrome/rest/getSong.view?id=song&tookuSession=1`, { method, headers: { Cookie: login.cookie, Authorization: 'Bearer browser-value', 'X-Forwarded-For': '203.0.113.4', 'X-Forwarded-Host': 'spoofed.test', 'X-Forwarded-Proto': 'https', 'Content-Type': 'application/x-www-form-urlencoded' }, body: method === 'POST' ? 'songId=a&songId=a' : undefined });
       firstResponse ??= response;
       expect(response.status).toBe(200); expect(await response.text()).toBe('ok');
     }
@@ -165,6 +167,59 @@ describe('persistent browser sessions and encrypted credentials', () => {
     expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?u=new-user&t=${rawToken}&s=${'b'.repeat(16)}`, { headers: { Cookie: login.cookie } })).status).toBe(200);
     expect(seen[3].url.searchParams.get('t')).toBe(rawToken);
     expect((await fetch(`${app.origin}/nd/rest/ping.view`, { headers: { Cookie: login.cookie } })).status).toBe(200);
+  });
+  it('uses short same-origin playback grants bound to the session, track and transcode mode', async () => {
+    const seen: { url: URL; range: string | undefined; cookie: string | undefined }[] = [];
+    const upstream = await listen(createServer((req, res) => {
+      const url = new URL(req.url!, 'http://fixture'); seen.push({ url, range: req.headers.range, cookie: req.headers.cookie });
+      if (url.searchParams.get('id') === 'redirect') { res.writeHead(302, { Location: `https://cdn.invalid/audio?t=${url.searchParams.get('t')}` }); res.end(); return; }
+      res.writeHead(206, { 'Content-Type': 'audio/mpeg', 'Content-Range': 'bytes 10-19/100', 'Accept-Ranges': 'bytes', 'Set-Cookie': 'navidrome=private', 'Content-Disposition': 'attachment; filename="private.mp3"' });
+      res.end('synthetic-audio');
+    }));
+    const app = await fixture({ filename: ':memory:', upstream: upstream.origin });
+    const alice = await app.login('Alice'); const bob = await app.login('Bob');
+    const issue = async (cookie = alice.cookie) => {
+      const response = await app.call('playback', 'POST', { id: 'song_1', mode: 'compatible' }, cookie);
+      expect(response.status).toBe(200); return await response.json() as { url: string; expiresAt: number };
+    };
+    const first = await issue();
+    expect(first.url).toMatch(/^\/api\/tooku-stream\/[a-zA-Z0-9_-]{43}$/); expect(first.expiresAt).toBeGreaterThan(Date.now());
+    expect(first.url).not.toContain('?');
+    expect((await fetch(`${app.origin}${first.url}`)).status).toBe(401);
+    expect((await fetch(`${app.origin}${first.url}`, { headers: { Cookie: bob.cookie } })).status).toBe(401);
+    expect((await fetch(`${app.origin}${first.url}`, { headers: { Cookie: alice.cookie, Range: 'bytes=0-1,5-6' } })).status).toBe(416);
+    const stream = await fetch(`${app.origin}${first.url}`, { headers: { Cookie: alice.cookie, Range: 'bytes=10-19' } });
+    expect(stream.status).toBe(206); expect(await stream.text()).toBe('synthetic-audio');
+    expect(stream.headers.get('cache-control')).toBe('private, no-store'); expect(stream.headers.get('content-disposition')).toBe('inline');
+    expect(stream.headers.get('cross-origin-resource-policy')).toBe('same-origin'); expect(stream.headers.get('set-cookie')).toBeNull();
+    expect(seen).toHaveLength(1); expect(seen[0].range).toBe('bytes=10-19'); expect(seen[0].cookie).toBeUndefined();
+    expect(seen[0].url.pathname).toBe('/rest/stream.view'); expect(seen[0].url.searchParams.get('id')).toBe('song_1');
+    expect(seen[0].url.searchParams.get('format')).toBe('mp3'); expect(seen[0].url.searchParams.get('maxBitRate')).toBe('320');
+    expect(seen[0].url.searchParams.get('u')).toBe(alice.auth.u); expect(seen[0].url.searchParams.get('t')).toBe(alice.auth.t);
+    const redirectGrant = await (await app.call('playback', 'POST', { id: 'redirect', mode: 'original' }, alice.cookie)).json() as { url: string };
+    const redirected = await fetch(`${app.origin}${redirectGrant.url}`, { headers: { Cookie: alice.cookie } });
+    expect(redirected.status).toBe(502); expect(redirected.headers.get('location')).toBeNull(); expect(await redirected.text()).toBe('');
+    const second = await issue(); expect((await fetch(`${app.origin}${first.url}`, { headers: { Cookie: alice.cookie } })).status).toBe(404);
+    await app.call('session', 'DELETE', undefined, alice.cookie);
+    expect((await fetch(`${app.origin}${second.url}`, { headers: { Cookie: alice.cookie } })).status).toBe(404);
+  });
+  it('expires playback grants and limits abnormal concurrent stream reuse', async () => {
+    let now = Date.now(); const responses: import('node:http').ServerResponse[] = [];
+    let third!: () => void; const threeArrived = new Promise<void>((resolve) => { third = resolve; });
+    const upstream = await listen(createServer((_req, res) => {
+      responses.push(res); res.writeHead(200, { 'Content-Type': 'audio/mpeg' }); res.flushHeaders();
+      if (responses.length === 3) third();
+    }));
+    const app = await fixture({ filename: ':memory:', upstream: upstream.origin, now: () => now }); const login = await app.login();
+    const grant = await (await app.call('playback', 'POST', { id: 'song', mode: 'original' }, login.cookie)).json() as { url: string };
+    const pending = Array.from({ length: 3 }, () => fetch(`${app.origin}${grant.url}`, { headers: { Cookie: login.cookie } }));
+    await threeArrived;
+    expect((await fetch(`${app.origin}${grant.url}`, { headers: { Cookie: login.cookie } })).status).toBe(429);
+    for (const response of responses) response.end('audio');
+    for (const response of await Promise.all(pending)) await response.arrayBuffer();
+    const expiring = await (await app.call('playback', 'POST', { id: 'song', mode: 'original' }, login.cookie)).json() as { url: string };
+    now += 4 * 60 * 60 * 1000 + 1;
+    expect((await fetch(`${app.origin}${expiring.url}`, { headers: { Cookie: login.cookie } })).status).toBe(410);
   });
   it('uses saved credentials only for an authenticated opt-in recommendation request and never echoes keys', async () => {
     const app = await fixture(); const login = await app.login(); const key = randomBytes(16).toString('hex');

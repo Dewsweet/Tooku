@@ -8,6 +8,18 @@ import { CredentialVault, sessionLifetime } from './vault.ts';
 import { requestAllowsSecureCookie, sameOriginRequest } from './security.ts';
 
 const cookieName = 'tooku-session';
+export const playbackGrantLifetime = 4 * 60 * 60 * 1000;
+const playbackGrantRequestLimit = 64;
+interface PlaybackGrant {
+  owner: string;
+  session: string;
+  id: string;
+  mode: 'original' | 'compatible';
+  expiresAt: number;
+  requests: number;
+  active: number;
+  aborters: Set<() => void>;
+}
 export function assertSameOrigin(req: IncomingMessage) {
   if (!sameOriginRequest(req)) throw new DataError(403, '仅允许同源访问。');
 }
@@ -53,15 +65,15 @@ function isManagedBase(req: IncomingMessage, input: unknown, upstream: string) {
   const origin = tookuOrigin(req);
   return Boolean(origin && [origin, `${origin}/nd`, `${origin}/api/navidrome`].includes(candidate));
 }
-async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function body(req: IncomingMessage, limit = maxUserDataBytes + 4096): Promise<Record<string, unknown>> {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new DataError(415, '请求需要 JSON。');
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size <= maxUserDataBytes + 4096) chunks.push(chunk); else chunks.length = 0;
+    if (size <= limit) chunks.push(chunk); else chunks.length = 0;
   }
   // Drain oversized requests without retaining their payload or destroying the response socket.
-  if (size > maxUserDataBytes + 4096) throw new DataError(413, '上传数据过大。');
+  if (size > limit) throw new DataError(413, '上传数据过大。');
   try { return object(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { throw new DataError(400, 'JSON 格式无效。'); }
 }
 export function createUserApi(options: { upstream?: string; filename?: string; securityFilename?: string; keyFile?: string; verify?: (auth: { u: string; t: string; s: string }) => Promise<string>; now?: () => number } = {}) {
@@ -72,10 +84,23 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
   const now = options.now ?? Date.now;
   const sessions = new Map<string, { owner: string; expires: number }>();
   const attempts = new Map<string, { count: number; reset: number }>();
+  const playbackGrants = new Map<string, PlaybackGrant>();
+  const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+  const revokeGrant = (key: string, grant: PlaybackGrant) => {
+    playbackGrants.delete(key);
+    for (const abort of grant.aborters) abort();
+    grant.aborters.clear();
+  };
+  const revokePlaybackSession = (token: string) => {
+    if (!token) return;
+    const session = digest(token);
+    for (const [key, grant] of playbackGrants) if (grant.session === session) revokeGrant(key, grant);
+  };
   const sweep = setInterval(() => {
     vault.sweep(now());
     for (const [key, s] of sessions) if (s.expires <= now()) sessions.delete(key);
     for (const [key, a] of attempts) if (a.reset <= now()) attempts.delete(key);
+    for (const [key, grant] of playbackGrants) if (grant.expiresAt <= now()) revokeGrant(key, grant);
   }, 60000); sweep.unref();
   async function verify(auth: { u: string; t: string; s: string }): Promise<string> {
     if (options.verify) return options.verify(auth);
@@ -97,13 +122,13 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
     const token = sessionCookie(req);
     const session = vault.session(token, now());
     if (!session) return;
-    if (session.upstream !== upstream) { vault.deleteSession(token); return; }
+    if (session.upstream !== upstream) { revokePlaybackSession(token); vault.deleteSession(token); return; }
     if (req.headers['x-tooku-owner'] && req.headers['x-tooku-owner'] !== session.owner || req.headers['x-tooku-user'] && req.headers['x-tooku-user'] !== session.auth.u) throw new DataError(401, '浏览器登录账号已变化，请重新登录。');
     if (force || now() - session.verifiedAt > 15 * 60000) {
       try {
         if (ownerFor(await verify(session.auth)) !== session.owner) throw new DataError(401, '账号已变化，请重新登录。');
         session.verifiedAt = now(); vault.updateSession(token, session);
-      } catch (error) { if (error instanceof DataError && error.status === 401) vault.deleteSession(token); throw error; }
+      } catch (error) { if (error instanceof DataError && error.status === 401) { revokePlaybackSession(token); vault.deleteSession(token); } throw error; }
     }
     return { ...session, token };
   }
@@ -137,7 +162,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
         if (data.persistent === true) {
           const clientBase = normalizedClientBase(data.clientBase);
           if (clientBase && !isManagedBase(req, clientBase, upstream)) throw new DataError(400, '服务地址与 Tooku 配置不一致。');
-          const old = sessionCookie(req); const expires = now() + sessionLifetime;
+          const old = sessionCookie(req); revokePlaybackSession(old); const expires = now() + sessionLifetime;
           const token = vault.createSession({ owner, upstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
           setCookie(req, res, token, sessionLifetime / 1000);
           send(200, { owner, username: data.u, admin: data.admin === true, persistent: true, clientBase }); return;
@@ -150,9 +175,21 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
         if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');
         send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true, clientBase: cookieSession.clientBase }); return;
       }
+      if (path === '/api/tooku/playback' && req.method === 'POST') {
+        if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');
+        const data = await body(req, 4096);
+        if (typeof data.id !== 'string' || data.id.length < 1 || data.id.length > 256 || [...data.id].some((value) => value.charCodeAt(0) <= 31 || value.charCodeAt(0) === 127) || !['original', 'compatible'].includes(String(data.mode))) throw new DataError(400, '播放参数无效。');
+        revokePlaybackSession(cookieSession.token);
+        for (const [key, grant] of playbackGrants) if (grant.expiresAt <= now()) revokeGrant(key, grant);
+        if (playbackGrants.size >= 10000) throw new DataError(429, '播放请求过于频繁，请稍后重试。');
+        const token = randomBytes(32).toString('base64url');
+        const expiresAt = now() + playbackGrantLifetime;
+        playbackGrants.set(digest(token), { owner: cookieSession.owner, session: digest(cookieSession.token), id: data.id, mode: data.mode as 'original' | 'compatible', expiresAt, requests: 0, active: 0, aborters: new Set() });
+        send(200, { url: `/api/tooku-stream/${token}`, expiresAt }); return;
+      }
       const token = req.headers.authorization?.replace(/^Bearer /, '') ?? ''; const session = cookieSession ?? sessions.get(token);
       if (!session || session.expires <= now()) { sessions.delete(token); throw new DataError(401, 'Tooku 会话已失效，请重新连接同步。'); }
-      if (path === '/api/tooku/session' && req.method === 'DELETE') { sessions.delete(token); if (cookieSession) vault.deleteSession(cookieSession.token); setCookie(req, res, '', 0); send(200, { ok: true }); return; }
+      if (path === '/api/tooku/session' && req.method === 'DELETE') { sessions.delete(token); if (cookieSession) { revokePlaybackSession(cookieSession.token); vault.deleteSession(cookieSession.token); } setCookie(req, res, '', 0); send(200, { ok: true }); return; }
       if (path === '/api/tooku/credentials') {
         if (req.method === 'GET') { send(200, credentialStatus(vault.credentials(session.owner))); return; }
         if (req.method === 'PUT') {
@@ -182,7 +219,23 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       send(error instanceof DataError ? error.status : 503, { error: error instanceof DataError ? error.message : '服务暂不可用；本地数据仍保留，请稍后重试。' });
     }
   }
-  return { handle, authenticate, recommendationCredentials,
+  async function authorizePlayback(req: IncomingMessage, token: string) {
+    if (!/^[a-zA-Z0-9_-]{43}$/.test(token)) throw new DataError(404, '播放授权不存在。');
+    const key = digest(token); const grant = playbackGrants.get(key);
+    if (!grant) throw new DataError(404, '播放授权不存在。');
+    if (grant.expiresAt <= now()) { revokeGrant(key, grant); throw new DataError(410, '播放授权已过期。'); }
+    const session = await authenticate(req);
+    if (!session || session.owner !== grant.owner || digest(session.token) !== grant.session) throw new DataError(401, '播放授权与当前账号不匹配。');
+    if (grant.requests >= playbackGrantRequestLimit || grant.active >= 3) throw new DataError(429, '播放请求过于频繁。');
+    grant.requests++; grant.active++;
+    let aborter: (() => void) | undefined; let released = false;
+    return {
+      id: grant.id, mode: grant.mode, expiresAt: grant.expiresAt, auth: session.auth,
+      bindAbort(value: () => void) { aborter = value; grant.aborters.add(value); },
+      release() { if (released) return; released = true; grant.active = Math.max(0, grant.active - 1); if (aborter) grant.aborters.delete(aborter); },
+    };
+  }
+  return { handle, authenticate, authorizePlayback, recommendationCredentials,
     refreshNativeToken(token: string, value: string) { const session = vault.session(token, now()); if (session) { session.nativeToken = value; vault.updateSession(token, session); } },
-    close() { clearInterval(sweep); sessions.clear(); store.close(); vault.close(); } };
+    close() { clearInterval(sweep); sessions.clear(); for (const [key, grant] of playbackGrants) revokeGrant(key, grant); store.close(); vault.close(); } };
 }

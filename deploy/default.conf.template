@@ -8,6 +8,17 @@ server {
     add_header Referrer-Policy "no-referrer" always;
     add_header X-Content-Type-Options "nosniff" always;
 
+    # Playback grants are bearer-like random path segments. Never write them to access logs.
+    location ^~ /api/tooku-stream/ {
+        access_log off;
+        proxy_pass ${TOOKU_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         # Optional outer proxy. TOOKU_UPSTREAM points to the Node service, not Navidrome.
         proxy_pass ${TOOKU_UPSTREAM};

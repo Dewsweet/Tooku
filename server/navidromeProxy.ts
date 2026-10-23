@@ -13,7 +13,7 @@ function connectionHeaders(value: string | string[] | undefined) {
   return value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
 }
 
-function proxyRequestHeaders(req: IncomingMessage, host: string, preserveNativeAuth: boolean) {
+export function proxyRequestHeaders(req: IncomingMessage, host: string, preserveNativeAuth: boolean) {
   const headers: OutgoingHttpHeaders = { ...req.headers, host };
   const remove = [
     ...hopByHopHeaders,
@@ -26,7 +26,7 @@ function proxyRequestHeaders(req: IncomingMessage, host: string, preserveNativeA
   return headers;
 }
 
-function proxyResponseHeaders(headers: IncomingMessage['headers']) {
+export function proxyResponseHeaders(headers: IncomingMessage['headers']) {
   const result: OutgoingHttpHeaders = { ...headers };
   const remove = [...hopByHopHeaders, ...connectionHeaders(headers.connection), 'set-cookie', 'server', 'x-powered-by'];
   for (const name of remove) delete result[name];
@@ -55,6 +55,7 @@ export function isNavidromeProxyRequest(url: string, method = 'GET') {
   const path = url.split('?')[0];
   if (/%|\\|(?:^|\/)\.{1,2}(?:\/|$)/.test(path)) return false;
   const relative = path.startsWith('/api/navidrome/') ? path.slice('/api/navidrome'.length) : path.startsWith('/nd/') ? path.slice('/nd'.length) : '';
+  if (/^\/rest\/(?:stream|download)(?:\.(?:view|json|xml))?$/i.test(relative)) return false;
   if (relative.startsWith('/rest/')) return true;
   if (relative === '/auth/login') return method === 'POST';
   if (/^\/api\/artist\/[a-zA-Z0-9_-]+$/.test(relative)) return method === 'GET';
@@ -109,5 +110,50 @@ export function createNavidromeProxy(upstream: string, users: ReturnType<typeof 
       }
       res.on('close', () => upstreamRequest.destroy()); req.pipe(upstreamRequest);
     } catch (error) { if (!res.writableEnded && !res.destroyed) { if (!res.headersSent) res.writeHead(error instanceof DataError ? error.status : 502); res.end(); } }
+  };
+}
+
+export function createPlaybackProxy(upstream: string, users: ReturnType<typeof createUserApi>) {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const path = req.url?.split('?')[0] ?? '';
+    if (!path.startsWith('/api/tooku-stream/')) { next(); return; }
+    const token = path.slice('/api/tooku-stream/'.length);
+    if (!['GET', 'HEAD'].includes(req.method ?? '')) { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
+    const range = req.headers.range;
+    if (range !== undefined && (typeof range !== 'string' || range.length > 128 || !/^bytes=(?:\d+-\d*|-\d+)$/.test(range))) { res.writeHead(416); res.end(); return; }
+    let access: Awaited<ReturnType<typeof users.authorizePlayback>> | undefined;
+    try {
+      access = await users.authorizePlayback(req, token);
+      const target = new URL(`${upstream}/rest/stream.view`);
+      for (const [key, value] of Object.entries({ ...access.auth, id: access.id, v: '1.16.1', c: 'Tooku', ...(access.mode === 'compatible' ? { format: 'mp3', maxBitRate: '320' } : {}) })) target.searchParams.set(key, value);
+      const headers = proxyRequestHeaders(req, target.host, false);
+      const upstreamRequest = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, { method: req.method, headers }, (reply) => {
+        const replyHeaders = proxyResponseHeaders(reply.headers);
+        delete replyHeaders.location; delete replyHeaders['content-location']; delete replyHeaders['content-disposition'];
+        replyHeaders['cache-control'] = 'private, no-store';
+        replyHeaders['content-disposition'] = 'inline';
+        replyHeaders['cross-origin-resource-policy'] = 'same-origin';
+        replyHeaders['referrer-policy'] = 'no-referrer';
+        replyHeaders['x-content-type-options'] = 'nosniff';
+        if ((reply.statusCode ?? 502) >= 300 && (reply.statusCode ?? 502) < 400) {
+          delete replyHeaders['content-length']; delete replyHeaders['content-range'];
+          reply.resume(); res.writeHead(502, replyHeaders); res.end(); return;
+        }
+        res.writeHead(reply.statusCode ?? 502, replyHeaders);
+        if (req.method === 'HEAD') { reply.resume(); res.end(); }
+        else reply.pipe(res);
+        reply.on('error', () => res.destroy());
+      });
+      const finish = () => access?.release();
+      access.bindAbort(() => upstreamRequest.destroy());
+      upstreamRequest.setTimeout(300000, () => upstreamRequest.destroy());
+      upstreamRequest.on('error', () => { if (!res.writableEnded && !res.destroyed) { if (!res.headersSent) res.writeHead(502); res.end(); } });
+      upstreamRequest.once('close', finish);
+      res.on('close', () => upstreamRequest.destroy());
+      upstreamRequest.end();
+    } catch (error) {
+      access?.release();
+      if (!res.writableEnded && !res.destroyed) { if (!res.headersSent) res.writeHead(error instanceof DataError ? error.status : 502); res.end(); }
+    }
   };
 }

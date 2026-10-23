@@ -7,9 +7,11 @@ import { defaultRecommendationSettings, emptyRecommendationCredentials } from '.
 
 afterEach(() => { useSession.getState().api?.dispose(); useSession.getState().setSession(null); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
+const playback = () => json({ url: `/api/tooku-stream/${'a'.repeat(43)}`, expiresAt: Date.now() + 3600000 });
 it('restores a cookie session without exposing authentication parameters and includes account binding on form POST', async () => {
   const fetcher = vi.fn(async (input: string, options?: RequestInit) => {
     if (input === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: '合成账号', admin: true, clientBase: 'http://127.0.0.1:44533' });
+    if (input === '/api/tooku/playback') return playback();
     if (input.includes('getOpenSubsonicExtensions')) return json({ 'subsonic-response': { status: 'ok', openSubsonicExtensions: [{ name: 'formPost', versions: [1] }] } });
     expect(options?.credentials).toBe('same-origin');
     return json({ 'subsonic-response': { status: 'ok', serverVersion: 'fixture' } });
@@ -19,10 +21,13 @@ it('restores a cookie session without exposing authentication parameters and inc
   const api = restored!.api; useSession.getState().setSession(api);
   expect(api.base).toBe('http://127.0.0.1:44533');
   expect(api.persistent).toBe(true); expect(api.canEditArtistImages).toBe(true);
-  const stream = new URL(api.streamUrl('song', 'original'));
-  expect(stream.pathname).toBe('/api/navidrome/rest/stream.view');
-  expect(stream.searchParams.get('tookuUser')).toBe('合成账号');
-  for (const field of ['u', 't', 's', 'p']) expect(stream.searchParams.has(field)).toBe(false);
+  expect(() => api.streamUrl('song', 'original')).toThrow('临时播放授权');
+  const stream = new URL((await api.playbackUrl('song', 'original')).url);
+  expect(stream.pathname).toMatch(/^\/api\/tooku-stream\/[a-zA-Z0-9_-]{43}$/);
+  for (const field of ['u', 't', 's', 'p', 'id', 'format']) expect(stream.searchParams.has(field)).toBe(false);
+  const grant = fetcher.mock.calls.find(([input]) => input === '/api/tooku/playback');
+  expect(grant?.[1]).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+  expect(JSON.parse(String(grant?.[1]?.body))).toEqual({ id: 'song', mode: 'original' });
   await api.request('getSong', { id: 'song' });
   const [url, options] = fetcher.mock.calls.at(-1)!;
   expect(new URL(url).searchParams.get('tookuUser')).toBe('合成账号'); expect(options?.method).toBe('POST');
@@ -45,6 +50,7 @@ it('promotes the configured direct Navidrome address to managed persistence with
     const url = String(input);
     if (url === '/api/tooku/connection') return json({ managed: true });
     if (url === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: 'user', admin: false, persistent: true, clientBase: direct });
+    if (url === '/api/tooku/playback') return playback();
     return json({ 'subsonic-response': { status: 'ok', serverVersion: 'fixture' } });
   });
   vi.stubGlobal('fetch', fetcher);
@@ -54,7 +60,7 @@ it('promotes the configured direct Navidrome address to managed persistence with
   expect(fetcher.mock.calls.filter(([input]) => String(input).startsWith(`${window.location.origin}/api/navidrome/rest/`))).toHaveLength(2);
   const session = fetcher.mock.calls.find(([input]) => input === '/api/tooku/session');
   expect(JSON.parse(String(session?.[1]?.body))).toMatchObject({ clientBase: direct, persistent: true });
-  expect(new URL(api.streamUrl('song', 'original')).pathname).toBe('/api/navidrome/rest/stream.view');
+  expect(new URL((await api.playbackUrl('song', 'compatible')).url).pathname).toMatch(/^\/api\/tooku-stream\//);
 });
 it('does not send persistent cookies or request saved keys while using a direct Navidrome connection', async () => {
   const api = new MusicApi('https://direct.example.test', 'synthetic-user', 'synthetic-password'); useSession.getState().setSession(api);

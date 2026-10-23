@@ -5,7 +5,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertSupportedNodeVersion } from '../scripts/check-node-version.mjs';
 import { createUserApi, upstreamUrl } from './api.ts';
-import { createNavidromeProxy } from './navidromeProxy.ts';
+import { createNavidromeProxy, createPlaybackProxy } from './navidromeProxy.ts';
 import { createLyricsApi } from './lyrics/http.ts';
 import { createRecommendationsApi } from './recommendations/http.ts';
 import { applySecurityHeaders } from './security.ts';
@@ -17,10 +17,12 @@ const api = createUserApi({ upstream });
 const lyrics = createLyricsApi();
 const recommendations = createRecommendationsApi(undefined, api.recommendationCredentials);
 const proxy = createNavidromeProxy(upstream, api);
+const playback = createPlaybackProxy(upstream, api);
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json' };
 const server = createServer(async (req, res) => {
   applySecurityHeaders(req, res);
   if (req.url?.split('?')[0] === '/__tooku/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ app: 'tooku', version: '0.1.0', persistence: 1 })); return; }
+  if (req.url?.startsWith('/api/tooku-stream/')) { await playback(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/tooku/')) { await api.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/lyrics/')) { await lyrics.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/recommendations/')) { await recommendations.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }

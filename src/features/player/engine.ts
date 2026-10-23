@@ -25,6 +25,7 @@ class PlayerEngine {
   #api: MusicApi | null = null;
   #generation = 0;
   #source = '';
+  #sourceExpires = 0;
   #intent = false;
   #resume = 0;
   #previousTime = 0;
@@ -130,7 +131,7 @@ class PlayerEngine {
   }
   logout() {
     this.#stateReport(true, 'stopped');
-    this.#generation++; this.#intent = false; this.#source = ''; this.#api = null;
+    this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#api = null;
     this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#audio?.load();
     this.#channel?.close(); this.#channel = null;
     this.#back = []; this.#originalOrder = []; this.#insertCursor = null;
@@ -171,7 +172,7 @@ class PlayerEngine {
   restoreQueue(snapshot: QueueSnapshot) {
     this.#originalOrder = this.#restoreOrder(snapshot.entries, snapshot.originalOrder);
     update({ entries: snapshot.entries, currentId: snapshot.currentId, position: snapshot.position, shuffle: snapshot.shuffle === true, undo: null }); this.#resume = snapshot.position; this.#back = [];
-    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); this.#media(); }
+    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); this.#media(); }
     this.persist();
   }
   append(tracks: Track[], next = false, source?: PlaybackSource, sourceIndices?: readonly number[]) {
@@ -194,19 +195,31 @@ class PlayerEngine {
     if (entryId === s.currentId) {
       const next = entries[index] ?? (s.repeat === 'all' ? entries[0] : undefined);
       const intent = this.#intent; update({ currentId: next?.entryId ?? null });
-      if (next) this.load(intent); else { this.#generation++; this.#intent = false; this.#source = ''; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle', position: 0, duration: 0 }); this.#media(); }
+      if (next) this.load(intent); else { this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle', position: 0, duration: 0 }); this.#media(); }
     }
     this.persist();
   }
   async load(play: boolean, resume = 0) {
     const entry = currentEntry(); if (!entry || !this.#api) return;
     this.#init(); const audio = this.#audio!; const generation = ++this.#generation;
-    this.#intent = false; this.#source = ''; audio.pause();
+    this.#intent = false; this.#source = ''; this.#sourceExpires = 0; audio.pause();
     this.#intent = play; this.#resume = resume; this.#previousTime = resume; this.#listened = 0;
     this.#occurrenceId = createId(); this.#startedAt = Date.now(); this.#submission = 'none'; this.#announced = false; this.#insertCursor = null;
     update({ status: 'loading', error: '', position: resume, duration: entry.track.duration ?? 0 });
-    this.#source = this.#api.streamUrl(entry.track.id, usePlayer.getState().mode); audio.src = this.#source; audio.load(); this.#media(); this.#stateReport(true, 'starting');
-    if (play) await this.#start(generation); this.persist();
+    let location: { url: string; expiresAt?: number };
+    try {
+      const requested = this.#api.playbackUrl(entry.track.id, usePlayer.getState().mode);
+      location = requested instanceof Promise ? await requested : requested;
+    } catch (error) {
+      if (generation !== this.#generation) return;
+      this.#intent = false;
+      update({ status: 'error', error: error instanceof Error ? error.message : '无法取得播放授权，请稍后重试。' });
+      return;
+    }
+    if (generation !== this.#generation || !this.#api) return;
+    this.#source = location.url; this.#sourceExpires = location.expiresAt ?? 0;
+    audio.src = this.#source; audio.load(); this.#media(); this.#stateReport(true, 'starting');
+    if (play && this.#intent) await this.#start(generation); this.persist();
   }
   async #start(generation: number) {
     this.#channel?.postMessage({ action: 'play', identity: this.#api?.identity, tabId: this.#tabId });
@@ -218,7 +231,7 @@ class PlayerEngine {
   }
   play() {
     if (!currentEntry()) return;
-    if (!this.#source || usePlayer.getState().status === 'error') { this.load(true, usePlayer.getState().position); return; }
+    if (!this.#source || usePlayer.getState().status === 'error' || this.#sourceExpires > 0 && this.#sourceExpires - Date.now() < 5 * 60000) { this.load(true, usePlayer.getState().position); return; }
     this.#intent = true; this.#start(this.#generation);
   }
   pause() { this.#intent = false; this.#audio?.pause(); update({ status: currentEntry() ? 'paused' : 'idle' }); this.persist(); }

@@ -89,6 +89,29 @@ describe('player lifecycle integration', () => {
   });
   it('adding and moving a song does not restart current audio', async () => { player.replace(songs); await Promise.resolve(); const audio = FakeAudio.instance; const current = usePlayer.getState().currentId; audio.tick(13); const calls = audio.play.mock.calls.length; player.append([songs[0]], true); player.move(0, 2); expect(usePlayer.getState().currentId).toBe(current); expect(usePlayer.getState().position).toBe(13); expect(audio.play).toHaveBeenCalledTimes(calls); });
   it('rapid skipping cannot let an old rejected play change the new state', async () => { let reject!: (e: unknown) => void; FakeAudio.instance.play.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; })); player.replace(songs); player.next(); reject(new DOMException('blocked', 'NotAllowedError')); await Promise.resolve(); await Promise.resolve(); expect(usePlayer.getState().entries.find((e) => e.entryId === usePlayer.getState().currentId)?.track.id).toBe('two'); expect(usePlayer.getState().status).toBe('playing'); expect(usePlayer.getState().error).toBe(''); });
+  it('waits for a managed playback grant and ignores a grant that arrives after skipping', async () => {
+    let resolveFirst!: (value: { url: string; expiresAt: number }) => void;
+    const first = new Promise<{ url: string; expiresAt: number }>((resolve) => { resolveFirst = resolve; });
+    vi.spyOn(api, 'playbackUrl').mockReturnValueOnce(first).mockReturnValueOnce({ url: 'https://example.test/current', expiresAt: Date.now() + 3600000 });
+    player.replace(songs); expect(usePlayer.getState().status).toBe('loading');
+    player.next(); expect(FakeAudio.instance.src).toBe('https://example.test/current');
+    resolveFirst({ url: 'https://example.test/stale', expiresAt: Date.now() + 3600000 }); await first; await Promise.resolve();
+    expect(FakeAudio.instance.src).toBe('https://example.test/current');
+  });
+  it('does not start audio when playback is paused while a grant is pending', async () => {
+    let resolveGrant!: (value: { url: string; expiresAt: number }) => void;
+    const grant = new Promise<{ url: string; expiresAt: number }>((resolve) => { resolveGrant = resolve; });
+    vi.spyOn(api, 'playbackUrl').mockReturnValue(grant);
+    player.replace([songs[0]]); player.pause();
+    resolveGrant({ url: 'https://example.test/paused', expiresAt: Date.now() + 3600000 }); await grant; await Promise.resolve();
+    FakeAudio.instance.dispatchEvent(new Event('loadedmetadata'));
+    expect(FakeAudio.instance.play).not.toHaveBeenCalled(); expect(usePlayer.getState().status).toBe('paused');
+  });
+  it('renews a playback grant near expiry only when playback resumes', () => {
+    const grant = vi.spyOn(api, 'playbackUrl').mockReturnValue({ url: 'https://example.test/expiring', expiresAt: Date.now() + 1000 });
+    player.replace([songs[0]]); const audio = FakeAudio.instance; audio.tick(12); player.pause(); player.play();
+    expect(grant).toHaveBeenCalledTimes(2); expect(usePlayer.getState().position).toBe(12);
+  });
   it('removing current while paused keeps the successor paused', () => { player.replace(songs); player.pause(); player.remove(usePlayer.getState().currentId!); FakeAudio.instance.dispatchEvent(new Event('loadedmetadata')); expect(usePlayer.getState().entries[0].track.id).toBe('two'); expect(usePlayer.getState().status).toBe('paused'); expect(FakeAudio.instance.paused).toBe(true); });
   it('does not count a seek jump toward a scrobble threshold', () => { player.replace(songs); FakeAudio.instance.tick(1); player.seek(150); FakeAudio.instance.tick(151); expect(api.scrobble).not.toHaveBeenCalledWith('one', expect.any(Number), true); });
   it('submits only once when the listening threshold is reached', async () => { player.replace(songs); for (let second = 1; second <= 100; second++) FakeAudio.instance.tick(second); await Promise.resolve(); const submits = vi.mocked(api.scrobble).mock.calls.filter((call) => call[2]); expect(submits).toHaveLength(1); expect(usePlayer.getState().history).toHaveLength(1); });

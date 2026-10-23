@@ -98,6 +98,7 @@ export async function testServerConnection(input: string, signal?: AbortSignal):
 }
 
 type Params = Record<string, string | number | boolean | string[] | undefined>;
+export interface PlaybackLocation { url: string; expiresAt?: number }
 
 export class MusicApi {
   readonly identity: string;
@@ -159,7 +160,27 @@ export class MusicApi {
   }
   coverUrl(id?: string, size = 400, revision?: number) { return id ? this.mediaUrl('getCoverArt', { id, size, _: revision }) : undefined; }
   streamUrl(id: string, mode: 'original' | 'compatible') {
+    if (this.#cookieSession) throw new ApiError('受管连接需要先取得临时播放授权。');
     return this.mediaUrl('stream', { id, ...(mode === 'compatible' ? { format: 'mp3', maxBitRate: 320 } : {}) });
+  }
+  playbackUrl(id: string, mode: 'original' | 'compatible'): PlaybackLocation | Promise<PlaybackLocation> {
+    if (!this.#cookieSession) return { url: this.streamUrl(id, mode) };
+    return this.#managedPlaybackUrl(id, mode);
+  }
+  async #managedPlaybackUrl(id: string, mode: 'original' | 'compatible'): Promise<PlaybackLocation> {
+    let response: Response;
+    try {
+      response = await fetch('/api/tooku/playback', {
+        method: 'POST', credentials: 'same-origin', referrerPolicy: 'no-referrer', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, mode }),
+        signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(12000)]),
+      });
+    } catch { throw new ApiError('无法取得播放授权，请检查 Tooku 服务连接。'); }
+    if (!response.ok) throw new ApiError(response.status === 401 ? '登录已失效，请重新连接。' : response.status === 429 ? '播放请求过于频繁，请稍后重试。' : `无法取得播放授权（HTTP ${response.status}）。`);
+    let result: unknown; try { result = await response.json(); } catch { throw new ApiError('播放授权响应无效。'); }
+    const value = object(result); const url = str(value.url); const expiresAt = num(value.expiresAt);
+    if (!url || !/^\/api\/tooku-stream\/[a-zA-Z0-9_-]{43}$/.test(url) || !expiresAt || expiresAt <= Date.now()) throw new ApiError('播放授权响应无效。');
+    return { url: new URL(url, window.location.origin).href, expiresAt };
   }
   async request(method: string, params: Params = {}, signal?: AbortSignal, write = false): Promise<DTO> {
     const args = this.#params(params);
