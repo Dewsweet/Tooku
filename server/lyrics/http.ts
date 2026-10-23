@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDescriptor, isProvider, opaqueId, record, type ProviderId } from '../../src/domain/lyrics/types.ts';
 import { createLyricsService, type LyricsService } from './service.ts';
 import { LyricsError } from './providers.ts';
+import { sameOriginRequest } from '../security.ts';
 
 export function createLyricsApi(service: LyricsService = createLyricsService()) {
   const attempts = new Map<string, { until: number; count: number }>();
@@ -10,7 +11,7 @@ export function createLyricsApi(service: LyricsService = createLyricsService()) 
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('X-Content-Type-Options', 'nosniff');
     const send = (status: number, data: unknown) => { if (!res.destroyed) { res.statusCode = status; res.end(JSON.stringify(data)); } };
     try {
-      if (req.headers['sec-fetch-site'] === 'cross-site' || req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { send(403, { error: '仅允许同源访问' }); return; }
+      if (!sameOriginRequest(req)) { send(403, { error: '仅允许同源访问' }); return; }
       if (['/api/lyrics/health', '/api/lyrics/status'].includes(path) && req.method === 'GET') { send(200, service.status()); return; }
       if (!['/api/lyrics/search', '/api/lyrics/fetch', '/api/lyrics/check'].includes(path) || req.method !== 'POST') { send(404, { error: '接口不存在' }); return; }
       if (!service.status().enabled) throw new LyricsError('disabled');

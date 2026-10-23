@@ -3,6 +3,7 @@ import { isListeningSeed, isRecommendationCredentials, isRecommendationMemory, i
 import { createRecommendationService } from './service.ts';
 import { RecommendationError } from './network.ts';
 import { DataError } from '../store.ts';
+import { sameOriginRequest } from '../security.ts';
 
 export function createRecommendationsApi(service = createRecommendationService(), savedCredentials?: (req: IncomingMessage) => Promise<RecommendationCredentials>) {
   const rates = new Map<string, { until: number; count: number }>(); const controllers = new Set<AbortController>();
@@ -12,7 +13,7 @@ export function createRecommendationsApi(service = createRecommendationService()
     const send = (status: number, data: unknown) => { if (!res.destroyed) { res.statusCode = status; res.end(JSON.stringify(data)); } };
     const controller = new AbortController(); const disconnect = () => { if (!res.writableEnded) controller.abort(); };
     try {
-      if (req.headers['sec-fetch-site'] === 'cross-site' || req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) throw new RecommendationError('仅允许同源访问', 403);
+      if (!sameOriginRequest(req)) throw new RecommendationError('仅允许同源访问', 403);
       if (req.method !== 'POST' || !['generate', 'links', 'check'].some((action) => path === `/api/recommendations/${action}`)) throw new RecommendationError('接口不存在', 404);
       const now = Date.now(); for (const [ip, value] of rates) if (value.until < now) rates.delete(ip);
       const ip = req.socket.remoteAddress ?? ''; const linksRequest = path.endsWith('/links'); const bucket = `${ip}|${linksRequest ? 'links' : 'work'}`;

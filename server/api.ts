@@ -5,17 +5,17 @@ import { UserStore, DataError } from './store.ts';
 import { isUserData, maxUserDataBytes } from '../src/domain/userData.ts';
 import { emptyRecommendationCredentials, type RecommendationCredentials } from '../src/domain/recommendations.ts';
 import { CredentialVault, sessionLifetime } from './vault.ts';
+import { requestAllowsSecureCookie, sameOriginRequest } from './security.ts';
 
 const cookieName = 'tooku-session';
 export function assertSameOrigin(req: IncomingMessage) {
-  const origin = req.headers.origin;
-  if (req.headers['sec-fetch-site'] === 'cross-site' || origin && new URL(origin).host !== req.headers.host) throw new DataError(403, '仅允许同源访问。');
+  if (!sameOriginRequest(req)) throw new DataError(403, '仅允许同源访问。');
 }
 export function sessionCookie(req: IncomingMessage) {
   return req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) ?? '';
 }
 function setCookie(req: IncomingMessage, res: ServerResponse, token: string, seconds: number) {
-  const secure = process.env.TOOKU_COOKIE_SECURE === 'true' || req.headers.origin?.startsWith('https://') || process.env.TOOKU_TRUST_PROXY === 'true' && req.headers['x-forwarded-proto'] === 'https';
+  const secure = requestAllowsSecureCookie(req);
   res.setHeader('Set-Cookie', `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure ? '; Secure' : ''}`);
 }
 
@@ -44,7 +44,7 @@ function tookuOrigin(req: IncomingMessage) {
   if (origin) return normalizedClientBase(origin);
   const host = req.headers.host;
   if (!host) return;
-  const secure = process.env.TOOKU_COOKIE_SECURE === 'true' || process.env.TOOKU_TRUST_PROXY === 'true' && req.headers['x-forwarded-proto'] === 'https';
+  const secure = requestAllowsSecureCookie(req);
   return normalizedClientBase(`${secure ? 'https' : 'http'}://${host}`);
 }
 function isManagedBase(req: IncomingMessage, input: unknown, upstream: string) {

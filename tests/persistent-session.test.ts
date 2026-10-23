@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,9 +33,9 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
   }));
   const close = async () => { if (closed) return; closed = true; await running.close(); users.close(); }; cleanups.push(close);
   const call = (path: string, method = 'GET', data?: unknown, cookie = '', headers: Record<string, string> = {}) => fetch(`${running.origin}/api/tooku/${path}`, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie, ...headers }, body: data === undefined ? undefined : JSON.stringify(data) });
-  const login = async (u = 'Alice', clientBase?: string) => {
+  const login = async (u = 'Alice', clientBase?: string, headers: Record<string, string> = {}) => {
     const auth = { u, t: randomBytes(16).toString('hex'), s: randomBytes(16).toString('hex') };
-    const response = await call('session', 'POST', { ...auth, persistent: true, nativeToken: 'synthetic-native-token', admin: true, clientBase });
+    const response = await call('session', 'POST', { ...auth, persistent: true, nativeToken: 'synthetic-native-token', admin: true, clientBase }, '', headers);
     expect(response.status).toBe(200);
     const cookie = response.headers.get('set-cookie')?.split(';')[0]; if (!cookie) throw new Error('Missing test cookie');
     return { auth, cookie, response, info: await response.json() as { owner: string } };
@@ -98,11 +98,22 @@ describe('persistent browser sessions and encrypted credentials', () => {
     vi.stubEnv('TOOKU_COOKIE_SECURE', 'true');
     const first = await app.login(); expect(first.response.headers.get('set-cookie')).toContain('; Secure');
     expect((await app.call('session', 'DELETE', undefined, first.cookie, { Origin: 'https://foreign.test' })).status).toBe(403);
+    expect((await app.call('session', 'DELETE', undefined, first.cookie, { Origin: '%' })).status).toBe(403);
     expect((await app.call('credentials', 'GET', undefined, first.cookie, { 'Sec-Fetch-Site': 'cross-site' })).status).toBe(403);
     now += sessionLifetime + 1; expect((await app.call('session', 'GET', undefined, first.cookie)).status).toBe(401);
     const second = await app.login(); revoked = true;
     expect((await app.call('session', 'GET', undefined, second.cookie)).status).toBe(401);
     revoked = false; expect((await app.call('session', 'GET', undefined, second.cookie)).status).toBe(401);
+  });
+  it('trusts a single forwarded HTTPS protocol only when the reverse proxy is explicitly trusted', async () => {
+    const app = await fixture();
+    let login = await app.login('Alice', undefined, { 'X-Forwarded-Proto': 'https' });
+    expect(login.response.headers.get('set-cookie')).not.toContain('; Secure');
+    vi.stubEnv('TOOKU_TRUST_PROXY', 'true');
+    login = await app.login('Alice', undefined, { 'X-Forwarded-Proto': 'https' });
+    expect(login.response.headers.get('set-cookie')).toContain('; Secure');
+    login = await app.login('Alice', undefined, { 'X-Forwarded-Proto': 'https, http' });
+    expect(login.response.headers.get('set-cookie')).not.toContain('; Secure');
   });
   it('keeps the original ciphertext when the encryption key is missing, wrong or the record is tampered with', () => {
     const dir = directory(); const file = join(dir, 'security.sqlite'); const key = join(dir, 'tooku-secret.key');
@@ -113,23 +124,43 @@ describe('persistent browser sessions and encrypted credentials', () => {
     writeFileSync(key, original); const restored = new CredentialVault(file); expect(restored.credentials('owner').credentials.aiKey).toBe('synthetic-key'); restored.close();
   });
   it('authenticates media and form-POST requests through the same proxy without browser auth URLs', async () => {
-    const seen: { url: URL; body: string; header: string | string[] | undefined }[] = [];
+    const seen: { url: URL; body: string; headers: IncomingHttpHeaders }[] = [];
     const upstream = await listen(createServer(async (req, res) => {
-      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
-      seen.push({ url: new URL(req.url!, 'http://fixture'), body: Buffer.concat(chunks).toString(), header: req.headers['x-nd-authorization'] });
+      const chunks: Buffer[] = [];
+      try { for await (const chunk of req) chunks.push(chunk); }
+      catch { return; }
+      seen.push({ url: new URL(req.url!, 'http://fixture'), body: Buffer.concat(chunks).toString(), headers: req.headers });
+      res.setHeader('Set-Cookie', 'upstream=must-not-leak'); res.setHeader('X-Powered-By', 'fixture');
       res.end('ok');
     }));
     const app = await fixture({ filename: ':memory:', upstream: upstream.origin }); const login = await app.login();
+    let firstResponse: Response | undefined;
     for (const method of ['GET', 'POST']) {
-      const response = await fetch(`${app.origin}/api/navidrome/rest/stream.view?id=song&tookuSession=1`, { method, headers: { Cookie: login.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: method === 'POST' ? 'songId=a&songId=a' : undefined });
+      const response = await fetch(`${app.origin}/api/navidrome/rest/stream.view?id=song&tookuSession=1`, { method, headers: { Cookie: login.cookie, Authorization: 'Bearer browser-value', 'X-Forwarded-For': '203.0.113.4', 'X-Forwarded-Host': 'spoofed.test', 'X-Forwarded-Proto': 'https', 'Content-Type': 'application/x-www-form-urlencoded' }, body: method === 'POST' ? 'songId=a&songId=a' : undefined });
+      firstResponse ??= response;
       expect(response.status).toBe(200); expect(await response.text()).toBe('ok');
     }
+    expect(firstResponse?.headers.get('set-cookie')).toBeNull(); expect(firstResponse?.headers.get('x-powered-by')).toBeNull();
     expect(seen).toHaveLength(2); expect(seen[1].body).toBe('songId=a&songId=a');
-    for (const request of seen) { expect(request.url.searchParams.get('t')).toBe(login.auth.t); expect(request.url.searchParams.has('tookuSession')).toBe(false); }
+    for (const request of seen) {
+      expect(request.url.searchParams.get('t')).toBe(login.auth.t); expect(request.url.searchParams.has('tookuSession')).toBe(false);
+      expect(request.headers.cookie).toBeUndefined(); expect(request.headers.authorization).toBeUndefined();
+      expect(request.headers['x-forwarded-for']).toBeUndefined(); expect(request.headers['x-forwarded-host']).toBeUndefined(); expect(request.headers['x-forwarded-proto']).toBeUndefined();
+    }
     expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1`)).status).toBe(401);
     expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1&tookuUser=another-user`, { headers: { Cookie: login.cookie } })).status).toBe(401);
     expect((await fetch(`${app.origin}/api/navidrome/api/artist/artist?tookuSession=1&tookuUser=Alice`, { headers: { Cookie: login.cookie } })).status).toBe(200);
-    expect(seen[2].header).toBe('Bearer synthetic-native-token');
+    expect(seen[2].headers['x-nd-authorization']).toBe('Bearer synthetic-native-token');
+    expect((await fetch(`${app.origin}/api/navidrome/api/artist/artist/image?tookuSession=1&tookuUser=Alice`, { method: 'POST', headers: { Cookie: login.cookie, 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(415);
+    const oversizedStatus = await new Promise<number>((resolve, reject) => {
+      const request = httpRequest(`${app.origin}/api/navidrome/api/artist/artist/image?tookuSession=1&tookuUser=Alice`, { method: 'POST', headers: { Cookie: login.cookie, 'Content-Type': 'multipart/form-data; boundary=fixture' } }, (response) => {
+        response.resume(); response.on('end', () => resolve(response.statusCode ?? 0));
+      });
+      request.on('error', reject);
+      for (let index = 0; index < 34; index++) request.write(Buffer.alloc(65536));
+      request.end();
+    });
+    expect(oversizedStatus).toBe(413);
     const rawToken = 'a'.repeat(32);
     expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?u=new-user&t=${rawToken}&s=${'b'.repeat(16)}`, { headers: { Cookie: login.cookie } })).status).toBe(200);
     expect(seen[3].url.searchParams.get('t')).toBe(rawToken);

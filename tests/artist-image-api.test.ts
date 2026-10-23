@@ -111,5 +111,5 @@ it('limits the native proxy to authentication and artist artwork operations', ()
     expect(isNavidromeProxyRequest(`${prefix}/api/artist/a`, 'GET')).toBe(true);
     expect(isNavidromeProxyRequest(`${prefix}/api/artist/a/image`, 'DELETE')).toBe(true);
   }
-  for (const [url, method] of [['/nd/auth/createAdmin', 'POST'], ['/nd/api/user', 'POST'], ['/nd/api/artist/a', 'DELETE'], ['/nd/api/artist/%2e%2e/image', 'POST'], ['/nd/auth/login', 'GET']]) expect(isNavidromeProxyRequest(url, method)).toBe(false);
+  for (const [url, method] of [['/nd/auth/createAdmin', 'POST'], ['/nd/api/user', 'POST'], ['/nd/api/artist/a', 'DELETE'], ['/nd/api/artist/%2e%2e/image', 'POST'], ['/nd/api/artist/..%2fimage', 'POST'], ['/nd/api/artist/a\\image', 'POST'], ['/nd/auth/login', 'GET']]) expect(isNavidromeProxyRequest(url, method)).toBe(false);
 });
