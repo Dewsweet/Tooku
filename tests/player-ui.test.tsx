@@ -52,11 +52,32 @@ afterEach(() => {
 });
 function RouteMarker() { const location = useLocation(); return <output data-testid="route-path">{location.pathname}</output>; }
 const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}><MemoryRouter><Interactions>{child}<RouteMarker /></Interactions></MemoryRouter></QueryClientProvider>);
+function dockTouch(target: Element, type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel', x: number, y = 30) {
+  const point = { identifier: 1, clientX: x, clientY: y }; const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { touches: type === 'touchstart' || type === 'touchmove' ? [point] : [], changedTouches: [point] });
+  fireEvent(target, event); return event;
+}
 it('uses the dock title to navigate to the current playback source and keeps playback intact', () => {
   surface(<PlayerBar openQueue={() => {}} openLyrics={() => {}} />);
   fireEvent.click(screen.getByRole('link', { name: '当前曲目' }));
   expect(screen.getByTestId('route-path')).toHaveTextContent('/playlists/playlist%20a');
   expect(usePlayer.getState()).toMatchObject({ currentId: 'first', position: 11, status: 'paused' });
+});
+it('uses deliberate horizontal swipes on mobile track information for previous and next', () => {
+  const next = vi.spyOn(player, 'next').mockImplementation(() => {}); const previous = vi.spyOn(player, 'previous').mockImplementation(() => {});
+  const open = vi.fn(); const view = surface(<PlayerBar mobile openQueue={() => {}} openLyrics={open} />);
+  const track = view.container.querySelector('.dock-track')!;
+  dockTouch(track, 'touchstart', 250); const move = dockTouch(track, 'touchmove', 170); dockTouch(track, 'touchend', 160);
+  expect(move.defaultPrevented).toBe(true); expect(next).toHaveBeenCalledOnce(); expect(previous).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '展开播放器：当前曲目' }), { detail: 1 }); expect(open).not.toHaveBeenCalled();
+  dockTouch(track, 'touchstart', 110); dockTouch(track, 'touchmove', 180); dockTouch(track, 'touchend', 190);
+  expect(previous).toHaveBeenCalledOnce();
+  dockTouch(track, 'touchstart', 200, 20); dockTouch(track, 'touchmove', 204, 100); dockTouch(track, 'touchend', 204, 100);
+  expect(next).toHaveBeenCalledOnce(); expect(previous).toHaveBeenCalledOnce();
+  const scrolling = view.container.querySelector('.scrolling-text')!;
+  scrolling.setAttribute('data-overflow', 'true'); scrolling.setAttribute('data-animate', 'false');
+  dockTouch(scrolling, 'touchstart', 250); dockTouch(scrolling, 'touchmove', 150); dockTouch(scrolling, 'touchend', 140);
+  expect(next).toHaveBeenCalledOnce(); expect(previous).toHaveBeenCalledOnce();
 });
 it('scrolls overflowing metadata only, updates on resize, and honors reduced motion', () => {
   let resize = () => {}; const disconnect = vi.fn();

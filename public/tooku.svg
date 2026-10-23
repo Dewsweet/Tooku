@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
   <title>Tooku</title>
-  <desc>落日、远山与湖面的回响，寓意音乐陪伴我们走向远方。</desc>
+  <desc>落日、远山与湖面上的对称音波，寓意音乐陪伴我们走向远方。</desc>
   <defs>
     <linearGradient id="sky" x1="48" y1="4" x2="48" y2="72" gradientUnits="userSpaceOnUse">
       <stop stop-color="#345d89"/>
@@ -20,6 +20,6 @@
     <path d="M0 60c11-7 17-7 26-2s18 10 29 8 25-14 41-14v44H0Z" fill="#365f89"/>
     <path d="M0 68c26-5 47 2 68-2l28-6v36H0Z" fill="url(#lake)"/>
     <path d="M0 62c11-4 17-2 26 3s17 5 25 8c-11 4-32 5-51 3Z" fill="#203e63"/>
-    <path d="M57 65h25M61 72h14M55 80h17M59 86h7" stroke="#f4dcc4" stroke-width="2" stroke-linecap="round"/>
+    <path d="M44 66h8M39 71h18M34 76h28M38 81h20M43 86h10" stroke="#f4dcc4" stroke-width="2" stroke-linecap="round"/>
   </g>
 </svg>

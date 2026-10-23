@@ -201,6 +201,7 @@ html:has(dialog[open]) { overflow: hidden; }
 }
 @media (max-width: 767px) {
   .playback-dock { grid-template-columns: minmax(0, 1fr) auto; }
+  .playback-dock .dock-track { overscroll-behavior-x: contain; }
   .dock-track .now-playing { max-width: none; }
   .dock-art .mini-cover { width: 44px; }
   .playback-dock .player-right { gap: 0; }

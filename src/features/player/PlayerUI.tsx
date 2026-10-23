@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, ListPlus, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, Disc3, Ellipsis } from 'lucide-react';
@@ -71,12 +71,70 @@ function Volume() {
   return <div className="volume-control"><IconButton label={volume === 0 ? '取消静音' : '静音'} onClick={() => { if (volume > 0) { previous.current = volume; player.volume(0); } else player.volume(previous.current || 0.7); }}><Icon size={19} /></IconButton><input type="range" aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} min={0} max={1} step={0.01} value={volume} style={{ '--progress': `${volume * 100}%` } as CSSProperties} onChange={(e) => player.volume(Number(e.target.value))} /></div>;
 }
 
+function useMobileTrackSwipe(enabled: boolean, available: boolean) {
+  const element = useRef<HTMLDivElement>(null);
+  const gesture = useRef<{ id: number; x: number; y: number; started: number; locked: boolean; ignored: boolean } | null>(null);
+  const suppressClick = useRef(false); const releaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    const node = element.current;
+    if (!node || !enabled || !available) return;
+    const reset = () => { gesture.current = null; };
+    const start = (event: globalThis.TouchEvent) => {
+      if (event.touches.length !== 1) return;
+      const target = event.target;
+      // Reduced-motion users can still manually pan an overflowing title instead of changing tracks.
+      if (target instanceof Element && target.closest('.scrolling-text[data-overflow="true"][data-animate="false"]')) return;
+      const point = event.touches[0];
+      gesture.current = { id: point.identifier, x: point.clientX, y: point.clientY, started: performance.now(), locked: false, ignored: false };
+    };
+    const move = (event: globalThis.TouchEvent) => {
+      const current = gesture.current;
+      if (!current || event.touches.length !== 1 || event.touches[0].identifier !== current.id) { reset(); return; }
+      const point = event.touches[0]; const dx = point.clientX - current.x; const dy = point.clientY - current.y;
+      if (!current.locked && !current.ignored && Math.max(Math.abs(dx), Math.abs(dy)) >= 10) {
+        current.locked = Math.abs(dx) > Math.abs(dy) * 1.2;
+        current.ignored = !current.locked;
+      }
+      if (current.locked) event.preventDefault();
+    };
+    const finish = (event: globalThis.TouchEvent, cancelled = false) => {
+      const current = gesture.current; reset();
+      const point = Array.from(event.changedTouches).find((touch) => touch.identifier === current?.id);
+      if (!current || !point || cancelled || !current.locked) return;
+      const distance = point.clientX - current.x; const elapsed = performance.now() - current.started;
+      if (Math.abs(distance) < 52 && !(Math.abs(distance) >= 28 && elapsed <= 240)) return;
+      suppressClick.current = true; clearTimeout(releaseTimer.current);
+      releaseTimer.current = setTimeout(() => { suppressClick.current = false; }, 400);
+      if (distance < 0) player.next(); else player.previous();
+    };
+    const end = (event: globalThis.TouchEvent) => finish(event);
+    const cancel = (event: globalThis.TouchEvent) => finish(event, true);
+    node.addEventListener('touchstart', start, { passive: true });
+    node.addEventListener('touchmove', move, { passive: false });
+    node.addEventListener('touchend', end, { passive: true });
+    node.addEventListener('touchcancel', cancel, { passive: true });
+    return () => {
+      clearTimeout(releaseTimer.current); reset();
+      node.removeEventListener('touchstart', start); node.removeEventListener('touchmove', move);
+      node.removeEventListener('touchend', end); node.removeEventListener('touchcancel', cancel);
+    };
+  }, [enabled, available]);
+  return {
+    ref: element,
+    onClickCapture: (event: ReactMouseEvent<HTMLElement>) => {
+      if (!suppressClick.current || event.detail === 0) return;
+      suppressClick.current = false; event.preventDefault(); event.stopPropagation();
+    },
+  };
+}
+
 export function PlayerBar({ openQueue, openLyrics, queueOpen = false, mobile = false }: { openQueue: () => void; openLyrics: () => void; queueOpen?: boolean; mobile?: boolean }) {
   const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId);
   const title = current ? <PlaybackSourceLink entry={current} /> : '选择一首歌';
   const artists = current && <ArtistLinks track={current.track} resolve />;
+  const trackSwipe = useMobileTrackSwipe(mobile, Boolean(current));
   return <footer className={`player-bar playback-dock ${current ? 'has-track' : ''}`} aria-label="音乐播放器">
-    <div className="dock-track"><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
+    <div className="dock-track" {...trackSwipe}><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
       <div key={current?.entryId} className="dock-metadata"><strong>{mobile && current ? <ScrollingText text={current.track.title}>{title}</ScrollingText> : title}</strong><small>{mobile && current ? <ScrollingText text={current.track.artist}>{artists}</ScrollingText> : artists}</small></div>{!mobile && <Favorite track={current?.track} compact />}</div>
     {!mobile && <div className="player-center"><Transport /><Progress /></div>}
     <div className="player-right">{mobile && <Favorite track={current?.track} compact />}<IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton>{!mobile && <><Volume /><DesktopLyricsButton track={current?.track} /></>}{mobile ? <PlayPauseButton /> : <FullscreenButton disabled={!current} openPlayer={openLyrics} />}</div>

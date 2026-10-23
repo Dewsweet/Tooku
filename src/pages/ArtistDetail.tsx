@@ -133,7 +133,7 @@ function ArtistDetailContent({ api, libraryId, id }: { api: MusicApi; libraryId?
           <IconButton label={starred ? '取消收藏歌手' : '收藏歌手'} disabled={saving || favorites.isPending || favorites.isError} aria-pressed={starred} onClick={() => void favorite()}><Heart size={21} fill={starred ? 'currentColor' : 'none'} /></IconButton>
         </div>
         <QueryState pending={false} error={favorites.error} retry={() => favorites.refetch()} />
-        <section className="artist-discography" aria-labelledby="artist-albums-heading"><div className="discography-heading"><h2 id="artist-albums-heading">专辑</h2><GridDensitySelect kind="albums" /></div>{query.data.albums.length ? <DensityGrid kind="albums"><AlbumGrid albums={query.data.albums} /></DensityGrid> : <Empty title="这个音乐库还没有这位歌手的专辑" />}</section>
+        <section className="artist-discography" data-density-layout="albums" aria-labelledby="artist-albums-heading"><div className="discography-heading"><h2 id="artist-albums-heading">专辑</h2><GridDensitySelect kind="albums" /></div>{query.data.albums.length ? <DensityGrid kind="albums"><AlbumGrid albums={query.data.albums} /></DensityGrid> : <Empty title="这个音乐库还没有这位歌手的专辑" />}</section>
       </div>
     </>}
   </div>;

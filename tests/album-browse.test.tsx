@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -8,7 +8,7 @@ import { useLibrary } from '../src/state/library';
 import { useSession } from '../src/state/session';
 import { useDisplayPreferences } from '../src/state/display';
 
-afterEach(() => { cleanup(); useSession.getState().setSession(null); useLibrary.setState({ profiles: {} }); useDisplayPreferences.setState({ gridColumns: { albums: 4, artists: 4 } }); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); useSession.getState().setSession(null); useLibrary.setState({ profiles: {} }); useDisplayPreferences.setState({ gridColumns: { albums: 4, artists: 4 } }); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function setup() {
   const api = new MusicApi('https://example.test', 'fixture', 'not-real');
   vi.spyOn(api, 'libraries').mockResolvedValue([{ id: 'library-1', name: '测试曲库' }]);
@@ -56,4 +56,25 @@ it('keeps album and artist column choices separate and reuses them on remount', 
   const albums = show();
   expect(screen.getByRole('combobox', { name: '专辑每行数量' })).toHaveTextContent('每行 6 个');
   albums.unmount(); client.clear(); api.dispose();
+});
+it('shows the effective responsive column count while retaining the wider-layout preference', () => {
+  const resizes: Array<() => void> = [];
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resizes.push(callback); } observe() {} disconnect() {} });
+  const { api, client, show } = setup(); vi.spyOn(api, 'allAlbums').mockResolvedValue([]);
+  useDisplayPreferences.setState({ gridColumns: { albums: 8, artists: 4 } });
+  const view = show(); const layout = view.container.querySelector<HTMLElement>('[data-density-layout="albums"]')!;
+  let width = 620; vi.spyOn(layout, 'getBoundingClientRect').mockImplementation(() => ({ width }) as DOMRect);
+  act(() => resizes[0]());
+  const density = screen.getByRole('combobox', { name: '专辑每行数量' });
+  expect(density).toHaveTextContent('每行 3 个（当前宽度）');
+  expect(density).toBeDisabled();
+  expect(useDisplayPreferences.getState().gridColumns.albums).toBe(8);
+  width = 820; act(() => resizes[0]());
+  expect(density).toHaveTextContent('每行 4 个（当前宽度）'); expect(density).toBeEnabled();
+  fireEvent.click(density);
+  expect(screen.getByRole('option', { name: '每行 6 个' })).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.keyDown(density, { key: 'Escape' });
+  width = 1300; act(() => resizes[0]());
+  expect(density).toHaveTextContent('每行 8 个');
+  view.unmount(); client.clear(); api.dispose();
 });

@@ -21,7 +21,7 @@ export function Albums() {
   const query = useQuery({ queryKey: [api.identity, 'all-albums', libraryId, type], enabled: Boolean(libraryId),
     queryFn: ({ signal }) => api.allAlbums(type, signal, libraryId) });
   const albums = query.data ?? [];
-  return <div className="album-browse">
+  return <div className="album-browse" data-density-layout="albums">
     <PageTitle title="专辑"><div className="browse-controls"><Select aria-label="专辑排序" value={type} onChange={setType}>
       <option value="newest">最近添加</option><option value="alphabeticalByName">专辑名称</option>
       <option value="alphabeticalByArtist">歌手名称</option><option value="frequent">经常播放</option><option value="random">随机发现</option>
@@ -39,5 +39,5 @@ export function AlbumDetail({ addToPlaylist }: { addToPlaylist: (track: Track) =
 }
 export function Artists() {
   const api = useApi(); const { libraryId } = useMusicLibrary(); const query = useQuery({ queryKey: [api.identity, 'artists', libraryId], enabled: Boolean(libraryId), queryFn: ({ signal }) => api.artists(signal, libraryId) });
-  return <><PageTitle title="歌手"><GridDensitySelect kind="artists" /></PageTitle><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} /><DensityGrid kind="artists"><ArtistGrid artists={query.data ?? []} /></DensityGrid>{query.data && !query.data.length && <Empty title="还没有歌手" />}</>;
+  return <div data-density-layout="artists"><PageTitle title="歌手"><GridDensitySelect kind="artists" /></PageTitle><QueryState pending={query.isPending} error={query.error} retry={() => query.refetch()} /><DensityGrid kind="artists"><ArtistGrid artists={query.data ?? []} /></DensityGrid>{query.data && !query.data.length && <Empty title="还没有歌手" />}</div>;
 }

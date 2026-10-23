@@ -80,7 +80,7 @@ export function Login() {
     </header>
     <main className="login-main">
       <div className="login-copy">
-        <div className="login-art" aria-hidden="true"><TookuMark /></div>
+        <div className="login-art" aria-hidden="true"><TookuMark /><span className="login-brand-signal"><i /><i /><i /></span><span className="login-navidrome-mark"><img src="/navidrome.svg" alt="" draggable={false} /></span></div>
         <h1>让音乐，<br />陪你去远方。</h1>
         <p className="login-description">Navidrome 第三方音乐播放器</p>
       </div>

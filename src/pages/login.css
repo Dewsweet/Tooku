@@ -36,13 +36,57 @@
 }
 .login-copy { min-width: 0; }
 .login-art {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 208px;
+  width: 228px;
   height: 208px;
   margin: 0 0 28px -8px;
+  isolation: isolate;
 }
-.login-art .tooku-mark { width: 100%; height: 100%; }
+.login-art > .tooku-mark {
+  width: 196px;
+  height: 196px;
+  margin-right: 24px;
+  transition: transform .48s cubic-bezier(.2, .8, .2, 1);
+}
+.login-navidrome-mark {
+  position: absolute;
+  right: 0;
+  bottom: 5px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 5px;
+  border: 1px solid #dfe6ed;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 8px 22px #15324d1f;
+  transition: transform .48s cubic-bezier(.2, .8, .2, 1), box-shadow .48s;
+}
+.login-navidrome-mark img { display: block; width: 100%; height: 100%; }
+.login-brand-signal {
+  position: absolute;
+  right: 46px;
+  bottom: 43px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transform: rotate(-42deg);
+  transform-origin: right center;
+  pointer-events: none;
+}
+.login-brand-signal i { width: 5px; height: 5px; border-radius: 50%; background: #0084ff; opacity: .38; }
+@media (hover: hover) and (pointer: fine) {
+  .login-art:hover > .tooku-mark { transform: translate(-2px, -4px) scale(1.018); }
+  .login-art:hover .login-navidrome-mark { transform: translate(-5px, -4px) rotate(-12deg); box-shadow: 0 12px 28px #15324d29; }
+  .login-art:hover .login-brand-signal i { animation: login-brand-pulse .9s ease-in-out infinite; }
+  .login-art:hover .login-brand-signal i:nth-child(2) { animation-delay: .12s; }
+  .login-art:hover .login-brand-signal i:nth-child(3) { animation-delay: .24s; }
+}
 .login-copy h1 {
   font-size: calc(clamp(40px, 4.4vw, 56px) * var(--ui-font-scale, 1));
   line-height: 1.45;
@@ -118,6 +162,7 @@
   border-radius: 10px;
   font-size: calc(15px * var(--ui-font-scale, 1));
 }
+@keyframes login-brand-pulse { 0%, 100% { opacity: .28; transform: scale(.72); } 45% { opacity: 1; transform: scale(1.16); } }
 @media (max-width: 900px) {
   .login-header { padding: 28px 28px 16px; }
   .login-main { grid-template-columns: minmax(0, 1fr); gap: 36px; max-width: 484px; padding: 24px 28px 48px; }
@@ -129,3 +174,11 @@
   .login-main { padding-inline: 20px; }
   .login-card { padding: 24px 20px; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .login-art > .tooku-mark, .login-navidrome-mark { transition: none; }
+  .login-brand-signal i { animation: none !important; }
+  .login-art:hover > .tooku-mark, .login-art:hover .login-navidrome-mark { transform: none; }
+}
+:root[data-motion=reduced] .login-art > .tooku-mark, :root[data-motion=reduced] .login-navidrome-mark { transition: none; }
+:root[data-motion=reduced] .login-brand-signal i { animation: none !important; }
+:root[data-motion=reduced] .login-art:hover > .tooku-mark, :root[data-motion=reduced] .login-art:hover .login-navidrome-mark { transform: none; }
