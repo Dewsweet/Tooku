@@ -43,6 +43,16 @@ class PlayerEngine {
   #tabId = createId();
   connectedTo(api: MusicApi) { return this.#api === api; }
   currentTime() { return this.#source && this.#audio ? this.#audio.currentTime : usePlayer.getState().position; }
+  preview(direction: 'next' | 'previous') {
+    const state = usePlayer.getState(); let id: string | null | undefined;
+    if (direction === 'next') id = nextEntry(state.entries, state.currentId, state.repeat);
+    else if (state.position > 3) id = state.currentId;
+    else {
+      id = [...this.#back].reverse().find((entryId) => state.entries.some((entry) => entry.entryId === entryId));
+      id ??= state.entries[Math.max(0, state.entries.findIndex((entry) => entry.entryId === state.currentId) - 1)]?.entryId;
+    }
+    return state.entries.find((entry) => entry.entryId === id);
+  }
 
   #init() {
     if (this.#audio) return;

@@ -8,7 +8,7 @@ import { usePlayer, player } from './engine';
 import { Lyrics } from './Lyrics';
 import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
-import type { Track } from '../../domain/models';
+import type { QueueEntry, Track } from '../../domain/models';
 import { PlaybackSourceLink, ArtistLinks } from '../../components/TrackLinks';
 import { FullscreenButton } from './FullscreenButton';
 import { ScrollingText } from './ScrollingText';
@@ -64,6 +64,13 @@ function Favorite({ track, compact = false }: { track?: Track; compact?: boolean
   return <IconButton label={starred ? '取消收藏当前歌曲' : '收藏当前歌曲'} disabled={!track || busy} aria-pressed={Boolean(starred)} className={`icon-button favorite-control ${compact ? 'compact' : ''}`} onClick={async () => { if (!track) return; setBusy(true); await toggleFavorite(api, { ...track, starred: starred ? 'true' : undefined }); setBusy(false); }}>{busy ? <LoaderCircle className="spin" size={19} /> : <Heart key={starred ? 'saved' : 'unsaved'} className={starred ? 'favorite-pop' : ''} size={20} fill={starred ? 'currentColor' : 'none'} />}</IconButton>;
 }
 
+function SwipeTrackPreview({ entry, direction }: { entry: QueueEntry; direction: 'previous' | 'next' }) {
+  return <div className={`dock-swipe-panel dock-swipe-preview is-${direction}`} aria-hidden="true">
+    <span className="dock-art"><Cover id={entry.track.coverArt} size={160} className="mini-cover" /></span>
+    <div className="dock-metadata"><strong>{entry.track.title}</strong><small>{entry.track.artist}</small></div>
+  </div>;
+}
+
 function Volume() {
   const volume = usePlayer((s) => s.volume); const supported = usePlayer((s) => s.volumeSupported); const previous = useRef(0.7);
   if (!supported) return <span className="volume-hint">使用系统音量</span>;
@@ -71,7 +78,8 @@ function Volume() {
   return <div className="volume-control"><IconButton label={volume === 0 ? '取消静音' : '静音'} onClick={() => { if (volume > 0) { previous.current = volume; player.volume(0); } else player.volume(previous.current || 0.7); }}><Icon size={19} /></IconButton><input type="range" aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} min={0} max={1} step={0.01} value={volume} style={{ '--progress': `${volume * 100}%` } as CSSProperties} onChange={(e) => player.volume(Number(e.target.value))} /></div>;
 }
 
-function useMobileTrackSwipe(enabled: boolean, available: boolean) {
+function useMobileTrackSwipe(enabled: boolean, available: boolean, canNext: boolean, canPrevious: boolean) {
+  const reduced = useReducedMotion();
   const element = useRef<HTMLDivElement>(null);
   const gesture = useRef<{ id: number; x: number; y: number; started: number; locked: boolean; ignored: boolean } | null>(null);
   const suppressClick = useRef(false); const releaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -82,13 +90,17 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
     const reset = () => { gesture.current = null; };
     const clearVisual = () => {
       clearTimeout(visualTimer.current);
-      delete node.dataset.swipeDirection; delete node.dataset.swipeLabel; delete node.dataset.swipeSettling;
+      delete node.dataset.swipeDirection; delete node.dataset.swipeSettling;
       node.style.removeProperty('--dock-swipe-x'); node.style.removeProperty('--dock-swipe-progress');
     };
-    const settleVisual = () => {
+    const settleVisual = (direction?: 'next' | 'previous') => {
+      const commit = () => { clearVisual(); if (direction === 'next') player.next(); else if (direction === 'previous') player.previous(); };
+      if (direction && reduced) { commit(); return; }
       node.dataset.swipeSettling = 'true';
-      node.style.setProperty('--dock-swipe-x', '0px'); node.style.setProperty('--dock-swipe-progress', '0');
-      clearTimeout(visualTimer.current); visualTimer.current = setTimeout(clearVisual, 200);
+      const width = node.clientWidth || 240;
+      node.style.setProperty('--dock-swipe-x', direction ? `${direction === 'next' ? -width : width}px` : '0px');
+      node.style.setProperty('--dock-swipe-progress', direction ? '1' : '0');
+      clearTimeout(visualTimer.current); visualTimer.current = setTimeout(direction ? commit : clearVisual, 190);
     };
     const start = (event: globalThis.TouchEvent) => {
       if (event.touches.length !== 1) return;
@@ -111,11 +123,10 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
       }
       if (current.locked) {
         event.preventDefault();
-        const progress = Math.min(1, Math.abs(dx) / 64);
+        const width = node.clientWidth || 240; const offset = Math.max(-width, Math.min(width, dx));
         node.dataset.swipeDirection = dx < 0 ? 'next' : 'previous';
-        node.dataset.swipeLabel = dx < 0 ? '下一首歌曲' : '上一首歌曲';
-        node.style.setProperty('--dock-swipe-x', `${Math.max(-26, Math.min(26, dx * .24))}px`);
-        node.style.setProperty('--dock-swipe-progress', String(progress));
+        node.style.setProperty('--dock-swipe-x', `${offset}px`);
+        node.style.setProperty('--dock-swipe-progress', String(Math.min(1, Math.abs(offset) / width)));
       }
     };
     const finish = (event: globalThis.TouchEvent, cancelled = false) => {
@@ -123,11 +134,12 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
       const point = Array.from(event.changedTouches).find((touch) => touch.identifier === current?.id);
       if (!current || !point || cancelled || !current.locked) { if (current?.locked) settleVisual(); return; }
       const distance = point.clientX - current.x; const elapsed = performance.now() - current.started;
-      settleVisual();
-      if (Math.abs(distance) < 52 && !(Math.abs(distance) >= 28 && elapsed <= 240)) return;
+      const direction = distance < 0 ? 'next' : 'previous';
+      const deliberate = Math.abs(distance) >= 52 || (Math.abs(distance) >= 28 && elapsed <= 240);
+      if (!deliberate || (direction === 'next' ? !canNext : !canPrevious)) { settleVisual(); return; }
       suppressClick.current = true; clearTimeout(releaseTimer.current);
       releaseTimer.current = setTimeout(() => { suppressClick.current = false; }, 400);
-      if (distance < 0) player.next(); else player.previous();
+      settleVisual(direction);
     };
     const end = (event: globalThis.TouchEvent) => finish(event);
     const cancel = (event: globalThis.TouchEvent) => finish(event, true);
@@ -140,7 +152,7 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
       node.removeEventListener('touchstart', start); node.removeEventListener('touchmove', move);
       node.removeEventListener('touchend', end); node.removeEventListener('touchcancel', cancel);
     };
-  }, [enabled, available]);
+  }, [available, canNext, canPrevious, enabled, reduced]);
   return {
     ref: element,
     onClickCapture: (event: ReactMouseEvent<HTMLElement>) => {
@@ -154,10 +166,12 @@ export function PlayerBar({ openQueue, openLyrics, queueOpen = false, mobile = f
   const state = usePlayer(); const current = state.entries.find((e) => e.entryId === state.currentId);
   const title = current ? <PlaybackSourceLink entry={current} /> : '选择一首歌';
   const artists = current && <ArtistLinks track={current.track} resolve />;
-  const trackSwipe = useMobileTrackSwipe(mobile, Boolean(current));
+  const nextPreview = mobile ? player.preview('next') : undefined; const previousPreview = mobile ? player.preview('previous') : undefined;
+  const trackSwipe = useMobileTrackSwipe(mobile, Boolean(current), Boolean(nextPreview), Boolean(previousPreview));
+  const currentTrack = <><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
+    <div key={current?.entryId} className="dock-metadata"><strong>{mobile && current ? <ScrollingText text={current.track.title}>{title}</ScrollingText> : title}</strong><small>{mobile && current ? <ScrollingText text={current.track.artist}>{artists}</ScrollingText> : artists}</small></div></>;
   return <footer className={`player-bar playback-dock ${current ? 'has-track' : ''}`} aria-label="音乐播放器">
-    <div className="dock-track" {...trackSwipe}><button className="now-playing" onClick={openLyrics} disabled={!current} aria-label={current ? `展开播放器：${current.track.title}` : '选择歌曲开始播放'}><span className="dock-art"><Cover id={current?.track.coverArt} size={160} className="mini-cover" /><span className="dock-expand"><ChevronUp size={19} /></span></span></button>
-      <div key={current?.entryId} className="dock-metadata"><strong>{mobile && current ? <ScrollingText text={current.track.title}>{title}</ScrollingText> : title}</strong><small>{mobile && current ? <ScrollingText text={current.track.artist}>{artists}</ScrollingText> : artists}</small></div>{!mobile && <Favorite track={current?.track} compact />}</div>
+    <div className="dock-track" {...trackSwipe}>{mobile ? <><div className="dock-swipe-panel dock-swipe-current">{currentTrack}</div>{previousPreview && <SwipeTrackPreview entry={previousPreview} direction="previous" />}{nextPreview && <SwipeTrackPreview entry={nextPreview} direction="next" />}</> : <>{currentTrack}<Favorite track={current?.track} compact /></>}</div>
     {!mobile && <div className="player-center"><Transport /><Progress /></div>}
     <div className="player-right">{mobile && <Favorite track={current?.track} compact />}<IconButton label={`播放队列，${state.entries.length} 首`} aria-pressed={queueOpen} onClick={openQueue}><ListMusic size={21} /></IconButton>{!mobile && <><Volume /><DesktopLyricsButton track={current?.track} /></>}{mobile ? <PlayPauseButton /> : <FullscreenButton disabled={!current} openPlayer={openLyrics} />}</div>
     {state.error && <div className="player-error" role="alert"><span>{state.error}</span><button onClick={() => player.play()}>重试</button><button onClick={() => player.mode('compatible')}>兼容模式</button></div>}
