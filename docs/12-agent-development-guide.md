@@ -201,6 +201,8 @@ UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命�
 
 队列出现项可带 `source: { kind, id, libraryId? }`，实体来源为 album/playlist/artist，收藏、最近收听和搜索使用 collection；记录实体 ID，不保存路由或认证 URL。各页面、主页/搜索卡片、表格的按钮/标题/双击/键盘/右键与加入队列入口统一传递来源。`replace(tracks, index, { source, shuffle? })` 由引擎判断模式：同一来源普通点歌保留随机，相同原始歌曲序列按索引映射到原有 entryId（含重复项），不重洗既有队列；内容已变更则按现有模式重建。不同来源默认顺序播放，显式 `shuffle: true` 始终启用随机，手动关闭后同一来源不自行恢复。无来源旧入口仅以完整原始歌曲序列回退判断，不猜测歌单。追加项独立携带来源，撤销及暂停恢复保留来源与随机原序；同步/导入仍不接管当前音频。
 
+受管播放地址由 `MusicApi.playbackUrl` 与 `server/api.ts` 的 grant 状态生成，实际代理在 `createPlaybackProxy`。不要恢复通用 `/api/navidrome/rest/stream`/download，也不要在页面拼接授权 URL。授权只留播放器内存，绑定会话、owner、歌曲与转码模式；新曲、重新登录和退出撤销旧流。PlayerEngine 等待授权时仍用 generation 隔离快切结果，等待期间暂停不得在授权返回后自动播放；临近过期只在恢复播放时更新地址并保留秒数。修改时回归单段 Range/206、HEAD、seek、并发/请求上限、注销/切号、上游重定向、no-store/inline 和 Nginx 日志排除。直连模式仍走 Navidrome URL，不能宣传全部服务器均已保护。
+
 队列中每次出现都有独立 `entryId`，收听记录有 `occurrenceId`。同曲不同次的播放、随机、循环和撤销必须保留这些语义。异步播放 promise、恢复快照和晚到 API 响应都要处理过期结果；拖动进度不能计为有效收听。
 
 ## 7. 样式定位与变更方式

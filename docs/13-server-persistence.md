@@ -14,7 +14,7 @@ Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm
 
 固定上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据单值 `X-Forwarded-Proto: https` 判断 HTTPS；逗号链、客户端伪造的 Forwarded/Host 信息不参与判断，不要在不可信入口启用此选项。最终入口确认全站 HTTPS 后可设置 `TOOKU_HSTS=true`，只在可信 HTTPS 请求发送 `Strict-Transport-Security: max-age=31536000`。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、上游改变或退出后需要重新登录。
 
-`server/navidromeProxy.ts` 为固定白名单请求注入会话对应的认证，前端媒体 URL 不包含 token/salt。代理在请求侧移除 Cookie、Authorization、Forwarded/X-Forwarded-*、Tooku 内部身份头及逐跳头，在响应侧移除上游 Cookie、服务指纹和逐跳头；保留播放所需的 Range/Content-Range。原生登录只接受不超过 64 KiB 的 JSON，歌手图片只接受带 boundary、正文不超过 2 MiB 加封装余量的 multipart。账号数据请求绑定已验证 owner；媒体/推荐请求绑定当前登录名。旧标签页遇到另一个账号的 Cookie 会被拒绝，不能读写新账号数据或撤销新账号会话。登录、创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。直连其他完整 Navidrome 地址仅会话登录、账号数据仅本地，也支持本地备份恢复；不保存任意外部服务器凭据，不开放任意代理。
+`server/navidromeProxy.ts` 为固定白名单请求注入会话对应的认证，前端媒体 URL 不包含 token/salt。普通代理关闭 stream/download 方法；受管播放器 POST `/api/tooku/playback` 后取得 256 位随机路径，服务端只保存摘要，并绑定当前 Cookie 会话摘要、owner、歌曲 ID、原始/兼容模式和最长四小时有效期。开始新授权、重新登录、明确认证撤销、退出或服务关闭会撤销旧授权并终止活动上游请求；每个授权最多 64 次请求、3 路并发，只接受 GET/HEAD 和单段 Range。暂停后若授权将在五分钟内到期，恢复时重新申请并从当前秒数继续。流响应移除重定向、上游 Cookie、附件文件名和服务指纹，固定 inline、private/no-store、same-origin；`deploy/default.conf.template` 对授权路径关闭访问日志。代理在请求侧移除 Cookie、Authorization、Forwarded/X-Forwarded-*、Tooku 内部身份头及逐跳头，在响应侧移除上游 Cookie、服务指纹和逐跳头；保留播放所需的 Range/Content-Range。原生登录只接受不超过 64 KiB 的 JSON，歌手图片只接受带 boundary、正文不超过 2 MiB 加封装余量的 multipart。账号数据请求绑定已验证 owner；媒体/推荐请求绑定当前登录名。旧标签页遇到另一个账号的 Cookie 会被拒绝，不能读写新账号数据或撤销新账号会话。登录、创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。直连其他完整 Navidrome 地址仅会话登录、账号数据仅本地，也支持本地备份恢复；不保存任意外部服务器凭据，不开放任意代理。临时授权降低扩展自动接管和批量枚举，不构成 DRM；直连模式须等受管多服务器实现后才能使用同一保护。
 
 生产 Node 入口统一发送 CSP、`frame-ancestors 'none'`、X-Frame-Options、Permissions-Policy、no-referrer 与 nosniff。CSP 允许同源应用资源、data/blob 图片、blob 媒体，以及 HTTP(S) Navidrome 的 API、图片和音频；禁止对象、跨源表单、页面嵌入和非本站脚本。新增或调整图片、音频、Worker、画中画及外部连接入口时，应先更新共享 `server/security.ts` 并执行安全头回归，不能在页面局部绕过。
 
@@ -72,10 +72,13 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 | `health` | GET | `{ app: 'tooku', persistence: 1 }` |
 | `connection` | POST | 判断地址是否为当前部署的固定上游；只返回 `managed` 布尔值 |
 | `session` | POST / GET / DELETE | 验证并创建 Cookie 会话 / 恢复且重新验证 / 注销会话 |
+| `playback` | POST | 为当前会话、歌曲和转码模式签发随机短时播放路径 |
 | `credentials` | GET / PUT | 仅读保存状态与 revision / 按版本更新密钥字段；不返回密钥 |
 | `data` | GET / PUT | 读取文档 / 提交 `{ revision, data }`；不匹配返回 409 |
 | `backup` | GET | 当前账号可携带图片的版本化 JSON |
 | `revisions` | GET | 当前账号最近两个旧文档，恢复同样使用 revision 检查 |
+
+实际二进制流位于 `/api/tooku-stream/{grant}`，不属于账号 JSON API；只接受 GET/HEAD，外层代理必须转发 Range 并避免记录完整路径。
 
 `server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
 

@@ -14,7 +14,7 @@
 
 一般 JSON 请求携带 `v=1.16.1`、`c=Tooku`、`f=json`。业务参数使用 URLSearchParams 编码；多个 songId/id 使用 append，不能丢掉重复键。音频/封面为二进制响应，不走 JSON 解包器。
 
-普通 API GET 先用于兼容性基线；探测 `formPost` 支持后可改为 application/x-www-form-urlencoded POST，尤其大歌单写入。不能仅凭 POST 返回 HTTP 200 就认定扩展可用。音频/封面直接 URL 仍需认证参数；同源反向代理不会自动消除这点。
+普通 API GET 先用于兼容性基线；探测 `formPost` 支持后可改为 application/x-www-form-urlencoded POST，尤其大歌单写入。不能仅凭 POST 返回 HTTP 200 就认定扩展可用。封面在受管连接中使用同源 Cookie 代理；音频先通过 `/api/tooku/playback` 换取临时同源路径，由 `/api/tooku-stream/{grant}` 在服务端注入认证。直连其他 Navidrome 时音频/封面 URL 仍需协议认证参数；同源地址本身不会自动消除认证，不能把直连 URL 持久化或输出到日志。
 
 ## 登录与认证生命周期
 
