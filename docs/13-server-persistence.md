@@ -77,6 +77,12 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 `server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
 
+## 后续：受管多服务器
+
+后续计划允许登录页接受任意可验证的 Navidrome HTTP(S) 地址，并让验证成功的服务器获得与当前固定上游相同的持久登录、账号数据、服务密钥和备份能力。它不是把客户端地址直接拼到通用代理请求中，而是增加受管服务器注册与会话绑定：首次登录由后端规范化地址、探测 Navidrome 协议并验证账号，成功后为该上游建立稳定服务器 ID；加密会话只保存这个已验证目标，后续音乐代理从会话取目标，单次请求不能改写。
+
+实现时需要一并处理：按 `[服务器 ID, 规范账号]` 隔离 owner、同地址别名归一与已有固定上游数据迁移、DNS 重绑定和重定向、云元数据/特殊地址防护、私网与回环地址的自托管策略、端口和子路径、连接超时与限流、服务器改址/删除、备份 owner 校验，以及多个服务器同时登录时的 Cookie/标签页隔离。私网 Navidrome 是正常使用场景，不能简单全面禁止；公开部署应由管理员策略或显式允许列表决定可登记范围。当前 `NAVIDROME_UPSTREAM` 保留为默认服务器和兼容入口，完成这些边界前不把现有固定代理改成任意代理。
+
 ## 运行与部署
 
 开发启动仍是 `npm.cmd run dev` / `start-tooku.cmd`，Vite 同一端口挂载业务 API 与固定上游代理。健康接口 `/__tooku/health` 的 `persistence: 1` 可区分新版；旧进程需要在方便时重启，不应为升级终止用户播放。
