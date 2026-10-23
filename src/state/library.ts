@@ -36,7 +36,15 @@ export function removeFolder(profile: LibraryProfile, id: string): LibraryProfil
   const folder = profile.folders.find((f) => f.id === id); if (!folder) return profile;
   const { collapsedFolders, ...rest } = profile;
   const remaining = collapsedFolders?.filter((closed) => closed !== id);
-  return { ...rest, ...(remaining?.length ? { collapsedFolders: remaining } : {}), folders: profile.folders.filter((f) => f.id !== id).map((f) => f.parentId === id ? { ...f, parentId: folder.parentId } : f),
+  const names = new Set(profile.folders.filter((f) => f.id !== id && f.libraryId === folder.libraryId && f.parentId === folder.parentId).map((f) => f.name));
+  const folders = profile.folders.filter((f) => f.id !== id).map((f) => {
+    if (f.parentId !== id) return f;
+    let name = f.name; let suffix = 2;
+    while (names.has(name)) { const ending = `（${suffix++}）`; name = `${f.name.slice(0, 80 - ending.length)}${ending}`; }
+    names.add(name);
+    return { ...f, name, parentId: folder.parentId };
+  });
+  return { ...rest, ...(remaining?.length ? { collapsedFolders: remaining } : {}), folders,
     placements: Object.fromEntries(Object.entries(profile.placements).map(([key, value]) => [key, value.folderId === id ? { ...value, folderId: folder.parentId } : value])) };
 }
 interface LibraryState {

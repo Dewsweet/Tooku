@@ -21,6 +21,20 @@ it('prevents folder cycles and preserves children and playlist placements when r
   expect(reparentFolder(profile, 'parent', 'child')).toBe(profile);
   const after = removeFolder(profile, 'parent'); expect(after.folders[0].parentId).toBeNull(); expect(after.placements.p).toEqual({ libraryId: '1', folderId: null });
 });
+it('keeps promoted folder names unique within the library and within the editor length limit', () => {
+  const name = '长'.repeat(80);
+  const profile = { ...emptyLibraryProfile, folders: [
+    { id: 'parent', name: '父目录', libraryId: '1', parentId: null },
+    { id: 'existing', name, libraryId: '1', parentId: null },
+    { id: 'child', name, libraryId: '1', parentId: 'parent' },
+    { id: 'another-library', name: '保留', libraryId: '2', parentId: null },
+    { id: 'another-child', name: '保留', libraryId: '1', parentId: 'parent' },
+  ] };
+  const after = removeFolder(profile, 'parent');
+  expect(after.folders.find((folder) => folder.id === 'child')?.name).toBe(`${name.slice(0, 77)}（2）`);
+  expect(after.folders.find((folder) => folder.id === 'another-child')?.name).toBe('保留');
+  expect(after.folders.every((folder) => folder.name.length <= 80)).toBe(true);
+});
 it('persists folding by account and folder across browser rehydration and cleans deleted folders', async () => {
   const profile = { ...emptyLibraryProfile, folders: [
     { id: 'parent', name: '语言', libraryId: '1', parentId: null },
