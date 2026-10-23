@@ -25,6 +25,34 @@ export function upstreamUrl(input: string) {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Invalid NAVIDROME_UPSTREAM');
   return url.href.replace(/\/+$/, '');
 }
+function normalizedClientBase(input: unknown) {
+  if (typeof input !== 'string' || input.length > 2048) return;
+  try {
+    const url = new URL(input);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return;
+    return url.href.replace(/\/+$/, '');
+  } catch { return; }
+}
+function loopbackHost(hostname: string) { return ['127.0.0.1', 'localhost', '[::1]'].includes(hostname.toLowerCase()); }
+function sameConfiguredServer(candidate: string, upstream: string) {
+  if (candidate === upstream) return true;
+  const left = new URL(candidate); const right = new URL(upstream);
+  return loopbackHost(left.hostname) && loopbackHost(right.hostname) && left.protocol === right.protocol && left.port === right.port && left.pathname === right.pathname;
+}
+function tookuOrigin(req: IncomingMessage) {
+  const origin = req.headers.origin;
+  if (origin) return normalizedClientBase(origin);
+  const host = req.headers.host;
+  if (!host) return;
+  const secure = process.env.TOOKU_COOKIE_SECURE === 'true' || process.env.TOOKU_TRUST_PROXY === 'true' && req.headers['x-forwarded-proto'] === 'https';
+  return normalizedClientBase(`${secure ? 'https' : 'http'}://${host}`);
+}
+function isManagedBase(req: IncomingMessage, input: unknown, upstream: string) {
+  const candidate = normalizedClientBase(input); if (!candidate) return false;
+  if (sameConfiguredServer(candidate, upstream)) return true;
+  const origin = tookuOrigin(req);
+  return Boolean(origin && [origin, `${origin}/nd`, `${origin}/api/navidrome`].includes(candidate));
+}
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new DataError(415, '请求需要 JSON。');
   const chunks: Buffer[] = []; let size = 0;
@@ -94,6 +122,10 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       // No CORS. Compare host (including port) without trusting forwarded headers.
       assertSameOrigin(req);
       if (path === '/api/tooku/health' && req.method === 'GET') { send(200, { app: 'tooku', persistence: 1 }); return; }
+      if (path === '/api/tooku/connection' && req.method === 'POST') {
+        const data = await body(req);
+        send(200, { managed: isManagedBase(req, data.server, upstream) }); return;
+      }
       if (path === '/api/tooku/session' && req.method === 'POST') {
         const ip = req.socket.remoteAddress ?? '';
         let rate = attempts.get(ip); if (!rate || rate.reset <= now()) { rate = { count: 0, reset: now() + 60000 }; attempts.set(ip, rate); }
@@ -103,10 +135,12 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
         const username = await verify({ u: data.u, t: data.t, s: data.s });
         const owner = ownerFor(username);
         if (data.persistent === true) {
+          const clientBase = normalizedClientBase(data.clientBase);
+          if (clientBase && !isManagedBase(req, clientBase, upstream)) throw new DataError(400, '服务地址与 Tooku 配置不一致。');
           const old = sessionCookie(req); const expires = now() + sessionLifetime;
-          const token = vault.createSession({ owner, upstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now() }, old);
+          const token = vault.createSession({ owner, upstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
           setCookie(req, res, token, sessionLifetime / 1000);
-          send(200, { owner, username: data.u, admin: data.admin === true, persistent: true }); return;
+          send(200, { owner, username: data.u, admin: data.admin === true, persistent: true, clientBase }); return;
         }
         const token = randomBytes(32).toString('base64url'); const expires = now() + 12 * 3600000;
         sessions.set(token, { owner, expires }); send(200, { token, owner, expires }); return;
@@ -114,7 +148,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       const cookieSession = await authenticate(req, path === '/api/tooku/session' && req.method === 'GET');
       if (path === '/api/tooku/session' && req.method === 'GET') {
         if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');
-        send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true }); return;
+        send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true, clientBase: cookieSession.clientBase }); return;
       }
       const token = req.headers.authorization?.replace(/^Bearer /, '') ?? ''; const session = cookieSession ?? sessions.get(token);
       if (!session || session.expires <= now()) { sessions.delete(token); throw new DataError(401, 'Tooku 会话已失效，请重新连接同步。'); }

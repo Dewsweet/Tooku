@@ -21,7 +21,7 @@ const server = createServer(async (req, res) => {
   if (req.url?.startsWith('/api/tooku/')) { await api.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/lyrics/')) { await lyrics.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/recommendations/')) { await recommendations.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
-  if (req.url?.startsWith('/nd/')) { await proxy(req, res, () => { res.writeHead(404); res.end(); }); return; }
+  if (req.url?.startsWith('/api/navidrome/') || req.url?.startsWith('/nd/')) { await proxy(req, res, () => { res.writeHead(404); res.end(); }); return; }
   try {
     if (!['GET', 'HEAD'].includes(req.method ?? '')) { res.writeHead(405); res.end(); return; }
     const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);

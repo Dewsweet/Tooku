@@ -10,7 +10,7 @@
 
 Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm 依赖。音乐文件、歌曲元信息、收藏、歌单名称/简介/曲序继续由 Navidrome 管理。Tooku SQLite 保存一个版本化账号文档，包含头像、歌单自定义封面、歌手自定义图片、目录与排序、曲库视图、外观/歌词/布局偏好、最后保存的队列和最多 200 条历史。
 
-客户端只对同源 `/nd` 建立同步。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；填写当前 Tooku 站点完整 HTTP(S) 地址时，API 层将同源根地址规范化为原有 `/nd`，不改变同步身份；旧 `/nd` 输入继续兼容。「测试连接」仅发送匿名 ping，不创建 Tooku 会话或同步数据。后端只验证 `NAVIDROME_UPSTREAM` 配置的固定地址，不访问客户端提供的 URL。认证时将当前会话的 Subsonic token/salt 放在 POST 表单中，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。数据库 owner 是 `[规范化固定上游地址, 规范用户名]` 的 SHA-256。修改部署上游地址会改变命名空间，迁移部署时应保留该地址配置。浏览器 `MusicApi.identity` 保持旧规则以找到旧数据；跨 origin 的同一后端账号仍访问相同服务端记录。
+客户端先通过同源 `/api/tooku/connection` 判断登录地址是否对应部署配置的固定上游。当前 Tooku 站点、旧 `/nd`、正式 `/api/navidrome` 以及与 `NAVIDROME_UPSTREAM` 匹配的真实地址均建立同步，并统一通过 `/api/navidrome` 传输；`/nd` 只保留旧版本兼容。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；浏览器 `MusicApi.identity` 仍按规范化后的输入地址生成，因此直接填写 `http://127.0.0.1:44533` 能读取此前该身份下的 localStorage/IndexedDB。恢复会话会取回这份地址；旧会话未保存地址时按原 `/nd` 身份恢复。「测试连接」只做地址解析和匿名 ping，不创建会话或同步数据。后端只验证 `NAVIDROME_UPSTREAM` 配置的固定地址，不代理客户端任意 URL。认证时将当前会话的 Subsonic token/salt 放在 POST 表单中，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。数据库 owner 是 `[规范化固定上游地址, 规范用户名]` 的 SHA-256。修改部署上游地址会改变命名空间，迁移部署时应保留该地址配置。不同输入身份仍访问同一服务端账号记录，首次出现真实数据差异时沿用冲突保护。
 
 固定上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据转发的 `X-Forwarded-Proto` 判断 HTTPS；不要在不可信入口启用此选项。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、上游改变或退出后需要重新登录。
 
@@ -22,8 +22,8 @@ Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm
 
 批次歌曲可选 `releaseDate` 仅保存经目录核实的发行日期，保留年/月/日精度；旧歌曲无该字段仍可读。进入推荐页后分组核实整批链接时补齐的元数据仅在短时查询缓存，不自动改写已保存批次；点击菜单不再单独发起核实。
 
-1. 在原浏览器与原访问 origin，通过 `/nd` 登录；服务器没有个性数据时，先保留迁移前副本，再自动上传此设备已有数据。
-2. 在另一浏览器通过同一 Tooku 服务的 `/nd` 登录，使用同一账号；本地没有个性数据时自动恢复头像、歌单排序及其他账号数据，无需手动确认迁移。
+1. 在原浏览器使用原来成功登录的地址（包括固定上游真实地址或旧 `/nd`）登录；服务器没有个性数据时，先保留迁移前副本，再自动上传该身份已有数据。
+2. 在另一浏览器通过同一 Tooku 服务登录同一固定上游账号；本地没有个性数据时自动恢复头像、歌单排序及其他账号数据，无需手动确认迁移。
 3. 日常设置不展示两端比较。两边都有不同个性数据，或之前有待核实的保存结果时，才在头像 → 账户与设置 → 用户数据中比较：“保存到服务器”使用此浏览器的数据覆盖服务器；“从服务器恢复”使用服务器数据替换此浏览器。点击后先显示数据摘要和覆盖范围，确认后才执行。
 4. 迁移/恢复前在 IndexedDB 保留一份 `before-import` 副本；原 localStorage 命名空间不删除。设置只有一个导出入口：正常连接时先保存待提交变更，再导出服务器账号文档；离线或冲突时保留此设备数据的可导出能力，并显示状态。统一从文件恢复，也可恢复服务器上一版本或导入前副本。
 
@@ -63,11 +63,12 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 公开歌词保存在独立 `.local/data/lyrics-cache.sqlite`（也遵循 `TOOKU_DATA_DIR`），缓存上限约 100 MB / 5000 条，故障降级内存；不与 `tooku.sqlite` 共用表，也不推进账号 revision。账号 JSON / 用户库备份包含个人选择，不包含可重建平台缓存；恢复时无须复制或清除缓存。详见 [歌词组件](15-lyrics-service-design.md)。
 
-用户数据 API 位于 `/api/tooku/`，不缓存。除 health 和创建 session 外，使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
+用户数据 API 位于 `/api/tooku/`，不缓存。`health`、`connection` 和创建 session 无需账号会话，其余接口使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。`connection` 只比较规范地址并返回布尔值，不返回固定上游地址，也不代表账号认证。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
 
 | 路径 | 方法 | 用途 |
 | --- | --- | --- |
 | `health` | GET | `{ app: 'tooku', persistence: 1 }` |
+| `connection` | POST | 判断地址是否为当前部署的固定上游；只返回 `managed` 布尔值 |
 | `session` | POST / GET / DELETE | 验证并创建 Cookie 会话 / 恢复且重新验证 / 注销会话 |
 | `credentials` | GET / PUT | 仅读保存状态与 revision / 按版本更新密钥字段；不返回密钥 |
 | `data` | GET / PUT | 读取文档 / 提交 `{ revision, data }`；不匹配返回 409 |

@@ -9,7 +9,7 @@ afterEach(() => { useSession.getState().api?.dispose(); useSession.getState().se
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 it('restores a cookie session without exposing authentication parameters and includes account binding on form POST', async () => {
   const fetcher = vi.fn(async (input: string, options?: RequestInit) => {
-    if (input === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: '合成账号', admin: true });
+    if (input === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: '合成账号', admin: true, clientBase: 'http://127.0.0.1:44533' });
     if (input.includes('getOpenSubsonicExtensions')) return json({ 'subsonic-response': { status: 'ok', openSubsonicExtensions: [{ name: 'formPost', versions: [1] }] } });
     expect(options?.credentials).toBe('same-origin');
     return json({ 'subsonic-response': { status: 'ok', serverVersion: 'fixture' } });
@@ -17,8 +17,10 @@ it('restores a cookie session without exposing authentication parameters and inc
   vi.stubGlobal('fetch', fetcher);
   const restored = await MusicApi.restoreSession(); expect(restored).not.toBeNull();
   const api = restored!.api; useSession.getState().setSession(api);
+  expect(api.base).toBe('http://127.0.0.1:44533');
   expect(api.persistent).toBe(true); expect(api.canEditArtistImages).toBe(true);
   const stream = new URL(api.streamUrl('song', 'original'));
+  expect(stream.pathname).toBe('/api/navidrome/rest/stream.view');
   expect(stream.searchParams.get('tookuUser')).toBe('合成账号');
   for (const field of ['u', 't', 's', 'p']) expect(stream.searchParams.has(field)).toBe(false);
   await api.request('getSong', { id: 'song' });
@@ -36,6 +38,23 @@ it('binds account data operations to the verified owner and keeps logout separat
   expect(fetcher.mock.calls.at(-1)?.[1]).toMatchObject({ credentials: 'same-origin', headers: { 'X-Tooku-Owner': 'synthetic-owner' } });
   await client.logout(); expect(fetcher.mock.calls.at(-1)?.[1]).toMatchObject({ method: 'DELETE' });
   client.dispose(); expect(fetcher).toHaveBeenCalledTimes(3);
+});
+it('promotes the configured direct Navidrome address to managed persistence without changing its local identity', async () => {
+  const direct = 'http://127.0.0.1:44533';
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input);
+    if (url === '/api/tooku/connection') return json({ managed: true });
+    if (url === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: 'user', admin: false, persistent: true, clientBase: direct });
+    return json({ 'subsonic-response': { status: 'ok', serverVersion: 'fixture' } });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const api = new MusicApi(direct, 'user', 'synthetic-password', '0123456789abcdef');
+  await api.prepare(); await api.connect(); await api.userData();
+  expect(api.identity).toBe(`${direct}|user`); expect(api.base).toBe(direct); expect(api.persistent).toBe(true);
+  expect(fetcher.mock.calls.filter(([input]) => String(input).startsWith(`${window.location.origin}/api/navidrome/rest/`))).toHaveLength(2);
+  const session = fetcher.mock.calls.find(([input]) => input === '/api/tooku/session');
+  expect(JSON.parse(String(session?.[1]?.body))).toMatchObject({ clientBase: direct, persistent: true });
+  expect(new URL(api.streamUrl('song', 'original')).pathname).toBe('/api/navidrome/rest/stream.view');
 });
 it('does not send persistent cookies or request saved keys while using a direct Navidrome connection', async () => {
   const api = new MusicApi('https://direct.example.test', 'synthetic-user', 'synthetic-password'); useSession.getState().setSession(api);

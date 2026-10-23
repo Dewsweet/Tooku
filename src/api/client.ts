@@ -51,16 +51,35 @@ export function normalizeServer(input: string, origin = window.location.origin) 
 }
 export function authToken(password: string, salt: string) { return md5(password + salt); }
 
+const managedTransport = () => `${window.location.origin}/api/navidrome`;
+async function managedServer(base: string, signal?: AbortSignal) {
+  try {
+    const response = await fetch('/api/tooku/connection', {
+      method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server: base }),
+      signal: signal ?? AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return false;
+    const result: unknown = await response.json();
+    return Boolean(result && typeof result === 'object' && 'managed' in result && result.managed === true);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return false;
+  }
+}
+
 /** Anonymous protocol probe: no session, credentials, extension discovery or account writes. */
 export async function testServerConnection(input: string, signal?: AbortSignal): Promise<{ latencyMs: number }> {
   const base = normalizeServer(input);
   const timeout = AbortSignal.timeout(8000);
-  const started = performance.now();
+  const requestSignal = AbortSignal.any([timeout, ...(signal ? [signal] : [])]);
   try {
+    const transport = await managedServer(base, requestSignal) ? managedTransport() : base;
+    const started = performance.now();
     const params = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json' });
-    const response = await fetch(`${base}/rest/ping.view?${params}`, {
+    const response = await fetch(`${transport}/rest/ping.view?${params}`, {
       credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
-      signal: AbortSignal.any([timeout, ...(signal ? [signal] : [])]),
+      signal: requestSignal,
     });
     if (!response.ok && response.status !== 401 && response.status !== 403) throw new ApiError(`连接失败（HTTP ${response.status}）。`);
     const body: unknown = await response.json().catch(() => { throw new ApiError('未识别到音乐服务，请检查服务器地址。'); });
@@ -89,29 +108,38 @@ export class MusicApi {
   #nativeToken = '';
   #nativeAdmin = false;
   #cookieSession = false;
+  #managed = false;
+  #transportBase: string;
   #uncertainArtistImages = new Set<string>();
   #writingArtistImages = new Set<string>();
   get canEditArtistImages() { return Boolean((this.#nativeToken || this.#cookieSession) && this.#nativeAdmin); }
   get persistent() { return this.#cookieSession; }
+  get managed() { return this.#managed; }
   constructor(readonly base: string, readonly username: string, password: string, salt?: string) {
     const random = salt ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
     this.#auth = { u: username, t: authToken(password, random), s: random };
     this.identity = `${base}|${username}`;
+    this.#transportBase = base;
   }
   dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; this.#nativeToken = ''; this.#nativeAdmin = false; this.#uncertainArtistImages.clear(); this.#writingArtistImages.clear(); }
   static async restoreSession() {
     const client = new UserDataApi(); const session = await client.restore();
     if (!session) return null;
-    const api = new MusicApi(`${window.location.origin}/nd`, session.username, '');
-    api.#auth = { u: '', t: '', s: '' }; api.#cookieSession = true; api.#nativeAdmin = session.admin; api.#userData = client;
+    const api = new MusicApi(session.clientBase ?? `${window.location.origin}/nd`, session.username, '');
+    api.#auth = { u: '', t: '', s: '' }; api.#cookieSession = true; api.#managed = true; api.#transportBase = managedTransport(); api.#nativeAdmin = session.admin; api.#userData = client;
     try { const version = await api.connect(); return { api, version }; }
     catch (error) { api.dispose(); throw error; }
   }
   async logout() { if (this.#cookieSession) await this.#userData?.logout(); }
+  async prepare(signal?: AbortSignal) {
+    this.#managed = await managedServer(this.base, signal);
+    this.#transportBase = this.#managed ? managedTransport() : this.base;
+  }
   async userData() {
-    if (this.base !== `${window.location.origin}/nd`) return null;
+    if (!this.#managed) await this.prepare(this.#abort.signal);
+    if (!this.#managed) return null;
     if (this.#cookieSession && this.#userData) return this.#userData;
-    const client = new UserDataApi(); await client.connect(this.#auth, { nativeToken: this.#nativeToken, admin: this.#nativeAdmin });
+    const client = new UserDataApi(); await client.connect(this.#auth, { nativeToken: this.#nativeToken, admin: this.#nativeAdmin }, this.base);
     if (this.#abort.signal.aborted) { client.dispose(); throw new ApiError('连接已关闭。'); }
     this.#userData = client; this.#cookieSession = true; this.#nativeToken = ''; this.#auth = { u: '', t: '', s: '' }; return client;
   }
@@ -127,7 +155,7 @@ export class MusicApi {
   }
   mediaUrl(method: 'stream' | 'getCoverArt', params: Params) {
     const args = this.#params(params); args.delete('f');
-    return `${this.base}/rest/${method}.view?${args}`;
+    return `${this.#transportBase}/rest/${method}.view?${args}`;
   }
   coverUrl(id?: string, size = 400, revision?: number) { return id ? this.mediaUrl('getCoverArt', { id, size, _: revision }) : undefined; }
   streamUrl(id: string, mode: 'original' | 'compatible') {
@@ -136,7 +164,7 @@ export class MusicApi {
   async request(method: string, params: Params = {}, signal?: AbortSignal, write = false): Promise<DTO> {
     const args = this.#params(params);
     const post = this.supports('formPost');
-    const endpoint = `${this.base}/rest/${method}.view${post && this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`;
+    const endpoint = `${this.#transportBase}/rest/${method}.view${post && this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`;
     if (!post && endpoint.length + args.toString().length > 8000) throw new ApiError('请求过长；服务器需要支持表单 POST 才能保存此列表。');
     let response: Response;
     try {
@@ -169,7 +197,7 @@ export class MusicApi {
     } catch { /* optional detection must not block a valid login */ }
     if (str(ping.type)?.toLowerCase() === 'navidrome' && password !== undefined) {
       try {
-        const response = await fetch(`${this.base}/auth/login`, {
+        const response = await fetch(`${this.#transportBase}/auth/login`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: this.username, password }),
           credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
           signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(12000)]),
@@ -189,7 +217,7 @@ export class MusicApi {
     const write = Boolean(body || remove);
     let response: Response;
     try {
-      response = await fetch(`${this.base}/api/${path}${this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`, {
+      response = await fetch(`${this.#transportBase}/api/${path}${this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`, {
         method: remove ? 'DELETE' : body ? 'POST' : 'GET', body,
         headers: this.#cookieSession ? {} : { 'x-nd-authorization': `Bearer ${this.#nativeToken}` }, credentials: this.#cookieSession ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
         signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(write ? 30000 : 12000)]),

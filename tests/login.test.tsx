@@ -12,6 +12,7 @@ vi.mock('../src/features/session/enterWorkspace', () => ({ enterWorkspace: vi.fn
 beforeEach(() => {
   localStorage.clear();
   useSession.setState({ api: null, version: '', notice: '' });
+  vi.spyOn(MusicApi.prototype, 'prepare').mockResolvedValue();
   vi.spyOn(MusicApi.prototype, 'connect').mockResolvedValue('fixture-version');
   vi.spyOn(sync, 'connectUserSync').mockResolvedValue();
   vi.spyOn(sync, 'disconnectUserSync').mockImplementation(() => {});
@@ -209,7 +210,7 @@ it('locks the form and ignores repeated submissions while connecting', async () 
   let resolve: (version: string) => void = () => {};
   vi.mocked(MusicApi.prototype.connect).mockReturnValue(new Promise<string>((done) => { resolve = done; }));
   const login = form(); fireEvent.submit(login); fireEvent.submit(login);
-  expect(MusicApi.prototype.connect).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(MusicApi.prototype.connect).toHaveBeenCalledTimes(1));
   expect(screen.getByLabelText('服务器地址')).toBeDisabled();
   expect(screen.getByRole('button', { name: '正在连接…' })).toBeDisabled();
   expect(enterWorkspace).not.toHaveBeenCalled();

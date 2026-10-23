@@ -65,6 +65,7 @@ export function Login() {
     try {
       const connected = new MusicApi(base, enteredUsername.trim(), enteredPassword);
       api = connected;
+      await connected.prepare();
       const version = await connected.connect(enteredPassword); setPassword(''); await connectUserSync(connected); await player.attach(connected);
       await enterWorkspace(() => {
         rememberLoginServer(address);

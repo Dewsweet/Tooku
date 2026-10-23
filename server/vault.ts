@@ -7,7 +7,7 @@ import { DataError } from './store.ts';
 
 export interface StoredSession {
   owner: string; upstream: string; auth: { u: string; t: string; s: string }; nativeToken: string; admin: boolean;
-  expires: number; verifiedAt: number;
+  expires: number; verifiedAt: number; clientBase?: string;
 }
 export const sessionLifetime = 30 * 24 * 3600000;
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -79,7 +79,9 @@ export class CredentialVault {
     const data = this.#open(String(row.payload), `session:${id}`);
     if (!data || typeof data !== 'object' || !('auth' in data) || !data.auth || typeof data.auth !== 'object' || !('u' in data.auth) || typeof data.auth.u !== 'string' || !('t' in data.auth) || typeof data.auth.t !== 'string' || !('s' in data.auth) || typeof data.auth.s !== 'string' || !('owner' in data) || typeof data.owner !== 'string' || !('nativeToken' in data) || typeof data.nativeToken !== 'string' || !('admin' in data) || typeof data.admin !== 'boolean' || !('expires' in data) || typeof data.expires !== 'number' || !('verifiedAt' in data) || typeof data.verifiedAt !== 'number') throw new Error('Invalid Tooku session');
     if (!('upstream' in data) || typeof data.upstream !== 'string') throw new Error('Invalid Tooku session upstream');
-    return { owner: data.owner, upstream: data.upstream, auth: { u: data.auth.u, t: data.auth.t, s: data.auth.s }, nativeToken: data.nativeToken, admin: data.admin, expires: data.expires, verifiedAt: data.verifiedAt };
+    const clientBase = Reflect.get(data, 'clientBase');
+    if (clientBase !== undefined && typeof clientBase !== 'string') throw new Error('Invalid Tooku session client base');
+    return { owner: data.owner, upstream: data.upstream, auth: { u: data.auth.u, t: data.auth.t, s: data.auth.s }, nativeToken: data.nativeToken, admin: data.admin, expires: data.expires, verifiedAt: data.verifiedAt, clientBase };
   }
   updateSession(token: string, session: StoredSession) {
     const id = hash(token); this.#db.prepare('UPDATE sessions SET payload=? WHERE id=?').run(this.#seal(session, `session:${id}`), id);

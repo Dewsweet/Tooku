@@ -194,7 +194,7 @@ export async function chooseUserData(source: 'local' | 'server', replacement?: U
   if (c.busy) throw new Error('正在保存，请稍后再试。');
   const remote = useUserSync.getState().remote;
   if (!c.client) {
-    if (c.api.persistent || c.api.base === `${window.location.origin}/nd`) throw new Error('请先重新连接服务器，再恢复备份。');
+    if (c.api.persistent || c.api.managed) throw new Error('请先重新连接服务器，再恢复备份。');
     if (!replacement || !isUserData(replacement)) throw new Error('备份格式无效。');
     if (!await writeLocalData(c.api.identity, 'before-import', capture(c))) throw new Error('无法保留恢复前副本，已取消恢复。');
     if (current !== c) return;

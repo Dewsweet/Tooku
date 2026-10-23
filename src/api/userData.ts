@@ -30,8 +30,8 @@ export class UserDataApi {
     }
     try { return await response.json(); } catch { throw new UserDataError('同步接口不可用，本地数据仍保留。'); }
   }
-  async connect(auth: { u: string; t: string; s: string }, native?: { nativeToken: string; admin: boolean }) {
-    const session = await this.request('session', 'POST', { ...auth, ...native, persistent: true });
+  async connect(auth: { u: string; t: string; s: string }, native?: { nativeToken: string; admin: boolean }, clientBase?: string) {
+    const session = await this.request('session', 'POST', { ...auth, ...native, persistent: true, clientBase });
     if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string') throw new UserDataError('同步接口不可用。');
     if ('token' in session && typeof session.token === 'string') this.#token = session.token;
     this.owner = session.owner;
@@ -41,7 +41,9 @@ export class UserDataApi {
     try { session = await this.request('session'); } catch (error) { if (error instanceof UserDataError && error.status === 401) return null; throw error; }
     if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string' || !('username' in session) || typeof session.username !== 'string' || !session.username || !('admin' in session) || typeof session.admin !== 'boolean') throw new UserDataError('登录状态无效，请重新登录。');
     this.owner = session.owner;
-    return { username: session.username, admin: session.admin };
+    const clientBase = Reflect.get(session, 'clientBase');
+    if (clientBase !== undefined && typeof clientBase !== 'string') throw new UserDataError('登录状态无效，请重新登录。');
+    return { username: session.username, admin: session.admin, clientBase };
   }
   async credentials() { return credentialStatus(await this.request('credentials')); }
   async saveCredentials(revision: number, credentials: Partial<RecommendationCredentials>) {

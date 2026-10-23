@@ -28,14 +28,14 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
   const proxy = createNavidromeProxy(options.upstream ?? 'http://127.0.0.1:1', users);
   const running = await listen(createServer((req, res) => {
     const next = () => { res.writeHead(404); res.end(); };
-    if (req.url?.startsWith('/nd/')) void proxy(req, res, next);
+    if (req.url?.startsWith('/api/navidrome/') || req.url?.startsWith('/nd/')) void proxy(req, res, next);
     else void users.handle(req, res, next);
   }));
   const close = async () => { if (closed) return; closed = true; await running.close(); users.close(); }; cleanups.push(close);
   const call = (path: string, method = 'GET', data?: unknown, cookie = '', headers: Record<string, string> = {}) => fetch(`${running.origin}/api/tooku/${path}`, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie, ...headers }, body: data === undefined ? undefined : JSON.stringify(data) });
-  const login = async (u = 'Alice') => {
+  const login = async (u = 'Alice', clientBase?: string) => {
     const auth = { u, t: randomBytes(16).toString('hex'), s: randomBytes(16).toString('hex') };
-    const response = await call('session', 'POST', { ...auth, persistent: true, nativeToken: 'synthetic-native-token', admin: true });
+    const response = await call('session', 'POST', { ...auth, persistent: true, nativeToken: 'synthetic-native-token', admin: true, clientBase });
     expect(response.status).toBe(200);
     const cookie = response.headers.get('set-cookie')?.split(';')[0]; if (!cookie) throw new Error('Missing test cookie');
     return { auth, cookie, response, info: await response.json() as { owner: string } };
@@ -44,6 +44,16 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
 }
 
 describe('persistent browser sessions and encrypted credentials', () => {
+  it('recognizes only the configured upstream and restores its original browser identity', async () => {
+    const upstream = 'http://127.0.0.1:44533'; const app = await fixture({ filename: ':memory:', upstream });
+    const resolve = (server: string) => app.call('connection', 'POST', { server });
+    expect(await (await resolve(upstream)).json()).toEqual({ managed: true });
+    expect(await (await resolve('http://localhost:44533')).json()).toEqual({ managed: true });
+    expect(await (await resolve('https://other.example.test')).json()).toEqual({ managed: false });
+    const login = await app.login('Alice', upstream);
+    expect(await (await app.call('session', 'GET', undefined, login.cookie)).json()).toMatchObject({ username: 'Alice', clientBase: upstream, persistent: true });
+    expect((await app.call('session', 'POST', { ...login.auth, persistent: true, clientBase: 'https://other.example.test' })).status).toBe(400);
+  });
   it('survives a server restart, revalidates upstream auth, keeps secrets server-side and revokes logout', async () => {
     const dir = directory(); const filename = join(dir, 'tooku.sqlite');
     const first = await fixture({ filename }); const login = await first.login();
@@ -111,15 +121,19 @@ describe('persistent browser sessions and encrypted credentials', () => {
     }));
     const app = await fixture({ filename: ':memory:', upstream: upstream.origin }); const login = await app.login();
     for (const method of ['GET', 'POST']) {
-      const response = await fetch(`${app.origin}/nd/rest/stream.view?id=song&tookuSession=1`, { method, headers: { Cookie: login.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: method === 'POST' ? 'songId=a&songId=a' : undefined });
+      const response = await fetch(`${app.origin}/api/navidrome/rest/stream.view?id=song&tookuSession=1`, { method, headers: { Cookie: login.cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: method === 'POST' ? 'songId=a&songId=a' : undefined });
       expect(response.status).toBe(200); expect(await response.text()).toBe('ok');
     }
     expect(seen).toHaveLength(2); expect(seen[1].body).toBe('songId=a&songId=a');
     for (const request of seen) { expect(request.url.searchParams.get('t')).toBe(login.auth.t); expect(request.url.searchParams.has('tookuSession')).toBe(false); }
-    expect((await fetch(`${app.origin}/nd/rest/ping.view?tookuSession=1`)).status).toBe(401);
-    expect((await fetch(`${app.origin}/nd/rest/ping.view?tookuSession=1&tookuUser=another-user`, { headers: { Cookie: login.cookie } })).status).toBe(401);
-    expect((await fetch(`${app.origin}/nd/api/artist/artist`, { headers: { Cookie: login.cookie } })).status).toBe(200);
+    expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1`)).status).toBe(401);
+    expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1&tookuUser=another-user`, { headers: { Cookie: login.cookie } })).status).toBe(401);
+    expect((await fetch(`${app.origin}/api/navidrome/api/artist/artist?tookuSession=1&tookuUser=Alice`, { headers: { Cookie: login.cookie } })).status).toBe(200);
     expect(seen[2].header).toBe('Bearer synthetic-native-token');
+    const rawToken = 'a'.repeat(32);
+    expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?u=new-user&t=${rawToken}&s=${'b'.repeat(16)}`, { headers: { Cookie: login.cookie } })).status).toBe(200);
+    expect(seen[3].url.searchParams.get('t')).toBe(rawToken);
+    expect((await fetch(`${app.origin}/nd/rest/ping.view`, { headers: { Cookie: login.cookie } })).status).toBe(200);
   });
   it('uses saved credentials only for an authenticated opt-in recommendation request and never echoes keys', async () => {
     const app = await fixture(); const login = await app.login(); const key = randomBytes(16).toString('hex');
