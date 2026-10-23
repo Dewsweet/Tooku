@@ -5,19 +5,34 @@
   "type": "module",
   "packageManager": "pnpm@11.25.0",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.22.1"
   },
   "scripts": {
+    "runtime:check": "node scripts/check-node-version.mjs",
+    "predev": "npm run runtime:check",
     "dev": "node scripts/dev-server.mjs",
+    "predev:lan": "npm run runtime:check",
     "dev:lan": "node scripts/dev-server.mjs --lan",
+    "prestart": "npm run runtime:check",
     "start": "node server/index.ts",
+    "prebackup": "npm run runtime:check",
     "backup": "node server/backup.ts",
+    "prebuild": "npm run runtime:check",
     "build": "tsc -b && vite build",
+    "prepreview": "npm run runtime:check",
     "preview": "vite preview --host 127.0.0.1",
+    "pretypecheck": "npm run runtime:check",
     "typecheck": "tsc -b",
+    "prelint": "npm run runtime:check",
     "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "pretest": "npm run runtime:check",
+    "test": "node --test scripts/check-node-version.node-test.mjs && vitest run",
+    "pretest:watch": "npm run runtime:check",
+    "test:watch": "vitest",
+    "security:audit": "npx --yes pnpm@11.25.0 audit --prod --audit-level=low && npx --yes pnpm@11.25.0 audit --audit-level=low && node scripts/audit-signatures.mjs",
+    "security:sbom": "node scripts/generate-sbom.mjs --output .local/security/tooku-prod.cdx.json && node scripts/generate-sbom.mjs --all --output .local/security/tooku-all.cdx.json",
+    "security:licenses": "node scripts/license-notices.mjs && git diff --exit-code -- THIRD_PARTY_NOTICES.md public/third-party-notices.txt",
+    "security:baseline": "npm run security:audit && npm run security:sbom && npm run security:licenses"
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.2",

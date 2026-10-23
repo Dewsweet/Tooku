@@ -12,7 +12,7 @@
 4. 有写入验证需求时优先使用隔离测试服务或授权的专用测试歌单；真实账号凭据只通过登录页输入。
 5. 完成实现与必要的基础检查，按功能保存 Git 提交；人工功能和观感检查在回复中简列。
 
-没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。服务端使用内置 SQLite / TypeScript 执行，需要 Node 24+。服务端和共享运行时模块使用可擦除语法与显式 `.ts` / `.mjs` 相对导入；不要引入 enum、构造函数参数属性或仅靠打包器才能执行的代码。
+没有全局 pnpm 是受支持的环境。首次安装使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，不混用包管理器。服务端使用内置 SQLite / TypeScript 执行，需要 Node 24.22.1+；`scripts/check-node-version.mjs` 是启动、构建、测试和备份的统一最低版本门槛，`.nvmrc` 与 Docker 镜像固定同一基线。服务端和共享运行时模块使用可擦除语法与显式 `.ts` / `.mjs` 相对导入；不要引入 enum、构造函数参数属性或仅靠打包器才能执行的代码。
 
 手机局域网调试使用 `npm.cmd run dev:lan` 或 `./start-tooku.cmd --lan`，显式监听 `0.0.0.0`；普通启动仍监听 `127.0.0.1`。`scripts/network-listener.mjs` 负责复用范围判断和 IPv4 地址展示，启动状态记录 `host`，旧状态按仅本机兼容。发现健康的仅本机服务时，LAN 启动提示正常停止后重启，不自动结束进程或并行启动另一份数据服务；已开启 LAN 的服务可继续复用。手机选择终端中电脑 Wi-Fi 网卡对应的 `LAN` 地址，登录填写同一 Tooku 根地址即可走 `/api/navidrome`；实际端口以终端为准。保持 Vite 主机校验与 API 同源校验，不为联网调试修改 Navidrome、防火墙或持久化身份规则。
 

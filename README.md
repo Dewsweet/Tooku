@@ -10,7 +10,7 @@ Tooku 取自日语「遠く」。[SVG 标志](public/tooku.svg) 以落日、远�
 
 ## 本地运行
 
-需要 Node.js 24+（内置 SQLite 与 TypeScript 执行）。当前开发机是 Node 24.15.0；Node 官方 2026-10-21 安全发布已修复 24.x 的多项高危问题，**生产与发布验收须先升级到 24.22.1 或之后的受支持安全版本**。**无需安装全局 pnpm**：已有依赖时可双击根目录 [start-tooku.cmd](start-tooku.cmd)，或通过 npm 启动。
+需要 Node.js 24.22.1+（内置 SQLite 与 TypeScript 执行），项目通过 `engines`、`.nvmrc`、启动/构建/测试入口和 Docker 镜像统一执行最低版本检查；较旧运行时会在加载应用前停止并显示当前版本。**无需安装全局 pnpm**：已有依赖时可双击根目录 [start-tooku.cmd](start-tooku.cmd)，或通过 npm 启动。
 
 ```powershell
 Set-Location G:\Code\Tooku
@@ -38,6 +38,15 @@ npm.cmd run lint
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run build
+
+# 联网检查依赖公告和 registry 签名；报告输出到终端
+npm.cmd run security:audit
+
+# 生成生产及完整 CycloneDX 1.6 SBOM 到 .local/security
+npm.cmd run security:sbom
+
+# 重建第三方许可并确认提交版本没有漂移
+npm.cmd run security:licenses
 ```
 
 现已实现：登录和扩展检测、专辑完整列表浏览、歌手横幅详情与播放、中文输入法安全的检索、收藏、普通歌单与保存核实、常驻播放器、队列与循环/随机、本地/网络双语歌词与偏移、浏览器全屏与桌面画中画歌词、Last.fm / AI 推荐及四平台外链、Media Session、账号数据同步/备份恢复、本机快照/收听历史、响应式与主题设置。**实现不代表所有 Navidrome 音频格式、权限和扩展都已实测。**
@@ -76,7 +85,7 @@ npm.cmd run build
 
 ## 可选 Docker 部署
 
-已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据/歌词/推荐 API 和固定上游代理。Compose 将 `/data` 挂载到 `tooku-data` 卷，重建容器保留数据库。当前配置已经使用非 root 用户并默认只映射到本机，但基础镜像仍未固定安全补丁版本/digest，也未加入健康检查、只读根文件系统、能力收缩、资源限制和镜像扫描；此电脑未安装 Docker，容器构建/运行仍待验证。完整生产化任务见 [开发记录](docs/09-development-status.md)，`deploy/default.conf.template` 只用于可选的外层 Nginx 代理。
+已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据/歌词/推荐 API 和固定上游代理。基础镜像已固定为 Node 24.22.1 Alpine 的官方多架构 digest；Compose 将 `/data` 挂载到 `tooku-data` 卷，重建容器保留数据库。当前配置已经使用非 root 用户并默认只映射到本机，但尚未加入健康检查、只读根文件系统、能力收缩、资源限制和完成镜像扫描；此电脑未安装 Docker，容器构建/运行仍待验证。完整生产化任务见 [开发记录](docs/09-development-status.md)，`deploy/default.conf.template` 只用于可选的外层 Nginx 代理。
 
 ```powershell
 docker compose up --build -d

@@ -6,7 +6,7 @@
 
 ## 环境与工程初始化
 
-项目要求 Node.js 24+，使用内置 HTTP、SQLite 与可擦除 TypeScript 执行；本机检查版本为 24.15.0。不能只按 Vite 最低要求选择运行时。版本以 [package.json](../package.json) 和 pnpm 锁文件为准，不主动升级框架，不生成第二份锁文件。
+项目要求 Node.js 24.22.1+，使用内置 HTTP、SQLite 与可擦除 TypeScript 执行；最低版本由 [package.json](../package.json)、`.nvmrc`、启动/构建/测试入口和 Docker 镜像共同约束。系统原有 24.15.0 已低于安全基线，不能再启动 Tooku；2026-10-23 的验证使用官方 SHA-256 校验过的 24.22.1 便携版完成。不能只按 Vite 最低要求选择运行时，不主动升级框架，不生成第二份锁文件。
 
 现有工程与 Git 已建立，不重新生成模板或重置目录。先检查 git status，保留已有改动；已有 node_modules 时直接运行，首次安装或恢复依赖时使用 `npx.cmd --yes pnpm@11.25.0 install --frozen-lockfile`，无需全局 pnpm。凭据、私人样本、缓存与构建产物不提交。
 
@@ -52,7 +52,7 @@ Windows 重启后端口保留范围可能变化。2026-10-14 本机 5141–5240 
 
 外层 Nginx/Caddy 将整个 Tooku 站点转发到同一个 Node 服务，保留客户端 Host；可选 Nginx 模板为 [deploy/default.conf.template](../deploy/default.conf.template)，TOOKU_UPSTREAM 指向 Tooku，NAVIDROME_UPSTREAM 才指向固定音乐服务。保留 Range/If-Range 和响应范围头，不让 API 或音频错误落入 index.html。请求体大小、长请求超时和日志脱敏均需覆盖用户数据及推荐接口；不记录 Authorization、POST body 或带认证参数的完整 URL。根路径、子路径与 HTTPS 分别按实际部署验证，不据示例宣称全部支持。
 
-[Dockerfile](../Dockerfile) / [compose.yaml](../compose.yaml) 使用 Node 24、非 root 用户和 tooku-data 数据卷，示例仅绑定宿主机 127.0.0.1:8080。容器 localhost 指容器自身；同网络 Navidrome 用服务名，宿主机地址需按平台验证。此电脑未安装 Docker，构建、数据卷权限、上游路径与升级恢复仍待实际验收；升级不能删除持久化卷。完整部署、备份与恢复见 [服务端持久化](13-server-persistence.md)。
+[Dockerfile](../Dockerfile) / [compose.yaml](../compose.yaml) 固定 Node 24.22.1 Alpine 官方多架构 digest，使用非 root 用户和 tooku-data 数据卷，示例仅绑定宿主机 127.0.0.1:8080。容器 localhost 指容器自身；同网络 Navidrome 用服务名，宿主机地址需按平台验证。此电脑未安装 Docker，构建、镜像层扫描、数据卷权限、上游路径与升级恢复仍待实际验收；升级不能删除持久化卷。完整部署、备份与恢复见 [服务端持久化](13-server-persistence.md)。
 
 固定上游仍需每用户认证；不使用共享管理员凭据。独立歌词/推荐不使用该账号认证，同源与限流不等于访问授权，公开部署需外层访问控制与 HTTPS。账号密码、API Key、模型或平台令牌不能放入 VITE_*、静态 runtime config、环境文件或日志。
 

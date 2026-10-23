@@ -5,15 +5,14 @@ import { createServer } from 'vite';
 import { startOnAvailablePort } from './port-selection.mjs';
 import { canReuseListener, lanOrigins } from './network-listener.mjs';
 import { spawn } from 'node:child_process';
+import { assertSupportedNodeVersion } from './check-node-version.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateFile = path.join(root, '.local', 'server.json');
 const open = process.argv.includes('--open');
 const host = process.argv.includes('--lan') ? '0.0.0.0' : '127.0.0.1';
-const [major] = process.versions.node.split('.').map(Number);
-if (major < 24) {
-  console.error('Tooku requires Node.js 24 or newer.'); process.exit(1);
-}
+try { assertSupportedNodeVersion(); }
+catch (error) { console.error(error.message); process.exit(1); }
 
 async function running(origin) {
   try {

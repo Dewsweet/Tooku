@@ -1,7 +1,9 @@
 import { DatabaseSync, backup } from 'node:sqlite';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { assertSupportedNodeVersion } from '../scripts/check-node-version.mjs';
 
+assertSupportedNodeVersion();
 const source = resolve(process.env.TOOKU_DATA_DIR || '.local/data', 'tooku.sqlite');
 const target = process.argv[2] ? resolve(process.argv[2]) : '';
 if (!target || existsSync(target) || !existsSync(source)) {

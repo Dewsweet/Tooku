@@ -3,11 +3,13 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertSupportedNodeVersion } from '../scripts/check-node-version.mjs';
 import { createUserApi, upstreamUrl } from './api.ts';
 import { createNavidromeProxy } from './navidromeProxy.ts';
 import { createLyricsApi } from './lyrics/http.ts';
 import { createRecommendationsApi } from './recommendations/http.ts';
 
+assertSupportedNodeVersion();
 const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 const upstream = upstreamUrl(process.env.NAVIDROME_UPSTREAM || 'http://127.0.0.1:44533');
 const api = createUserApi({ upstream });

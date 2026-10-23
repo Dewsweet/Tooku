@@ -25,7 +25,7 @@
 本项目使用 Windows PowerShell；不要假设系统已安装全局 pnpm。
 
 ```powershell
-# Node.js >= 24；已有 node_modules 时直接运行
+# Node.js >= 24.22.1；已有 node_modules 时直接运行
 npm.cmd run dev
 
 # 仅首次安装或需要恢复锁定依赖时使用
