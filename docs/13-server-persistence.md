@@ -94,7 +94,7 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 生产：先 `npm.cmd run build`，再 `npm.cmd start`；Node 运行时直接执行可擦除 TypeScript，无需生产 node_modules。默认监听 `127.0.0.1:18733`，可设 `TOOKU_HOST` / `TOOKU_PORT`。默认 Navidrome 上游仍为 `http://127.0.0.1:44533`，配置可含子路径，不含认证信息、query 或 hash。
 
-Compose 使用 Node 非 root 用户运行，持久化卷 `tooku-data:/data`，仅向本机暴露 8080。不要执行 `docker compose down -v` 作为升级步骤，它会删除卷。容器构建/挂载权限/宿主机上游连通性仍需部署环境实际验证。
+Compose 使用明确的 UID/GID 1000 运行 Node，持久化卷 `tooku-data:/data` 保存数据库，独立卷 `tooku-security-key:/run/tooku-secret` 保存主密钥，仅向本机暴露 8080。根文件系统只读，只有数据卷、密钥卷和受限 `/tmp` 可写；容器不保留 Linux capabilities，并启用 no-new-privileges、PID/内存/CPU 限制和健康检查。不要执行 `docker compose down -v` 作为升级步骤，它会删除两个卷。宿主机、同一 Compose 网络和远程 HTTPS 上游的配置，以及完整备份/回滚步骤见 [容器部署](../deploy/README.md)。本开发机没有容器运行时，构建、挂载权限、卷恢复和宿主机上游连通性仍需在 Docker 环境实际验证。
 
 外层 HTTPS 反向代理应将整个 Tooku 站点转发到同一个 Node 服务，并保留客户端 Host。参考 `deploy/default.conf.template`。不记录 Authorization、POST body 或完整查询字符串；原生 Node 服务不输出访问详情。远程访问应在外层提供 HTTPS。静态文件单独托管或 `vite preview` 不提供业务 API，应使用 Node 生产入口。
 

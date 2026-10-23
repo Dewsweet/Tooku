@@ -13,10 +13,22 @@ COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY src/domain ./src/domain
 COPY scripts/check-node-version.mjs ./scripts/check-node-version.mjs
+COPY scripts/container-healthcheck.mjs ./scripts/container-healthcheck.mjs
 COPY package.json ./package.json
-RUN mkdir /data && chown node:node /data
-USER node
-ENV NODE_ENV=production TOOKU_HOST=0.0.0.0 TOOKU_PORT=8080 TOOKU_DATA_DIR=/data NAVIDROME_UPSTREAM=http://host.docker.internal:44533
-VOLUME /data
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+    && mkdir -p /data /run/tooku-secret \
+    && chown 1000:1000 /data /run/tooku-secret \
+    && chmod 0700 /data /run/tooku-secret
+USER 1000:1000
+ENV NODE_ENV=production \
+    TOOKU_HOST=0.0.0.0 \
+    TOOKU_PORT=8080 \
+    TOOKU_DATA_DIR=/data \
+    NAVIDROME_UPSTREAM=http://host.docker.internal:44533
+VOLUME ["/data", "/run/tooku-secret"]
 EXPOSE 8080
-CMD ["npm", "start"]
+HEALTHCHECK --interval=30s --timeout=4s --start-period=10s --retries=3 \
+  CMD ["node", "scripts/container-healthcheck.mjs"]
+CMD ["node", "server/index.ts"]

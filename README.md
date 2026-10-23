@@ -87,13 +87,13 @@ npm.cmd run security:licenses
 
 ## 可选 Docker 部署
 
-已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据/歌词/推荐 API 和固定上游代理。基础镜像已固定为 Node 24.22.1 Alpine 的官方多架构 digest；Compose 将 `/data` 挂载到 `tooku-data` 卷，重建容器保留数据库。当前配置已经使用非 root 用户并默认只映射到本机，但尚未加入健康检查、只读根文件系统、能力收缩、资源限制和完成镜像扫描；此电脑未安装 Docker，容器构建/运行仍待验证。完整生产化任务见 [开发记录](docs/09-development-status.md)，`deploy/default.conf.template` 只用于可选的外层 Nginx 代理。
+已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据/歌词/推荐 API 和固定上游代理。基础镜像固定为 Node 24.22.1 Alpine 的官方多架构 digest；运行层删除 npm/corepack 并由 Node 直接启动，内置应用健康检查。Compose 使用明确的非 root UID/GID、只读根文件系统、受限 `/tmp`、无 Linux capabilities、no-new-privileges 及 PID/内存/CPU 限制，默认只映射到本机。账号数据库和安全库存入 `tooku-data`，主密钥单独存入 `tooku-security-key`。完整配置、同网络/远程 HTTPS 上游、备份、代理、升级与回滚步骤见 [容器部署](deploy/README.md)。此电脑没有 Docker/Podman/nerdctl/buildah，真实构建、运行、卷恢复和最终镜像扫描仍需在 Docker 主机验收。
 
 ```powershell
 docker compose up --build -d
 ```
 
-配置通过 `http://127.0.0.1:8080/` 提供 Tooku，`NAVIDROME_UPSTREAM` 默认指向宿主机 44533；容器中的 localhost 是容器自身。若 Navidrome 位于其他容器/设备或子路径，先调整 Compose 中的上游地址（不要带尾斜杠）。Linux 上服务只绑定 127.0.0.1 时，host-gateway 并不保证能连接，应选择适合实际部署的网络方案。当前示例只绑定本机，远程使用需配置 HTTPS 与访问入口。
+配置通过 `http://127.0.0.1:8080/` 提供 Tooku，`NAVIDROME_UPSTREAM` 默认指向宿主机 44533；容器中的 localhost 是容器自身。若 Navidrome 位于其他容器/设备或子路径，通过环境变量或 [同网络叠加配置](deploy/compose.same-network.yaml) 指定上游（不要带尾斜杠）。Linux 上服务只绑定 127.0.0.1 时，host-gateway 并不保证能连接，应选择同一容器网络或宿主机实际可达地址。远程访问需配置 HTTPS 入口。
 
 ## 独立测试服务
 

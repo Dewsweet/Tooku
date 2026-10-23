@@ -26,13 +26,15 @@
     "prelint": "npm run runtime:check",
     "lint": "eslint .",
     "pretest": "npm run runtime:check",
-    "test": "node --test scripts/check-node-version.node-test.mjs && vitest run",
+    "test": "node --test scripts/check-node-version.node-test.mjs scripts/container-healthcheck.node-test.mjs && vitest run",
     "pretest:watch": "npm run runtime:check",
     "test:watch": "vitest",
     "security:audit": "npx --yes pnpm@11.25.0 audit --prod --audit-level=low && npx --yes pnpm@11.25.0 audit --audit-level=low && node scripts/audit-signatures.mjs",
     "security:sbom": "node scripts/generate-sbom.mjs --output .local/security/tooku-prod.cdx.json && node scripts/generate-sbom.mjs --all --output .local/security/tooku-all.cdx.json",
     "security:licenses": "node scripts/license-notices.mjs && git diff --exit-code -- THIRD_PARTY_NOTICES.md public/third-party-notices.txt",
-    "security:baseline": "npm run security:audit && npm run security:sbom && npm run security:licenses"
+    "security:baseline": "npm run security:audit && npm run security:sbom && npm run security:licenses",
+    "precontainer:check": "npm run runtime:check",
+    "container:check": "node scripts/check-container-config.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.2",
