@@ -1,9 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { isListeningSeed, isRecommendationCredentials, isRecommendationMemory, isRecommendationSettings, isRecommendationSong, recommendationRecord } from '../../src/domain/recommendations.ts';
+import { isListeningSeed, isRecommendationCredentials, isRecommendationMemory, isRecommendationSettings, isRecommendationSong, recommendationRecord, type RecommendationCredentials } from '../../src/domain/recommendations.ts';
 import { createRecommendationService } from './service.ts';
 import { RecommendationError } from './network.ts';
+import { DataError } from '../store.ts';
 
-export function createRecommendationsApi(service = createRecommendationService()) {
+export function createRecommendationsApi(service = createRecommendationService(), savedCredentials?: (req: IncomingMessage) => Promise<RecommendationCredentials>) {
   const rates = new Map<string, { until: number; count: number }>(); const controllers = new Set<AbortController>();
   async function handle(req: IncomingMessage, res: ServerResponse, next: () => void) {
     const path = req.url?.split('?')[0] ?? ''; if (!path.startsWith('/api/recommendations/')) { next(); return; }
@@ -24,6 +25,12 @@ export function createRecommendationsApi(service = createRecommendationService()
       if (size > 262144) throw new RecommendationError('请求过大', 413);
       let body: unknown; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RecommendationError('JSON 格式无效', 400); }
       if (!recommendationRecord(body) || !isRecommendationSettings(body.settings) || !isRecommendationCredentials(body.credentials)) throw new RecommendationError('推荐配置无效', 400);
+      if (savedCredentials && body.useSavedCredentials === true) {
+        const saved = await savedCredentials(req);
+        // Request-local drafts are usable for detection; saved values never leave the service.
+        body.credentials = Object.fromEntries(Object.entries(saved).map(([field, value]) => [field, recommendationRecord(body.credentials) && body.credentials[field] || value]));
+        if (!isRecommendationCredentials(body.credentials)) throw new RecommendationError('推荐凭据无效', 400);
+      }
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(path.endsWith('/generate') ? 300000 : path.endsWith('/check') ? 50000 : 20000)]);
       if (path.endsWith('/generate')) {
         if (!Array.isArray(body.seeds) || !body.seeds.length || body.seeds.length > body.settings.sampleSize || !body.seeds.every(isListeningSeed)
@@ -36,7 +43,7 @@ export function createRecommendationsApi(service = createRecommendationService()
       } else if (typeof body.target === 'string') send(200, await service.check(body.target, body.settings, body.credentials, signal));
       else throw new RecommendationError('检测参数无效', 400);
     } catch (error) {
-      send(error instanceof RecommendationError ? error.status : 502, { error: error instanceof RecommendationError ? error.message : '推荐服务暂未完成，请稍后再试' });
+      send(error instanceof RecommendationError || error instanceof DataError ? error.status : 502, { error: error instanceof RecommendationError || error instanceof DataError ? error.message : '推荐服务暂未完成，请稍后再试' });
     } finally { controllers.delete(controller); res.off('close', disconnect); }
   }
   return { handle, close() { for (const controller of controllers) controller.abort(); controllers.clear(); rates.clear(); service.close(); } };

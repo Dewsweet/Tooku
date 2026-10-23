@@ -14,9 +14,12 @@ import './workspace.css';
 import './browse.css';
 import './interactions.css';
 import './scrollbars.css';
+import { restoreWorkspace } from './features/session/restoreSession';
 
 // Apply the saved face before rendering text so a serif/system choice does not fetch the default font first.
 const display = useDisplayPreferences.getState();
 document.documentElement.style.setProperty('--ui-font-family', fontFamilyCss(display.fontFamily));
 document.documentElement.style.setProperty('--ui-font-scale', String(normalizeBaseFontSize(display.baseFontSize) / 14));
-createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={queryClient}><BrowserRouter><WorkspaceBoundary><Interactions><App /></Interactions></WorkspaceBoundary></BrowserRouter></QueryClientProvider></StrictMode>);
+const root = createRoot(document.getElementById('root')!);
+root.render(<div className="loading" role="status">正在恢复登录…</div>);
+void restoreWorkspace().finally(() => root.render(<StrictMode><QueryClientProvider client={queryClient}><BrowserRouter><WorkspaceBoundary><Interactions><App /></Interactions></WorkspaceBoundary></BrowserRouter></QueryClientProvider></StrictMode>));

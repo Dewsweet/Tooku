@@ -1,4 +1,14 @@
 import { isBackup, isUserDocument, type UserData } from '../domain/userData';
+import { emptyRecommendationCredentials, type RecommendationCredentials } from '../domain/recommendations';
+
+export type SavedCredentials = Record<keyof RecommendationCredentials, boolean>;
+export interface CredentialStatus { revision: number; saved: SavedCredentials }
+function credentialStatus(value: unknown): CredentialStatus {
+  if (!value || typeof value !== 'object' || !('revision' in value) || !Number.isSafeInteger(value.revision) || typeof value.revision !== 'number' || value.revision < 0 || !('saved' in value) || !value.saved || typeof value.saved !== 'object') throw new UserDataError('密钥保存状态无效。');
+  const saved = value.saved;
+  if (!Object.keys(emptyRecommendationCredentials).every((field) => field in saved && typeof Reflect.get(saved, field) === 'boolean')) throw new UserDataError('密钥保存状态无效。');
+  return { revision: value.revision, saved: { lastfmKey: Reflect.get(saved, 'lastfmKey') === true, aiKey: Reflect.get(saved, 'aiKey') === true, appleToken: Reflect.get(saved, 'appleToken') === true, spotifyClientId: Reflect.get(saved, 'spotifyClientId') === true, spotifyClientSecret: Reflect.get(saved, 'spotifyClientSecret') === true } };
+}
 
 export class UserDataError extends Error {
   status: number;
@@ -10,8 +20,8 @@ export class UserDataApi {
   async request(path: string, method = 'GET', data?: unknown): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(`/api/tooku/${path}`, { method, credentials: 'omit', referrerPolicy: 'no-referrer',
-        headers: { 'Content-Type': 'application/json', ...(this.#token ? { Authorization: `Bearer ${this.#token}` } : {}) },
+      response = await fetch(`/api/tooku/${path}`, { method, credentials: 'same-origin', referrerPolicy: 'no-referrer',
+        headers: { 'Content-Type': 'application/json', ...(this.owner ? { 'X-Tooku-Owner': this.owner } : {}), ...(this.#token ? { Authorization: `Bearer ${this.#token}` } : {}) },
         body: data === undefined ? undefined : JSON.stringify(data), signal: AbortSignal.timeout(15000),
       });
     } catch { throw new UserDataError('服务器暂不可用，本地修改已保留。请重新读取同步状态。'); }
@@ -20,10 +30,25 @@ export class UserDataApi {
     }
     try { return await response.json(); } catch { throw new UserDataError('同步接口不可用，本地数据仍保留。'); }
   }
-  async connect(auth: { u: string; t: string; s: string }) {
-    const session = await this.request('session', 'POST', auth);
-    if (!session || typeof session !== 'object' || !('token' in session) || !('owner' in session) || typeof session.token !== 'string' || typeof session.owner !== 'string') throw new UserDataError('同步接口不可用。');
-    this.#token = session.token; this.owner = session.owner;
+  async connect(auth: { u: string; t: string; s: string }, native?: { nativeToken: string; admin: boolean }) {
+    const session = await this.request('session', 'POST', { ...auth, ...native, persistent: true });
+    if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string') throw new UserDataError('同步接口不可用。');
+    if ('token' in session && typeof session.token === 'string') this.#token = session.token;
+    this.owner = session.owner;
+  }
+  async restore() {
+    let session: unknown;
+    try { session = await this.request('session'); } catch (error) { if (error instanceof UserDataError && error.status === 401) return null; throw error; }
+    if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string' || !('username' in session) || typeof session.username !== 'string' || !session.username || !('admin' in session) || typeof session.admin !== 'boolean') throw new UserDataError('登录状态无效，请重新登录。');
+    this.owner = session.owner;
+    return { username: session.username, admin: session.admin };
+  }
+  async credentials() { return credentialStatus(await this.request('credentials')); }
+  async saveCredentials(revision: number, credentials: Partial<RecommendationCredentials>) {
+    return credentialStatus(await this.request('credentials', 'PUT', { revision, credentials }));
+  }
+  async logout() {
+    await this.request('session', 'DELETE'); this.dispose();
   }
   async read() {
     const doc = await this.request('data');
@@ -46,7 +71,7 @@ export class UserDataApi {
     return versions;
   }
   dispose() {
-    if (this.#token) void fetch('/api/tooku/session', { method: 'DELETE', credentials: 'omit', keepalive: true, headers: { Authorization: `Bearer ${this.#token}` } }).catch(() => {});
+    // Disposing a UI/connection does not revoke a persistent browser login.
     this.#token = ''; this.owner = '';
   }
 }

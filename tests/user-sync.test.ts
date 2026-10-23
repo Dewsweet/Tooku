@@ -14,6 +14,7 @@ import { player, usePlayer } from '../src/features/player/engine';
 
 const memory = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../src/storage/local', () => ({
+  holdPlaybackSnapshots: vi.fn(),
   readProfile: vi.fn(async (identity: string, kind: string) => structuredClone(memory.get(`${identity}|${kind}`))),
   writeLocalData: vi.fn(async (identity: string, kind: string, data: unknown) => { memory.set(`${identity}|${kind}`, structuredClone(data)); return true; }),
   onProfileSave: vi.fn(() => () => {}),
@@ -252,5 +253,15 @@ describe('user data migration and sync', () => {
     vi.mocked(client.write).mockRejectedValueOnce(new UserDataError('unknown result'));
     await expect(chooseUserData('local', backup)).rejects.toThrow('unknown result');
     expect(localUserData()).toEqual(before);
+  });
+  it('flushes pending account edits before unified export and falls back to preserved data while offline', async () => {
+    await connectUserSync(api); await chooseUserData('local');
+    vi.spyOn(client, 'backup').mockImplementation(async () => ({ format: 'tooku-user-data', version: 1, owner: client.owner, exportedAt: Date.now(), data: structuredClone(remote.data!) }));
+    usePreferences.getState().update({ theme: 'dark' });
+    const backup = await exportUserBackup('account');
+    expect(remote.data?.preferences.theme).toBe('dark'); expect(backup.data.preferences.theme).toBe('dark');
+    vi.mocked(client.backup).mockRejectedValueOnce(new Error('offline'));
+    const fallback = await exportUserBackup('account'); expect(fallback.data).toEqual(localUserData());
+    expect(useUserSync.getState().message).toContain('此设备保留');
   });
 });

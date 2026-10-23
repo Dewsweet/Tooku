@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { NavLink, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Disc3, Mic2, Heart, Clock3, X, Sparkles } from 'lucide-react';
 import { Recommendations } from './features/recommendations/Recommendations';
-import { queryClient, useSession } from './state/session';
+import { queryClient, useSession, errorMessage } from './state/session';
 import { panelWidthCss, usePreferences } from './state/preferences';
 import { fontFamilyCss, normalizeBaseFontSize, useDisplayPreferences } from './state/display';
 import { player, usePlayer } from './features/player/engine';
@@ -18,7 +18,7 @@ import { PlayerBar, LyricsPlayer } from './features/player/PlayerUI';
 import { IconButton } from './components/Common';
 import type { Track } from './domain/models';
 import { clearProfile } from './storage/local';
-import { disconnectUserSync } from './storage/userSync';
+import { disconnectUserSync, prepareUserDataLogout } from './storage/userSync';
 import { useMusicLibrary } from './state/library';
 import { PlaylistTree } from './features/library/Organization';
 import { NowPlayingPanel } from './features/player/NowPlayingPanel';
@@ -28,6 +28,7 @@ import { ApiError } from './api/client';
 import { PanelResizeHandle } from './features/player/PanelResizeHandle';
 import { ContentScrollbar } from './components/ContentScrollbar';
 import { ScrollArea } from './components/ScrollArea';
+import { loadSavedRecommendationCredentials } from './state/recommendations';
 
 const navigation = [
   { to: '/albums', name: '专辑', icon: Disc3 }, { to: '/artists', name: '歌手', icon: Mic2 },
@@ -42,6 +43,7 @@ export default function App() {
   const api = useSession((s) => s.api); const notice = useSession((s) => s.notice); const prefs = usePreferences(); const navigate = useNavigate();
   const [queue, setQueue] = useState(false); const [lyrics, setLyrics] = useState(false); const [adding, setAdding] = useState<Track | null>(null); const [menu, setMenu] = useState(false);
   const queueTrigger = useRef<HTMLElement | null>(null);
+  const leaving = useRef(false);
   const mobile = useMediaQuery(mobileLayoutQuery);
   useEffect(() => { setQueue(false); setPanelOverlay(false); }, [mobile]);
   useEffect(() => { if (!menu || !mobile) return; const handle = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenu(false); document.getElementById('tooku-menu-toggle')?.focus(); } }; window.addEventListener('keydown', handle); return () => window.removeEventListener('keydown', handle); }, [menu, mobile]);
@@ -53,19 +55,24 @@ export default function App() {
   const location = useLocation(); const contentRef = useRef<HTMLElement>(null);
   useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; setPanelOverlay(false); setMenu(false); }, [location.pathname, location.search, library.libraryId]);
   useEffect(() => { if (api && !player.connectedTo(api)) void player.attach(api); }, [api]);
+  useEffect(() => { if (api) void loadSavedRecommendationCredentials(api).catch(() => useSession.getState().api === api && useSession.getState().notify('服务密钥状态暂未读取，可在音乐推荐设置中重新读取。')); }, [api]);
   useLayoutEffect(() => { document.documentElement.dataset.theme = api ? prefs.theme : 'light'; document.documentElement.style.setProperty('--accent-base', api ? (/^#[0-9a-f]{6}$/i.test(prefs.accent ?? '') ? prefs.accent : '#c83e55') : '#24252b'); document.documentElement.dataset.motion = prefs.reducedMotion ? 'reduced' : 'full'; }, [api, prefs.theme, prefs.accent, prefs.reducedMotion]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => useSession.getState().notify(''), 9000); return () => clearTimeout(timer); }, [notice]);
-  const logout = (clear = true) => {
-    if (!api) return;
+  const logout = async (clear = true) => {
+    if (!api || leaving.current) return;
+    leaving.current = true;
+    try { player.persist(); await prepareUserDataLogout(); await api.logout(); }
+    catch (error) { useSession.getState().notify(errorMessage(error)); leaving.current = false; return; }
     player.persist(); player.logout(); disconnectUserSync(); queryClient.cancelQueries(); api.dispose(); queryClient.clear(); useSession.getState().setSession(null);
     if (clear) clearProfile(api.identity).catch(() => useSession.getState().notify('本机快照未能清除，请检查浏览器存储。'));
     setQueue(false); setLyrics(false); setAdding(null); setMenu(false); setPanelOverlay(false); navigate('/');
+    leaving.current = false;
   };
   useEffect(() => {
     if (!api) return;
     return queryClient.getQueryCache().subscribe((event) => {
       if (event.type === 'updated' && event.query.state.error instanceof ApiError && event.query.state.error.code === 40) {
-        player.persist(); player.logout(); disconnectUserSync(); api.dispose(); queryClient.cancelQueries(); queryClient.clear();
+        player.persist(); player.logout(); disconnectUserSync(); void api.logout().catch(() => {}); api.dispose(); queryClient.cancelQueries(); queryClient.clear();
         useSession.getState().setSession(null); useSession.getState().notify('认证已失效，请重新连接。');
       }
     });

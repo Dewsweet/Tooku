@@ -10,7 +10,7 @@ import { useLyricsProfiles } from '../state/lyrics';
 import { useRecommendationProfiles } from '../state/recommendations';
 import { defaultRecommendationSettings } from '../domain/recommendations';
 import { defaultLyricsSettings } from '../domain/lyrics/types';
-import { onProfileSave, readProfile, writeLocalData } from './local';
+import { holdPlaybackSnapshots, onProfileSave, readProfile, writeLocalData } from './local';
 
 type SyncStatus = 'local' | 'review' | 'ready' | 'saving' | 'conflict' | 'offline';
 interface SyncState { status: SyncStatus; message: string; remote: UserDocument | null; identity: string; }
@@ -19,6 +19,7 @@ interface Cache { version: 1; owner: string; base: UserDocument; local: UserData
 interface Connection {
   api: MusicApi; client: UserDataApi | null; base: UserDocument; queue: PlayerSnapshot | null; history: HistoryEntry[];
   timer?: ReturnType<typeof setTimeout>; stops: (() => void)[]; applying: boolean; busy: boolean; device: UserPreferences; accepted: boolean; owner: string; requiresReview: boolean;
+  pending?: Promise<void>;
 }
 let current: Connection | null = null;
 const update = (patch: Partial<SyncState>) => useUserSync.setState(patch);
@@ -49,9 +50,10 @@ async function cache(c: Connection) {
   const saved = await writeLocalData(c.api.identity, 'sync', { version: 1, owner: c.client?.owner || c.owner, base: c.base, local: capture(c), accepted: c.accepted, requiresReview: c.requiresReview } satisfies Cache);
   if (!saved && current === c) update({ message: '本地同步缓存无法保存，请导出备份；浏览器原有数据仍保留。' });
 }
-async function apply(c: Connection, data: UserData) {
+async function apply(c: Connection, data: UserData, preservePlayback = false) {
   if (current !== c) return;
   c.applying = true;
+  if (preservePlayback && (!sameData(data.queue, c.queue) || !sameData(data.history, c.history))) holdPlaybackSnapshots(c.api.identity, true);
   try {
     usePreferences.getState().update(data.preferences);
     useProfiles.setState((s) => { const avatars = { ...s.avatars }; if (data.profile.avatar) avatars[c.api.identity] = data.profile.avatar; else delete avatars[c.api.identity]; return { avatars, playlistCovers: { ...s.playlistCovers, [c.api.identity]: data.profile.playlistCovers }, artistCovers: { ...s.artistCovers, [c.api.identity]: data.profile.artistCovers ?? {} } }; });
@@ -59,7 +61,8 @@ async function apply(c: Connection, data: UserData) {
     useLyricsProfiles.getState().apply(c.api.identity, data.lyrics);
     useRecommendationProfiles.getState().apply(c.api.identity, data.recommendations);
     c.queue = data.queue; c.history = data.history;
-    await Promise.all([writeLocalData(c.api.identity, 'queue', data.queue), writeLocalData(c.api.identity, 'history', data.history)]);
+    const saved = await Promise.all([writeLocalData(c.api.identity, 'queue', data.queue), writeLocalData(c.api.identity, 'history', data.history)]);
+    if (saved.some((ok) => !ok)) throw new Error('浏览器缓存无法保存恢复结果，服务器数据仍保留，请恢复存储权限后重新读取。');
   } finally { c.applying = false; }
 }
 function changed(c: Connection) {
@@ -67,7 +70,13 @@ function changed(c: Connection) {
   void cache(c); clearTimeout(c.timer);
   if (useUserSync.getState().status === 'ready' || useUserSync.getState().status === 'saving') c.timer = setTimeout(() => { void flush(c); }, 800);
 }
-async function flush(c: Connection) {
+function flush(c: Connection): Promise<void> {
+  if (c.pending) return c.pending;
+  const task = performFlush(c); c.pending = task;
+  void task.finally(() => { if (c.pending === task) c.pending = undefined; });
+  return task;
+}
+async function performFlush(c: Connection) {
   if (current !== c || !c.client || c.busy || !['ready', 'saving'].includes(useUserSync.getState().status)) return;
   const data = capture(c); if (sameData(data, c.base.data)) return;
   // An unused second browser must not seed the account with defaults ahead of its original browser.
@@ -87,6 +96,13 @@ async function flush(c: Connection) {
     c.busy = false;
     if (current === c && useUserSync.getState().status === 'ready' && !sameData(capture(c), c.base.data)) changed(c);
   }
+}
+export async function prepareUserDataLogout() {
+  const c = current; if (!c) return;
+  clearTimeout(c.timer);
+  if (c.busy && !c.pending) throw new Error('正在恢复数据，请稍后退出。');
+  if (c.pending) await c.pending;
+  await flush(c); await cache(c);
 }
 function subscribe(c: Connection) {
   c.stops.push(useRecommendationProfiles.subscribe((s, previous) => { if (s.profiles[c.api.identity] !== previous.profiles[c.api.identity]) changed(c); }));
@@ -154,6 +170,7 @@ export function disconnectUserSync() {
   clearTimeout(c.timer); for (const stop of c.stops) stop();
   // Capture unsent edits before restoring device preferences. Never discard the legacy storage.
   void cache(c); c.client?.dispose(); current = null;
+  holdPlaybackSnapshots(c.api.identity, false);
   usePreferences.getState().update(c.device);
   update({ status: 'local', message: '仅保存在此设备', remote: null, identity: '' });
 }
@@ -173,9 +190,17 @@ export async function refreshUserSync() {
 }
 export async function chooseUserData(source: 'local' | 'server', replacement?: UserData) {
   const c = current;
-  if (!c?.client) throw new Error('请先连接同步服务。');
+  if (!c) throw new Error('请先登录。');
   if (c.busy) throw new Error('正在保存，请稍后再试。');
   const remote = useUserSync.getState().remote;
+  if (!c.client) {
+    if (c.api.persistent || c.api.base === `${window.location.origin}/nd`) throw new Error('请先重新连接服务器，再恢复备份。');
+    if (!replacement || !isUserData(replacement)) throw new Error('备份格式无效。');
+    if (!await writeLocalData(c.api.identity, 'before-import', capture(c))) throw new Error('无法保留恢复前副本，已取消恢复。');
+    if (current !== c) return;
+    await apply(c, replacement, true); if (current !== c) return; await cache(c);
+    update({ status: 'local', message: '备份已恢复，队列在下次登录应用。' }); return;
+  }
   if (!remote) throw new Error('请先重新读取服务器数据。');
   const data = replacement ?? (source === 'server' ? remote.data : capture(c));
   if (!data || !isUserData(data)) throw new Error('数据格式无效，原数据未修改。');
@@ -192,12 +217,12 @@ export async function chooseUserData(source: 'local' | 'server', replacement?: U
         throw new UserDataError('服务器数据已更新，请关闭后重新预览。', 409);
       }
       c.base = latest;
-      await apply(c, data);
+      await apply(c, data, true);
     } else {
       // Commit first: a rejected or unknown restore must not replace the visible local stores.
       const saved = await c.client.write(remote.revision, data); if (current !== c) return;
       c.base = saved;
-      if (replacement) await apply(c, data);
+      if (replacement) await apply(c, data, true);
     }
     if (current !== c) return;
     c.accepted = true; c.requiresReview = false;
@@ -215,11 +240,22 @@ export async function chooseUserData(source: 'local' | 'server', replacement?: U
     if (current === c && useUserSync.getState().status === 'ready' && !sameData(capture(c), c.base.data)) changed(c);
   }
 }
-export async function exportUserBackup(source: 'local' | 'server' = 'local') {
-  const c = current; if (!c?.client) throw new Error('请先连接同步服务。');
-  if (source === 'server') return c.client.backup();
-  return { format: 'tooku-user-data' as const, version: 1 as const, owner: c.client.owner, exportedAt: Date.now(), data: capture(c) };
+export async function exportUserBackup(source: 'local' | 'server' | 'account' = 'local') {
+  const c = current; if (!c) throw new Error('请先登录。');
+  if (source === 'server' && c.client) return c.client.backup();
+  if (source === 'account' && c.client) {
+    await prepareUserDataLogout();
+    if (current !== c) throw new Error('账号已变化，请重新导出。');
+    if (useUserSync.getState().status === 'ready' && c.base.data) {
+      try { const backup = await c.client.backup(); if (current !== c) throw new Error('账号已变化，请重新导出。'); return backup; }
+      catch { if (current !== c) throw new Error('账号已变化，请重新导出。'); update({ message: '服务器备份暂未读取，已导出此设备保留的账号数据。' }); }
+    }
+  }
+  const data = capture(c);
+  if (!isUserData(data)) throw new Error('账号数据格式无效，请先修正后导出。');
+  const owner = syncOwner(); if (!owner || current !== c) throw new Error('账号已变化，请重新导出。');
+  return { format: 'tooku-user-data' as const, version: 1 as const, owner, exportedAt: Date.now(), data };
 }
-export function syncOwner() { return current?.client?.owner; }
+export function syncOwner() { return current ? current.client?.owner || current.owner || `local:${current.api.identity}` : undefined; }
 export async function previousUserData() { return current?.client?.revisions() ?? []; }
 export async function displacedLocalData() { return current ? readProfile<UserData>(current.api.identity, 'before-import') : undefined; }

@@ -1,12 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { UserDataSettings } from '../src/features/settings/UserDataSettings';
-import { chooseUserData, localUserData, useUserSync } from '../src/storage/userSync';
+import { chooseUserData, exportUserBackup, localUserData, useUserSync } from '../src/storage/userSync';
 import type { UserData } from '../src/domain/userData';
 
 vi.mock('../src/storage/userSync', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/storage/userSync')>(),
   localUserData: vi.fn(), syncOwner: vi.fn(() => 'synthetic-owner'), chooseUserData: vi.fn(async () => {}),
+  exportUserBackup: vi.fn(),
 }));
 const local: UserData = {
   version: 1,
@@ -47,4 +48,22 @@ it('explains server-to-browser recovery and preserves its existing read-before-a
   fireEvent.click(modal.getByRole('button', { name: '确认恢复到此浏览器' }));
   await waitFor(() => expect(chooseUserData).toHaveBeenCalledWith('server', undefined));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+it('shows one backup flow during normal use and keeps version comparison limited to conflicts', async () => {
+  useUserSync.setState({ status: 'ready', message: '已保存到服务器' });
+  vi.mocked(exportUserBackup).mockResolvedValue({ format: 'tooku-user-data', version: 1, owner: 'synthetic-owner', exportedAt: 1, data: local });
+  const create = vi.fn(() => 'blob:synthetic-backup'); const revoke = vi.fn();
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(<UserDataSettings />);
+  expect(screen.queryByText('此浏览器的数据')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '从服务器恢复' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '导出备份' }));
+  await waitFor(() => expect(exportUserBackup).toHaveBeenCalledWith('account'));
+  expect(create).toHaveBeenCalledTimes(1);
+  await new Promise((done) => setTimeout(done, 1100)); expect(revoke).toHaveBeenCalledTimes(1);
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(URL, 'createObjectURL'); Reflect.deleteProperty(URL, 'revokeObjectURL');
 });

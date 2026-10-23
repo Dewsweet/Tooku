@@ -1,11 +1,10 @@
-import { createServer, request as httpRequest } from 'node:http';
-import { request as httpsRequest } from 'node:https';
+import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUserApi, upstreamUrl } from './api.ts';
-import { isNavidromeProxyRequest } from './navidromeProxy.ts';
+import { createNavidromeProxy } from './navidromeProxy.ts';
 import { createLyricsApi } from './lyrics/http.ts';
 import { createRecommendationsApi } from './recommendations/http.ts';
 
@@ -13,7 +12,8 @@ const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 const upstream = upstreamUrl(process.env.NAVIDROME_UPSTREAM || 'http://127.0.0.1:44533');
 const api = createUserApi({ upstream });
 const lyrics = createLyricsApi();
-const recommendations = createRecommendationsApi();
+const recommendations = createRecommendationsApi(undefined, api.recommendationCredentials);
+const proxy = createNavidromeProxy(upstream, api);
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json' };
 const server = createServer(async (req, res) => {
   res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -21,18 +21,7 @@ const server = createServer(async (req, res) => {
   if (req.url?.startsWith('/api/tooku/')) { await api.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/lyrics/')) { await lyrics.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/recommendations/')) { await recommendations.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
-  if (req.url?.startsWith('/nd/') && !isNavidromeProxyRequest(req.url, req.method)) { res.writeHead(404); res.end(); return; }
-  if (req.url && isNavidromeProxyRequest(req.url, req.method)) {
-    const target = new URL(`${upstream}${req.url.slice(3)}`);
-    const headers = { ...req.headers, host: target.host }; delete headers.authorization; delete headers.cookie;
-    const upstreamRequest = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, { method: req.method, headers }, (reply) => {
-      res.writeHead(reply.statusCode ?? 502, reply.headers); reply.pipe(res);
-      reply.on('error', () => res.destroy());
-    });
-    upstreamRequest.setTimeout(300000, () => upstreamRequest.destroy());
-    upstreamRequest.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
-    res.on('close', () => upstreamRequest.destroy()); req.pipe(upstreamRequest); return;
-  }
+  if (req.url?.startsWith('/nd/')) { await proxy(req, res, () => { res.writeHead(404); res.end(); }); return; }
   try {
     if (!['GET', 'HEAD'].includes(req.method ?? '')) { res.writeHead(405); res.end(); return; }
     const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);

@@ -1,8 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { UserStore, DataError } from './store.ts';
 import { isUserData, maxUserDataBytes } from '../src/domain/userData.ts';
+import { emptyRecommendationCredentials, type RecommendationCredentials } from '../src/domain/recommendations.ts';
+import { CredentialVault, sessionLifetime } from './vault.ts';
+
+const cookieName = 'tooku-session';
+export function assertSameOrigin(req: IncomingMessage) {
+  const origin = req.headers.origin;
+  if (req.headers['sec-fetch-site'] === 'cross-site' || origin && new URL(origin).host !== req.headers.host) throw new DataError(403, '仅允许同源访问。');
+}
+export function sessionCookie(req: IncomingMessage) {
+  return req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) ?? '';
+}
+function setCookie(req: IncomingMessage, res: ServerResponse, token: string, seconds: number) {
+  const secure = process.env.TOOKU_COOKIE_SECURE === 'true' || req.headers.origin?.startsWith('https://') || process.env.TOOKU_TRUST_PROXY === 'true' && req.headers['x-forwarded-proto'] === 'https';
+  res.setHeader('Set-Cookie', `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure ? '; Secure' : ''}`);
+}
 
 const object = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 export function upstreamUrl(input: string) {
@@ -21,13 +36,16 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   if (size > maxUserDataBytes + 4096) throw new DataError(413, '上传数据过大。');
   try { return object(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { throw new DataError(400, 'JSON 格式无效。'); }
 }
-export function createUserApi(options: { upstream?: string; filename?: string; verify?: (auth: { u: string; t: string; s: string }) => Promise<string>; now?: () => number } = {}) {
+export function createUserApi(options: { upstream?: string; filename?: string; securityFilename?: string; keyFile?: string; verify?: (auth: { u: string; t: string; s: string }) => Promise<string>; now?: () => number } = {}) {
   const upstream = upstreamUrl(options.upstream ?? process.env.NAVIDROME_UPSTREAM ?? 'http://127.0.0.1:44533');
-  const store = new UserStore(options.filename ?? resolve(process.env.TOOKU_DATA_DIR || '.local/data', 'tooku.sqlite'));
+  const filename = options.filename ?? resolve(process.env.TOOKU_DATA_DIR || '.local/data', 'tooku.sqlite');
+  const vault = new CredentialVault(options.securityFilename ?? (filename === ':memory:' ? ':memory:' : resolve(dirname(filename), 'tooku-security.sqlite')), options.keyFile ?? process.env.TOOKU_SECRET_KEY_FILE);
+  const store = new UserStore(filename);
   const now = options.now ?? Date.now;
   const sessions = new Map<string, { owner: string; expires: number }>();
   const attempts = new Map<string, { count: number; reset: number }>();
   const sweep = setInterval(() => {
+    vault.sweep(now());
     for (const [key, s] of sessions) if (s.expires <= now()) sessions.delete(key);
     for (const [key, a] of attempts) if (a.reset <= now()) attempts.delete(key);
   }, 60000); sweep.unref();
@@ -45,6 +63,28 @@ export function createUserApi(options: { upstream?: string; filename?: string; v
     if (typeof username !== 'string' || !username || username.length > 256) throw new DataError(502, '音乐服务未返回有效账号。');
     return username;
   }
+  const ownerFor = (username: string) => createHash('sha256').update(JSON.stringify([upstream, username])).digest('hex');
+  async function authenticate(req: IncomingMessage, force = false) {
+    assertSameOrigin(req);
+    const token = sessionCookie(req);
+    const session = vault.session(token, now());
+    if (!session) return;
+    if (session.upstream !== upstream) { vault.deleteSession(token); return; }
+    if (req.headers['x-tooku-owner'] && req.headers['x-tooku-owner'] !== session.owner || req.headers['x-tooku-user'] && req.headers['x-tooku-user'] !== session.auth.u) throw new DataError(401, '浏览器登录账号已变化，请重新登录。');
+    if (force || now() - session.verifiedAt > 15 * 60000) {
+      try {
+        if (ownerFor(await verify(session.auth)) !== session.owner) throw new DataError(401, '账号已变化，请重新登录。');
+        session.verifiedAt = now(); vault.updateSession(token, session);
+      } catch (error) { if (error instanceof DataError && error.status === 401) vault.deleteSession(token); throw error; }
+    }
+    return { ...session, token };
+  }
+  const credentialStatus = (value: ReturnType<CredentialVault['credentials']>) => ({ revision: value.revision, saved: Object.fromEntries(Object.entries(value.credentials).map(([field, secret]) => [field, Boolean(secret)])) });
+  async function recommendationCredentials(req: IncomingMessage) {
+    const session = await authenticate(req);
+    if (!session) throw new DataError(401, '登录已过期，请重新登录。');
+    return vault.credentials(session.owner).credentials;
+  }
   async function handle(req: IncomingMessage, res: ServerResponse, next: () => void) {
     const path = req.url?.split('?')[0] ?? '';
     if (!path.startsWith('/api/tooku/')) { next(); return; }
@@ -52,8 +92,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; v
     const send = (status: number, data: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(data)); };
     try {
       // No CORS. Compare host (including port) without trusting forwarded headers.
-      const origin = req.headers.origin;
-      if (req.headers['sec-fetch-site'] === 'cross-site' || origin && new URL(origin).host !== req.headers.host) throw new DataError(403, '仅允许同源访问。');
+      assertSameOrigin(req);
       if (path === '/api/tooku/health' && req.method === 'GET') { send(200, { app: 'tooku', persistence: 1 }); return; }
       if (path === '/api/tooku/session' && req.method === 'POST') {
         const ip = req.socket.remoteAddress ?? '';
@@ -62,13 +101,34 @@ export function createUserApi(options: { upstream?: string; filename?: string; v
         const data = await body(req);
         if (typeof data.u !== 'string' || !data.u || data.u.length > 256 || typeof data.t !== 'string' || !/^[a-f0-9]{32}$/i.test(data.t) || typeof data.s !== 'string' || !/^[a-f0-9]{16,128}$/i.test(data.s)) throw new DataError(400, '认证参数无效。');
         const username = await verify({ u: data.u, t: data.t, s: data.s });
-        const owner = createHash('sha256').update(JSON.stringify([upstream, username])).digest('hex');
+        const owner = ownerFor(username);
+        if (data.persistent === true) {
+          const old = sessionCookie(req); const expires = now() + sessionLifetime;
+          const token = vault.createSession({ owner, upstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now() }, old);
+          setCookie(req, res, token, sessionLifetime / 1000);
+          send(200, { owner, username: data.u, admin: data.admin === true, persistent: true }); return;
+        }
         const token = randomBytes(32).toString('base64url'); const expires = now() + 12 * 3600000;
         sessions.set(token, { owner, expires }); send(200, { token, owner, expires }); return;
       }
-      const token = req.headers.authorization?.replace(/^Bearer /, '') ?? ''; const session = sessions.get(token);
+      const cookieSession = await authenticate(req, path === '/api/tooku/session' && req.method === 'GET');
+      if (path === '/api/tooku/session' && req.method === 'GET') {
+        if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');
+        send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true }); return;
+      }
+      const token = req.headers.authorization?.replace(/^Bearer /, '') ?? ''; const session = cookieSession ?? sessions.get(token);
       if (!session || session.expires <= now()) { sessions.delete(token); throw new DataError(401, 'Tooku 会话已失效，请重新连接同步。'); }
-      if (path === '/api/tooku/session' && req.method === 'DELETE') { sessions.delete(token); send(200, { ok: true }); return; }
+      if (path === '/api/tooku/session' && req.method === 'DELETE') { sessions.delete(token); if (cookieSession) vault.deleteSession(cookieSession.token); setCookie(req, res, '', 0); send(200, { ok: true }); return; }
+      if (path === '/api/tooku/credentials') {
+        if (req.method === 'GET') { send(200, credentialStatus(vault.credentials(session.owner))); return; }
+        if (req.method === 'PUT') {
+          const data = await body(req); const patch = object(data.credentials);
+          if (typeof data.revision !== 'number' || Object.keys(patch).some((key) => !Object.hasOwn(emptyRecommendationCredentials, key) || typeof patch[key] !== 'string')) throw new DataError(400, '密钥格式无效。');
+          const credentials: Partial<RecommendationCredentials> = {};
+          for (const field of Object.keys(emptyRecommendationCredentials) as (keyof RecommendationCredentials)[]) if (typeof patch[field] === 'string') credentials[field] = patch[field];
+          send(200, credentialStatus(vault.saveCredentials(session.owner, data.revision, credentials))); return;
+        }
+      }
       if (path === '/api/tooku/data' && req.method === 'GET') { send(200, store.read(session.owner)); return; }
       if (path === '/api/tooku/data' && req.method === 'PUT') {
         const data = await body(req);
@@ -88,5 +148,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; v
       send(error instanceof DataError ? error.status : 503, { error: error instanceof DataError ? error.message : '服务暂不可用；本地数据仍保留，请稍后重试。' });
     }
   }
-  return { handle, close() { clearInterval(sweep); sessions.clear(); store.close(); } };
+  return { handle, authenticate, recommendationCredentials,
+    refreshNativeToken(token: string, value: string) { const session = vault.session(token, now()); if (session) { session.nativeToken = value; vault.updateSession(token, session); } },
+    close() { clearInterval(sweep); sessions.clear(); store.close(); vault.close(); } };
 }

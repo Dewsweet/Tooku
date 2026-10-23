@@ -6,8 +6,14 @@ export async function readProfile<T>(identity: string, kind: string): Promise<T 
   try { return await (await db()).get('profiles', `${identity}|${kind}`); } catch { return undefined; }
 }
 export async function saveProfile(identity: string, kind: string, data: PlayerSnapshot | HistoryEntry[]) {
+  if (heldPlaybackSnapshots.has(identity)) return true;
   for (const listener of listeners) listener(identity, kind, data);
   try { await (await db()).put('profiles', data, `${identity}|${kind}`); return true; } catch { return false; }
+}
+// An explicit restore belongs to the next login. The still-running player must not overwrite it.
+const heldPlaybackSnapshots = new Set<string>();
+export function holdPlaybackSnapshots(identity: string, hold: boolean) {
+  if (hold) heldPlaybackSnapshots.add(identity); else heldPlaybackSnapshots.delete(identity);
 }
 const listeners = new Set<(identity: string, kind: string, data: PlayerSnapshot | HistoryEntry[]) => void>();
 export function onProfileSave(listener: (identity: string, kind: string, data: PlayerSnapshot | HistoryEntry[]) => void) {

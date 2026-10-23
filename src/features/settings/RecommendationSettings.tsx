@@ -4,9 +4,10 @@ import { Select } from '../../components/Select';
 import { useApi } from '../../components/Common';
 import { recommendationsApi } from '../../api/recommendations';
 import { defaultRecommendationSettings, emptyRecommendationCredentials, isRecommendationSettings, musicPlatforms, platformNames, recommendationCount, type RecommendationCredentials, type RecommendationMode } from '../../domain/recommendations';
-import { useRecommendationProfiles, useRecommendationSecrets } from '../../state/recommendations';
+import { loadSavedRecommendationCredentials, useRecommendationProfiles, useRecommendationSecrets } from '../../state/recommendations';
 import { useSession } from '../../state/session';
 import { SettingsSection } from './SettingsSection';
+import { Modal } from '../../components/Modal';
 
 export function RecommendationSettings() { const api = useApi(); return <SettingsView key={api.identity} />; }
 type CheckTarget = 'lastfm' | 'ai' | 'apple' | 'spotify';
@@ -19,7 +20,9 @@ function SettingsView() {
   const api = useApi(); const profile = useRecommendationProfiles((s) => s.profiles[api.identity]);
   const [draft, setDraft] = useState(profile?.settings ?? defaultRecommendationSettings);
   const [checks, setChecks] = useState<Partial<Record<CheckTarget, CheckResult>>>({}); const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false); const [deleting, setDeleting] = useState(false);
   const secrets = useRecommendationSecrets(); const credentials = secrets.identity === api.identity ? secrets.credentials : emptyRecommendationCredentials;
+  const has = (field: keyof RecommendationCredentials) => Boolean(credentials[field].trim() || secrets.identity === api.identity && secrets.saved[field]);
   const requests = useRef<Partial<Record<CheckTarget, AbortController>>>({});
   const dirty = useRef(false);
   const draftRef = useRef(draft); draftRef.current = draft;
@@ -35,20 +38,20 @@ function SettingsView() {
     dirty.current = true; setError('');
     if (target) { requests.current[target]?.abort(); delete requests.current[target]; setChecks((current) => ({ ...current, [target]: undefined })); }
   };
-  const credential = (label: string, field: keyof RecommendationCredentials) => <label className="recommendation-field"><span>{label}</span><input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={credentials[field]} onChange={(event) => { edit(credentialTargets[field]); useRecommendationSecrets.getState().update(api.identity, { [field]: event.target.value }); }} /></label>;
+  const credential = (label: string, field: keyof RecommendationCredentials) => <label className="recommendation-field"><span>{label}</span><input type="password" autoComplete="off" spellCheck={false} maxLength={8192} disabled={saving} placeholder={secrets.identity === api.identity && secrets.saved[field] ? '已保存，填写可替换' : ''} value={credentials[field]} onChange={(event) => { edit(credentialTargets[field]); useRecommendationSecrets.getState().update(api.identity, { [field]: event.target.value }); }} /></label>;
   function missingConfiguration(target: CheckTarget) {
-    if (target === 'lastfm') return credentials.lastfmKey.trim() ? '' : '请先填写 Last.fm API Key（不是 Shared secret）';
+    if (target === 'lastfm') return has('lastfmKey') ? '' : '请先填写 Last.fm API Key（不是 Shared secret）';
     if (target === 'ai') {
-      const missing = [!draft.aiBaseUrl.trim() && '模型服务地址', !draft.model.trim() && '模型名称', !credentials.aiKey.trim() && 'API Key'].filter(Boolean);
+      const missing = [!draft.aiBaseUrl.trim() && '模型服务地址', !draft.model.trim() && '模型名称', !has('aiKey') && 'API Key'].filter(Boolean);
       if (missing.length) return `请先填写${missing.join('、')}`;
       if (!isRecommendationSettings({ ...defaultRecommendationSettings, aiBaseUrl: draft.aiBaseUrl, model: draft.model })) return '请使用不含凭据或查询参数的 HTTPS 模型地址';
     }
     if (target === 'apple') {
-      if (!credentials.appleToken.trim()) return '请先填写 Apple Music Developer Token';
+      if (!has('appleToken')) return '请先填写 Apple Music Developer Token';
       if (!/^[a-z]{2}$/.test(draft.appleStorefront)) return '商店地区需填写两位小写字母，如 cn';
     }
     if (target === 'spotify') {
-      if (!credentials.spotifyClientId.trim() || !credentials.spotifyClientSecret.trim()) return '请先填写 Spotify Client ID 和 Client Secret';
+      if (!has('spotifyClientId') || !has('spotifyClientSecret')) return '请先填写 Spotify Client ID 和 Client Secret';
       if (!/^[A-Z]{2}$/.test(draft.spotifyMarket)) return '市场地区需填写两位大写字母，如 US';
     }
     return '';
@@ -85,9 +88,41 @@ function SettingsView() {
     return <summary data-state={phase}>{label}{optional && <span className="recommendation-optional-label">可选</span>}<span className="status-light" role="img" aria-label={`${label}：${status}`} /></summary>;
   };
   const checking = Object.values(checks).some((result) => result?.phase === 'checking');
+  async function save() {
+    if (saving) return;
+    edit();
+    if (!isRecommendationSettings(draft)) { setError('请使用不含凭据、查询参数的 HTTPS 模型地址，并检查地区配置'); return; }
+    setSaving(true);
+    try {
+      if (api.persistent) {
+        const client = await api.userData(); if (!client) throw new Error('请重新连接账号。');
+        const patch = Object.fromEntries(Object.entries(credentials).filter(([, value]) => value.trim()).map(([field, value]) => [field, value.trim()]));
+        if (Object.keys(patch).length) {
+          const status = await client.saveCredentials(secrets.savedRevision, patch);
+          if (useSession.getState().api !== api) return;
+          useRecommendationSecrets.getState().acceptSaved(api.identity, status, true);
+        }
+      }
+      dirty.current = false;
+      useRecommendationProfiles.getState().update(api.identity, (current) => ({ ...current, settings: draft }));
+      useSession.getState().notify('推荐设置已保存');
+    } catch (error) { setError(error instanceof Error ? error.message : '设置未能保存，请重新读取后核实。'); }
+    finally { setSaving(false); }
+  }
+  async function removeCredentials() {
+    setSaving(true); setError('');
+    try {
+      const client = await api.userData(); if (!client) throw new Error('请重新连接账号。');
+      const status = await client.saveCredentials(secrets.savedRevision, emptyRecommendationCredentials);
+      if (useSession.getState().api !== api) return;
+      useRecommendationSecrets.getState().acceptSaved(api.identity, status, true); setChecks({}); setDeleting(false);
+    } catch (error) { setError(error instanceof Error ? error.message : '删除结果未知，请重新读取后核实。'); }
+    finally { setSaving(false); }
+  }
   return <SettingsSection title="音乐推荐" className="recommendation-settings">
-    <p className="settings-notice">生成时向所选服务发送近期收听和已推荐歌曲的歌名、歌手，以及专辑与偏好摘要。密钥仅本次会话有效，刷新或退出后需重新填写。</p>
-    <form onSubmit={(event) => { event.preventDefault(); edit(); if (!isRecommendationSettings(draft)) { setError('请使用不含凭据、查询参数的 HTTPS 模型地址，并检查地区配置'); return; } dirty.current = false; try { useRecommendationProfiles.getState().update(api.identity, (current) => ({ ...current, settings: draft })); useSession.getState().notify('推荐设置已保存'); } catch { setError('本机设置未能保存，本次会话仍可使用；请在用户数据中核实同步或导出备份'); } }}>
+    <p className="settings-notice">生成时向所选服务发送近期收听和已推荐歌曲的歌名、歌手，以及专辑与偏好摘要。{api.persistent ? '密钥加密保存在服务器，重新登录后继续可用。' : '直连模式的密钥仅本次会话有效。'}</p>
+    <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <fieldset disabled={saving} className="recommendation-settings-fields">
       <div className="settings-subsection recommendation-preferences"><h3>推荐偏好</h3><div className="recommendation-settings-grid">
         <label className="recommendation-field"><span>推荐模式</span><Select aria-label="推荐模式" value={draft.mode} onChange={(mode) => { edit(); setDraft({ ...draft, mode: mode as RecommendationMode }); }}><option value="hybrid">混合推荐</option><option value="algorithm">Last.fm 推荐</option><option value="ai">AI 推荐</option></Select></label>
         <label className="recommendation-field"><span>收听样本</span><Select aria-label="收听样本" value={String(draft.sampleSize)} onChange={(value) => { edit(); setDraft({ ...draft, sampleSize: Number(value) }); }}><option value="30">最近 30 首</option><option value="40">最近 40 首</option><option value="50">最近 50 首</option></Select></label>
@@ -110,7 +145,9 @@ function SettingsView() {
       </details>
       <p className="settings-note">可选平台未配置时，仍可使用平台搜索入口。</p>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="settings-form-actions"><button type="submit" className="primary-button" disabled={checking}>保存推荐设置</button></div>
+      <div className="settings-form-actions"><button type="submit" className="primary-button" disabled={checking || saving}>{saving ? '正在保存…' : '保存推荐设置'}</button>{api.persistent && <><button type="button" className="subtle-button" onClick={() => { void loadSavedRecommendationCredentials(api).catch((error) => setError(error instanceof Error ? error.message : '读取未完成')); }}>重新读取密钥状态</button>{secrets.identity === api.identity && Object.values(secrets.saved).some(Boolean) && <button type="button" className="text-button" onClick={() => setDeleting(true)}>删除已保存密钥</button>}</>}</div>
+      </fieldset>
     </form>
+    {deleting && <Modal title="删除已保存密钥？" busy={saving} onClose={() => setDeleting(false)}><p>将删除当前账号保存的推荐服务密钥，其他设置和推荐记录保持不变。</p>{error && <p role="alert" className="form-error">{error}</p>}<div className="button-row"><button type="button" className="subtle-button" disabled={saving} onClick={() => setDeleting(false)}>取消</button><button type="button" className="primary-button" disabled={saving} onClick={() => { void removeCredentials(); }}>确认删除</button></div></Modal>}
   </SettingsSection>;
 }

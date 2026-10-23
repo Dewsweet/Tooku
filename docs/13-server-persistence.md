@@ -1,10 +1,10 @@
 # Tooku 服务端用户数据
 
-更新日期：2026-10-22。此文描述当前实现，替代早期文档中“尚无后端”的描述。
+更新日期：2026-10-23。此文描述当前实现，替代早期文档中“尚无后端”的描述。
 
-## 已确认的后续方向（尚未实施）
+## 当前存储方式
 
-用户已确定：基础开发完成后，Tooku 账号数据以服务器数据库为主存储；设置中显示保存状态及统一的导出备份、从备份恢复入口，不再常驻“此浏览器的数据”和“服务器已保存的数据”两端比较版块。浏览器继续承担必要缓存、未同步修改与设备显示偏好；冲突保护作为异常处理，不要求用户在日常使用中选择数据来源。具体直连兼容、旧数据迁移及冲突界面届时再统一实施，本轮不修改下面描述的当前同步规则。
+账号数据以服务器 SQLite 为主，浏览器保留离线缓存、未提交变更与设备显示偏好。设置日常显示保存状态、统一导出/恢复；仅迁移冲突、409 或未知写入核实后展示版本选择。原有 localStorage/IndexedDB、identity 和 v1 账号文档保持兼容，不清空旧数据。
 
 ## 数据与身份
 
@@ -12,18 +12,20 @@ Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm
 
 客户端只对同源 `/nd` 建立同步。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；填写当前 Tooku 站点完整 HTTP(S) 地址时，API 层将同源根地址规范化为原有 `/nd`，不改变同步身份；旧 `/nd` 输入继续兼容。「测试连接」仅发送匿名 ping，不创建 Tooku 会话或同步数据。后端只验证 `NAVIDROME_UPSTREAM` 配置的固定地址，不访问客户端提供的 URL。认证时将当前会话的 Subsonic token/salt 放在 POST 表单中，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。数据库 owner 是 `[规范化固定上游地址, 规范用户名]` 的 SHA-256。修改部署上游地址会改变命名空间，迁移部署时应保留该地址配置。浏览器 `MusicApi.identity` 保持旧规则以找到旧数据；跨 origin 的同一后端账号仍访问相同服务端记录。
 
-Tooku 随机会话令牌只在内存保存，12 小时过期；退出时销毁，后端重启后需重新连接。认证材料不写数据库/配置/日志，也不保存认证媒体 URL。会话建立有限流与上游超时，不支持跨域访问。账号权限撤销在会话到期或重新验证时生效。其他完整 Navidrome 地址直连继续可用，但不参与 Tooku 同步，以免错误归入固定上游账号。
+固定上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据转发的 `X-Forwarded-Proto` 判断 HTTPS；不要在不可信入口启用此选项。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、上游改变或退出后需要重新登录。
+
+`server/navidromeProxy.ts` 为固定白名单请求注入会话对应的认证，前端媒体 URL 不包含 token/salt。账号数据请求绑定已验证 owner；媒体/推荐请求绑定当前登录名。旧标签页遇到另一个账号的 Cookie 会被拒绝，不能读写新账号数据或撤销新账号会话。登录、创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。直连其他完整 Navidrome 地址仅会话登录、账号数据仅本地，也支持本地备份恢复；不保存任意外部服务器凭据，不开放任意代理。
 
 ## 首次迁移与日常保存
 
-音乐推荐使用 v1 可选字段 `recommendations`，保存普通配置、最近一批最少歌曲元数据和有限避重记录（最多 300 个 ID、90 首 ID/标题/歌手）。可选推荐数量缺省按 30；旧版无这些字段的文档仍可读，不清空数据。API Key、模型密钥、Apple/Spotify 令牌与 Client Secret 不进入账号文档、同步缓存或备份；目录链接仅短时缓存，推荐不请求封面。恢复旧备份重置当前账号推荐配置与结果，不改其他账号和当前播放，无数据库 schema 升级。边界见 [音乐推荐](16-music-recommendations.md)。
+音乐推荐使用 v1 可选字段 `recommendations`，保存普通配置、最近一批最少歌曲元数据和有限避重记录（最多 300 个 ID、90 首 ID/标题/歌手）。可选推荐数量缺省按 30；旧版无这些字段的文档仍可读，不清空数据。API Key、模型密钥、Apple Developer Token 与 Spotify Client Secret 在独立安全库按账号加密保存，不进入账号文档、同步缓存或账号备份；Spotify 临时令牌仍仅进程内存；目录链接仅短时缓存，推荐不请求封面。恢复旧备份重置当前账号推荐配置与结果，不改其他账号和当前播放，无数据库 schema 升级。边界见 [音乐推荐](16-music-recommendations.md)。
 
 批次歌曲可选 `releaseDate` 仅保存经目录核实的发行日期，保留年/月/日精度；旧歌曲无该字段仍可读。进入推荐页后分组核实整批链接时补齐的元数据仅在短时查询缓存，不自动改写已保存批次；点击菜单不再单独发起核实。
 
 1. 在原浏览器与原访问 origin，通过 `/nd` 登录；服务器没有个性数据时，先保留迁移前副本，再自动上传此设备已有数据。
 2. 在另一浏览器通过同一 Tooku 服务的 `/nd` 登录，使用同一账号；本地没有个性数据时自动恢复头像、歌单排序及其他账号数据，无需手动确认迁移。
-3. 两边都有不同个性数据，或之前有待核实的保存结果时，才在头像 → 账户与设置 → 用户数据中比较：“保存到服务器”使用此浏览器的数据覆盖服务器；“从服务器恢复”使用服务器数据替换此浏览器。点击后先显示数据摘要和覆盖范围，确认后才执行。
-4. 迁移/恢复前在 IndexedDB 保留一份 `before-import` 副本；原 localStorage 命名空间不删除。设置可导出本地/服务端账号备份，也可恢复导入前副本。
+3. 日常设置不展示两端比较。两边都有不同个性数据，或之前有待核实的保存结果时，才在头像 → 账户与设置 → 用户数据中比较：“保存到服务器”使用此浏览器的数据覆盖服务器；“从服务器恢复”使用服务器数据替换此浏览器。点击后先显示数据摘要和覆盖范围，确认后才执行。
+4. 迁移/恢复前在 IndexedDB 保留一份 `before-import` 副本；原 localStorage 命名空间不删除。设置只有一个导出入口：正常连接时先保存待提交变更，再导出服务器账号文档；离线或冲突时保留此设备数据的可导出能力，并显示状态。统一从文件恢复，也可恢复服务器上一版本或导入前副本。
 
 自动发现的默认库 ID、空队列和设备回退外观不视为账号编辑。完全空白的浏览器只建立同步连接，直到有实际用户数据才写入，避免默认状态抢先占据服务器。已同步浏览器主动删除头像等变更按其同步基线识别，不能当作新浏览器而撤销删除。
 
@@ -31,7 +33,7 @@ Tooku 随机会话令牌只在内存保存，12 小时过期；退出时销毁�
 
 断网时继续使用原浏览器存储；未上传修改保存在 sync 缓存。恢复连接后比较本地修改与服务器版本。偏好保留一份设备回退，账号偏好另存在其 sync 缓存，退出/切换账号还原设备回退，避免新账号继承上个账号的外观。
 
-队列与历史是最后保存的账号快照，保留重复歌曲的 entryId / occurrenceId，不是跨设备播放控制或历史自动合并。另一个设备有更新时，下次登录读取；正在使用的设备仅在下一次保存碰到 revision 差异时提示冲突。恢复时不调用 player.attach，不加载/暂停/定位当前音频；快照用于下次登录暂停恢复。继续本机播放会再次保存其当前快照。手动清除“本机快照”仅清浏览器 queue/history，保留迁移基线和服务器数据，服务器快照下次登录可能恢复。
+队列与历史是最后保存的账号快照，保留重复歌曲的 entryId / occurrenceId，不是跨设备播放控制或历史自动合并。另一个设备有更新时，下次登录读取；正在使用的设备仅在下一次保存碰到 revision 差异时提示冲突。恢复时不调用 player.attach，不加载/暂停/定位当前音频；快照用于下次登录暂停恢复。明确恢复后，本次登录暂停 queue/history 写入（包括暂停、周期保存、收听提交），保留当前音频和画面，恢复快照在下次登录应用。其他偏好仍正常保存。手动清除“本机快照”仅清浏览器 queue/history，保留迁移基线和服务器数据，服务器快照下次登录可能恢复。
 
 ## 存储、限制与迁移
 
@@ -47,23 +49,32 @@ Tooku 随机会话令牌只在内存保存，12 小时过期；退出时销毁�
 
 2026-10-22 为 v1 队列项增加可选 `sourceIndex`，记录来源列表的零基序号（非负整数，最多 1e9，必须伴随有效 `source`）。完整列表入队自动标记，单曲追加传原序号，未知位置省略；随机播放、队列调序、保存和重新登录均保留该值。用于底栏来源跳转定位重复歌曲，不是新的曲目身份，也不替代 `entryId`。旧快照和备份可继续读取，缺失时按歌曲查找；无数据库表迁移、无数据清理，前后端须一起更新。来源歌单被编辑后仅能按剩余曲目就近定位，不能保证追踪 Navidrome 没有提供身份的重复项。
 
+## 会话与服务密钥的独立安全库
+
+新增 `tooku-security.sqlite`，与账号文档数据库同目录，由 `server/vault.ts` 管理独立 schema v1。会话和各账号服务密钥使用 AES-256-GCM，每条记录独立随机 nonce，AAD 绑定账号/会话摘要及用途；密钥写入使用独立原子 revision，409 和结果未知后需重新读取状态，不能自动重放。前端 GET 只返回五个字段的保存布尔值和版本，不返回密钥。输入替换已有值，明确删除操作可清空已保存密钥。普通数据恢复不覆盖凭据。
+
+32 字节随机主密钥默认保存在 `tooku-secret.key`，可用进程环境变量 `TOOKU_SECRET_KEY_FILE` 指向独立挂载的密钥文件；不把密钥内容放环境变量、源码或命令行。新数据目录首次生成，权限为当前服务用户可读写（POSIX 0600/目录 0700；Windows 需由管理员限制目录 ACL）。安全库已有记录时若主密钥缺失或错误，拒绝打开，不重新生成并覆盖原数据。磁盘加密用于隔离数据库备份泄漏，不能防御同时取得主密钥或控制服务进程的攻击者。应独立备份主密钥、限制服务目录权限并使用 HTTPS。
+
+实现参考 [OWASP Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) 与 [Cryptographic Storage](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html)。未引入第三方认证或加密依赖，使用 Node 内置 crypto。
+
 ## API 与实现入口
 
 v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来源/绑定/排版/hash/延迟/显示选项，最多 2000 首；不保存歌词全文或凭据。字段缺省为默认策略，首次使用前不新增空字段改变同步基线。其校验、原子 revision、离线 sync 缓存和备份沿用现有通路；恢复旧备份会清除当前账号新增的歌词选择，其他账号保留，不接管音频。旧文档仍有效，无用户 SQLite 表迁移，新字段需前后端一起更新。
 
 公开歌词保存在独立 `.local/data/lyrics-cache.sqlite`（也遵循 `TOOKU_DATA_DIR`），缓存上限约 100 MB / 5000 条，故障降级内存；不与 `tooku.sqlite` 共用表，也不推进账号 revision。账号 JSON / 用户库备份包含个人选择，不包含可重建平台缓存；恢复时无须复制或清除缓存。详见 [歌词组件](15-lyrics-service-design.md)。
 
-用户数据 API 位于 `/api/tooku/`，不缓存。除 health 和创建 session 外，必须提供内存中的 `Authorization: Bearer …`；服务器由会话决定 owner，忽略客户端伪造 owner。独立歌词 API `/api/lyrics/` 与推荐 API `/api/recommendations/` 不使用该账号认证，由各自同源、限流与固定来源规则约束；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
+用户数据 API 位于 `/api/tooku/`，不缓存。除 health 和创建 session 外，使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
 
 | 路径 | 方法 | 用途 |
 | --- | --- | --- |
 | `health` | GET | `{ app: 'tooku', persistence: 1 }` |
-| `session` | POST / DELETE | 验证上游并创建会话 / 注销会话 |
+| `session` | POST / GET / DELETE | 验证并创建 Cookie 会话 / 恢复且重新验证 / 注销会话 |
+| `credentials` | GET / PUT | 仅读保存状态与 revision / 按版本更新密钥字段；不返回密钥 |
 | `data` | GET / PUT | 读取文档 / 提交 `{ revision, data }`；不匹配返回 409 |
 | `backup` | GET | 当前账号可携带图片的版本化 JSON |
 | `revisions` | GET | 当前账号最近两个旧文档，恢复同样使用 revision 检查 |
 
-`server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
+`server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
 
 ## 运行与部署
 
@@ -77,8 +88,10 @@ Compose 使用 Node 非 root 用户运行，持久化卷 `tooku-data:/data`，�
 
 ## 备份与恢复
 
-账号备份：设置中的导出会生成 `tooku-user-data` v1 JSON，包含头像和封面，没有密码/token/salt。恢复时先检查格式、大小和 owner，只能导入当前固定上游的同一规范账号，然后预览并确认。备份包含个人数据，应保存在自己控制的位置。浏览器缓存和服务端两个旧版本不能替代外部备份。
+账号备份：设置中的统一导出会生成 `tooku-user-data` v1 JSON，包含头像和封面，没有密码/token/salt。恢复时先检查格式、大小和 owner，只能导入当前固定上游的同一规范账号，然后预览并确认。备份包含个人数据，应保存在自己控制的位置。浏览器缓存和服务端两个旧版本不能替代外部备份。
 
-完整备份：`npm.cmd run backup -- .local/backups/tooku-2026-10-20.sqlite`，目标文件必须不存在。使用 SQLite 在线 backup API，包含 WAL 中已提交事务，不能只复制一个仍在写入的 `.sqlite` 文件。Node 原生 API 参见 [SQLite 文档](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)。容器可执行 `docker compose exec tooku node server/backup.ts /data/backup.sqlite`，再用 `docker compose cp tooku:/data/backup.sqlite ./backup.sqlite` 复制到独立位置；下一份备份使用不同文件名。
+账号数据库备份：`npm.cmd run backup -- .local/backups/tooku-2026-10-20.sqlite`，目标文件必须不存在。使用 SQLite 在线 backup API，包含 WAL 中已提交事务，不能只复制一个仍在写入的 `.sqlite` 文件。Node 原生 API 参见 [SQLite 文档](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)。容器可执行 `docker compose exec tooku node server/backup.ts /data/backup.sqlite`，再用 `docker compose cp tooku:/data/backup.sqlite ./backup.sqlite` 复制到独立位置；下一份备份使用不同文件名。
 
-完整恢复：停止目标 Tooku 服务，先将原数据库及同名 `-wal` / `-shm` 文件整体移动到保留目录，再把备份复制为数据目录中的 `tooku.sqlite`，保留原文件权限及固定上游配置，然后启动并登录核实。不能在旧 WAL 尚在原路径时直接覆盖主数据库。恢复整个数据库会恢复所有账号的文档及旧版本，登录会话仍需重新建立。
+账号数据库恢复：停止目标 Tooku 服务，先将原数据库及同名 `-wal` / `-shm` 文件整体移动到保留目录，再把备份复制为数据目录中的 `tooku.sqlite`，保留原文件权限及固定上游配置，然后启动并登录核实。不能在旧 WAL 尚在原路径时直接覆盖主数据库。恢复整个数据库会恢复所有账号的文档及旧版本，登录会话和服务密钥不随账号数据库恢复。
+
+完整部署迁移还需单独保留 `tooku-security.sqlite` 及原 `tooku-secret.key` / 外部密钥文件。先正常停止服务，再保留安全库及其 WAL/SHM 和密钥，不能只复制仍在写入的安全库主文件。主密钥与安全库应分别保管；账号导出/`npm run backup` 不包含它们。若无需保留会话和密钥，可只迁移账号数据库，重新登录并填写服务密钥；不能删除现有安全库或生成新主密钥作为已有库的修复步骤。

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { Interactions } from '../src/components/Interactions';
 import { MusicApi } from '../src/api/client';
+import { UserDataApi } from '../src/api/userData';
 import { RecommendationsApi, recommendationsApi } from '../src/api/recommendations';
 import { Recommendations } from '../src/features/recommendations/Recommendations';
 import { RecommendationSettings } from '../src/features/settings/RecommendationSettings';
@@ -33,6 +34,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); api.dispose(); useSession.getState().setSession(null); usePlayer.setState(usePlayer.getInitialState()); useRecommendationProfiles.setState({ profiles: {} }); vi.restoreAllMocks(); });
 const surface = (child: React.ReactNode) => render(<QueryClientProvider client={client}><MemoryRouter><Interactions>{child}</Interactions></MemoryRouter></QueryClientProvider>);
 const configure = () => useRecommendationSecrets.getState().update(api.identity, { lastfmKey: crypto.randomUUID() });
+
+it('uses server-saved key status after login, replaces keys without echoing them and enables generation without a draft', async () => {
+  vi.spyOn(api, 'persistent', 'get').mockReturnValue(true);
+  const account = new UserDataApi(); account.owner = 'synthetic-owner'; vi.spyOn(api, 'userData').mockResolvedValue(account);
+  const saved = { lastfmKey: true, aiKey: false, appleToken: false, spotifyClientId: false, spotifyClientSecret: false };
+  useRecommendationSecrets.getState().acceptSaved(api.identity, { revision: 3, saved });
+  const write = vi.spyOn(account, 'saveCredentials').mockResolvedValue({ revision: 4, saved });
+  const view = surface(<RecommendationSettings />);
+  expect(screen.getByLabelText('Last.fm API Key')).toHaveValue('');
+  expect(screen.getByLabelText('Last.fm API Key')).toHaveAttribute('placeholder', '已保存，填写可替换');
+  fireEvent.click(screen.getByRole('button', { name: '检测 Last.fm' })); await screen.findByText('Last.fm · 连接成功');
+  const key = crypto.randomUUID(); fireEvent.change(screen.getByLabelText('Last.fm API Key'), { target: { value: key } });
+  fireEvent.click(screen.getByRole('button', { name: '保存推荐设置' }));
+  await waitFor(() => expect(write).toHaveBeenCalledWith(3, { lastfmKey: key }));
+  await waitFor(() => expect(screen.getByLabelText('Last.fm API Key')).toHaveValue(''));
+  expect(localStorage.getItem('tooku-recommendations')).not.toContain(key);
+  view.unmount(); surface(<Recommendations />);
+  expect(screen.getByRole('button', { name: '生成推荐' })).toBeEnabled();
+});
 
 it('requires listening data and configuration, and does not generate automatically', async () => {
   surface(<Recommendations />);

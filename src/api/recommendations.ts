@@ -1,10 +1,12 @@
 import { isRecommendationBatch, isResolvedSong, recommendationRecord, emptyRecommendationCredentials, defaultRecommendationSettings, platformSearchLink, type ListeningSeed, type RecommendationCredentials, type RecommendationMemory, type RecommendationSettings, type RecommendationSong, type ResolvedSong } from '../domain/recommendations';
+import { useSession } from '../state/session';
 
 export class RecommendationsApi {
   async request(path: 'generate' | 'links' | 'check', data: unknown, signal?: AbortSignal): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(`/api/recommendations/${path}`, { method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(path === 'generate' ? 305000 : path === 'check' ? 55000 : 25000)]) });
+      const api = useSession.getState().api; const saved = api?.persistent === true;
+      response = await fetch(`/api/recommendations/${path}`, { method: 'POST', credentials: saved ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json', ...(saved ? { 'X-Tooku-User': api.username } : {}) }, body: JSON.stringify(recommendationRecord(data) && saved ? { ...data, useSavedCredentials: true } : data), signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(path === 'generate' ? 305000 : path === 'check' ? 55000 : 25000)]) });
     } catch { if (signal?.aborted) throw signal.reason; throw new Error('推荐服务未完成，请检查连接或稍后重试'); }
     const result: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new Error(recommendationRecord(result) && typeof result.error === 'string' && result.error.length <= 180 ? result.error : '推荐服务暂不可用');

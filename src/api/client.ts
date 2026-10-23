@@ -88,25 +88,36 @@ export class MusicApi {
   #userData: UserDataApi | null = null;
   #nativeToken = '';
   #nativeAdmin = false;
+  #cookieSession = false;
   #uncertainArtistImages = new Set<string>();
   #writingArtistImages = new Set<string>();
-  get canEditArtistImages() { return Boolean(this.#nativeToken && this.#nativeAdmin); }
+  get canEditArtistImages() { return Boolean((this.#nativeToken || this.#cookieSession) && this.#nativeAdmin); }
+  get persistent() { return this.#cookieSession; }
   constructor(readonly base: string, readonly username: string, password: string, salt?: string) {
     const random = salt ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
     this.#auth = { u: username, t: authToken(password, random), s: random };
     this.identity = `${base}|${username}`;
   }
   dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; this.#nativeToken = ''; this.#nativeAdmin = false; this.#uncertainArtistImages.clear(); this.#writingArtistImages.clear(); }
+  static async restoreSession() {
+    const client = new UserDataApi(); const session = await client.restore();
+    if (!session) return null;
+    const api = new MusicApi(`${window.location.origin}/nd`, session.username, '');
+    api.#auth = { u: '', t: '', s: '' }; api.#cookieSession = true; api.#nativeAdmin = session.admin; api.#userData = client;
+    try { const version = await api.connect(); return { api, version }; }
+    catch (error) { api.dispose(); throw error; }
+  }
+  async logout() { if (this.#cookieSession) await this.#userData?.logout(); }
   async userData() {
     if (this.base !== `${window.location.origin}/nd`) return null;
-    this.#userData?.dispose();
-    const client = new UserDataApi(); await client.connect(this.#auth);
+    if (this.#cookieSession && this.#userData) return this.#userData;
+    const client = new UserDataApi(); await client.connect(this.#auth, { nativeToken: this.#nativeToken, admin: this.#nativeAdmin });
     if (this.#abort.signal.aborted) { client.dispose(); throw new ApiError('连接已关闭。'); }
-    this.#userData = client; return client;
+    this.#userData = client; this.#cookieSession = true; this.#nativeToken = ''; this.#auth = { u: '', t: '', s: '' }; return client;
   }
   supports(name: string, version = 1) { return (this.extensions.get(name) ?? []).some((v) => v >= version); }
   #params(params: Params) {
-    const out = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json', ...this.#auth });
+    const out = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json', ...(this.#cookieSession ? { tookuSession: '1', tookuUser: this.username } : this.#auth) });
     for (const [key, value] of Object.entries(params)) {
       if (value === undefined) continue;
       if (Array.isArray(value)) value.forEach((item) => out.append(key, item));
@@ -125,13 +136,13 @@ export class MusicApi {
   async request(method: string, params: Params = {}, signal?: AbortSignal, write = false): Promise<DTO> {
     const args = this.#params(params);
     const post = this.supports('formPost');
-    const endpoint = `${this.base}/rest/${method}.view`;
+    const endpoint = `${this.base}/rest/${method}.view${post && this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`;
     if (!post && endpoint.length + args.toString().length > 8000) throw new ApiError('请求过长；服务器需要支持表单 POST 才能保存此列表。');
     let response: Response;
     try {
       response = await fetch(post ? endpoint : `${endpoint}?${args}`, {
         method: post ? 'POST' : 'GET', body: post ? args : undefined,
-        credentials: 'omit', referrerPolicy: 'no-referrer',
+        credentials: this.#cookieSession ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer',
         signal: AbortSignal.any([this.#abort.signal, ...(signal ? [signal] : []), AbortSignal.timeout(write ? 30000 : 12000)]),
       });
     } catch (error) {
@@ -178,9 +189,9 @@ export class MusicApi {
     const write = Boolean(body || remove);
     let response: Response;
     try {
-      response = await fetch(`${this.base}/api/${path}`, {
+      response = await fetch(`${this.base}/api/${path}${this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`, {
         method: remove ? 'DELETE' : body ? 'POST' : 'GET', body,
-        headers: { 'x-nd-authorization': `Bearer ${this.#nativeToken}` }, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
+        headers: this.#cookieSession ? {} : { 'x-nd-authorization': `Bearer ${this.#nativeToken}` }, credentials: this.#cookieSession ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
         signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(write ? 30000 : 12000)]),
       });
     } catch {
