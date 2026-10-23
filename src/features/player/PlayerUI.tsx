@@ -75,12 +75,24 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
   const element = useRef<HTMLDivElement>(null);
   const gesture = useRef<{ id: number; x: number; y: number; started: number; locked: boolean; ignored: boolean } | null>(null);
   const suppressClick = useRef(false); const releaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const visualTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     const node = element.current;
     if (!node || !enabled || !available) return;
     const reset = () => { gesture.current = null; };
+    const clearVisual = () => {
+      clearTimeout(visualTimer.current);
+      delete node.dataset.swipeDirection; delete node.dataset.swipeLabel; delete node.dataset.swipeSettling;
+      node.style.removeProperty('--dock-swipe-x'); node.style.removeProperty('--dock-swipe-progress');
+    };
+    const settleVisual = () => {
+      node.dataset.swipeSettling = 'true';
+      node.style.setProperty('--dock-swipe-x', '0px'); node.style.setProperty('--dock-swipe-progress', '0');
+      clearTimeout(visualTimer.current); visualTimer.current = setTimeout(clearVisual, 200);
+    };
     const start = (event: globalThis.TouchEvent) => {
       if (event.touches.length !== 1) return;
+      reset(); clearVisual();
       const target = event.target;
       // Reduced-motion users can still manually pan an overflowing title instead of changing tracks.
       if (target instanceof Element && target.closest('.scrolling-text[data-overflow="true"][data-animate="false"]')) return;
@@ -89,19 +101,29 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
     };
     const move = (event: globalThis.TouchEvent) => {
       const current = gesture.current;
-      if (!current || event.touches.length !== 1 || event.touches[0].identifier !== current.id) { reset(); return; }
+      if (!current || event.touches.length !== 1 || event.touches[0].identifier !== current.id) {
+        reset(); if (current?.locked) settleVisual(); else clearVisual(); return;
+      }
       const point = event.touches[0]; const dx = point.clientX - current.x; const dy = point.clientY - current.y;
       if (!current.locked && !current.ignored && Math.max(Math.abs(dx), Math.abs(dy)) >= 10) {
         current.locked = Math.abs(dx) > Math.abs(dy) * 1.2;
         current.ignored = !current.locked;
       }
-      if (current.locked) event.preventDefault();
+      if (current.locked) {
+        event.preventDefault();
+        const progress = Math.min(1, Math.abs(dx) / 64);
+        node.dataset.swipeDirection = dx < 0 ? 'next' : 'previous';
+        node.dataset.swipeLabel = dx < 0 ? '下一首歌曲' : '上一首歌曲';
+        node.style.setProperty('--dock-swipe-x', `${Math.max(-26, Math.min(26, dx * .24))}px`);
+        node.style.setProperty('--dock-swipe-progress', String(progress));
+      }
     };
     const finish = (event: globalThis.TouchEvent, cancelled = false) => {
       const current = gesture.current; reset();
       const point = Array.from(event.changedTouches).find((touch) => touch.identifier === current?.id);
-      if (!current || !point || cancelled || !current.locked) return;
+      if (!current || !point || cancelled || !current.locked) { if (current?.locked) settleVisual(); return; }
       const distance = point.clientX - current.x; const elapsed = performance.now() - current.started;
+      settleVisual();
       if (Math.abs(distance) < 52 && !(Math.abs(distance) >= 28 && elapsed <= 240)) return;
       suppressClick.current = true; clearTimeout(releaseTimer.current);
       releaseTimer.current = setTimeout(() => { suppressClick.current = false; }, 400);
@@ -114,7 +136,7 @@ function useMobileTrackSwipe(enabled: boolean, available: boolean) {
     node.addEventListener('touchend', end, { passive: true });
     node.addEventListener('touchcancel', cancel, { passive: true });
     return () => {
-      clearTimeout(releaseTimer.current); reset();
+      clearTimeout(releaseTimer.current); clearVisual(); reset();
       node.removeEventListener('touchstart', start); node.removeEventListener('touchmove', move);
       node.removeEventListener('touchend', end); node.removeEventListener('touchcancel', cancel);
     };

@@ -67,10 +67,16 @@ it('uses deliberate horizontal swipes on mobile track information for previous a
   const next = vi.spyOn(player, 'next').mockImplementation(() => {}); const previous = vi.spyOn(player, 'previous').mockImplementation(() => {});
   const open = vi.fn(); const view = surface(<PlayerBar mobile openQueue={() => {}} openLyrics={open} />);
   const track = view.container.querySelector('.dock-track')!;
-  dockTouch(track, 'touchstart', 250); const move = dockTouch(track, 'touchmove', 170); dockTouch(track, 'touchend', 160);
+  dockTouch(track, 'touchstart', 250); const move = dockTouch(track, 'touchmove', 170);
+  expect(track).toHaveAttribute('data-swipe-direction', 'next'); expect(track).toHaveAttribute('data-swipe-label', '下一首歌曲');
+  expect((track as HTMLElement).style.getPropertyValue('--dock-swipe-x')).toBe('-19.2px');
+  dockTouch(track, 'touchend', 160);
+  expect(track).toHaveAttribute('data-swipe-settling', 'true');
   expect(move.defaultPrevented).toBe(true); expect(next).toHaveBeenCalledOnce(); expect(previous).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '展开播放器：当前曲目' }), { detail: 1 }); expect(open).not.toHaveBeenCalled();
-  dockTouch(track, 'touchstart', 110); dockTouch(track, 'touchmove', 180); dockTouch(track, 'touchend', 190);
+  dockTouch(track, 'touchstart', 110); dockTouch(track, 'touchmove', 180);
+  expect(track).toHaveAttribute('data-swipe-direction', 'previous'); expect(track).toHaveAttribute('data-swipe-label', '上一首歌曲');
+  dockTouch(track, 'touchend', 190);
   expect(previous).toHaveBeenCalledOnce();
   dockTouch(track, 'touchstart', 200, 20); dockTouch(track, 'touchmove', 204, 100); dockTouch(track, 'touchend', 204, 100);
   expect(next).toHaveBeenCalledOnce(); expect(previous).toHaveBeenCalledOnce();

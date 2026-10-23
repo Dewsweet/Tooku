@@ -201,7 +201,33 @@ html:has(dialog[open]) { overflow: hidden; }
 }
 @media (max-width: 767px) {
   .playback-dock { grid-template-columns: minmax(0, 1fr) auto; }
-  .playback-dock .dock-track { overscroll-behavior-x: contain; }
+  .playback-dock .dock-track {
+    position: relative;
+    overflow: hidden;
+    overscroll-behavior-x: contain;
+    --dock-swipe-x: 0px;
+    --dock-swipe-progress: 0;
+  }
+  .playback-dock .dock-track > .now-playing,
+  .playback-dock .dock-track > .dock-metadata { transform: translateX(var(--dock-swipe-x)); }
+  .playback-dock .dock-track[data-swipe-settling] > .now-playing,
+  .playback-dock .dock-track[data-swipe-settling] > .dock-metadata { transition: transform .18s cubic-bezier(.2, .8, .2, 1); }
+  .playback-dock .dock-track::after {
+    content: attr(data-swipe-label);
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    max-width: 72px;
+    color: var(--muted);
+    font-size: calc(10px * var(--ui-font-scale, 1));
+    line-height: 1.2;
+    white-space: nowrap;
+    opacity: var(--dock-swipe-progress);
+    pointer-events: none;
+  }
+  .playback-dock .dock-track[data-swipe-direction="previous"]::after { left: 2px; transform: translateY(-50%); }
+  .playback-dock .dock-track[data-swipe-direction="next"]::after { right: 2px; transform: translateY(-50%); }
+  .playback-dock .dock-track[data-swipe-settling]::after { transition: opacity .16s ease; }
   .dock-track .now-playing { max-width: none; }
   .dock-art .mini-cover { width: 44px; }
   .playback-dock .player-right { gap: 0; }
@@ -229,6 +255,16 @@ html:has(dialog[open]) { overflow: hidden; }
   .modal-player .transport.large .play-button { width: 56px; height: 56px; }
   .modal-player .transport.large .mode-button { display: inline-flex; }
   .room-lyric { font-size: min(var(--lyric-size), 42px); padding: 16px 3px; }
+}
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .playback-dock .dock-track > .now-playing,
+  .playback-dock .dock-track > .dock-metadata { transform: none; transition: none; }
+  .playback-dock .dock-track::after { transition: none; }
+}
+@media (max-width: 767px) {
+  :root[data-motion=reduced] .playback-dock .dock-track > .now-playing,
+  :root[data-motion=reduced] .playback-dock .dock-track > .dock-metadata { transform: none; transition: none; }
+  :root[data-motion=reduced] .playback-dock .dock-track::after { transition: none; }
 }
 @media (max-height: 650px) and (min-width: 768px) {
   .room-body { padding-top: 62px; padding-bottom: 18px; }

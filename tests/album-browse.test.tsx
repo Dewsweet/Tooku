@@ -66,11 +66,12 @@ it('shows the effective responsive column count while retaining the wider-layout
   let width = 620; vi.spyOn(layout, 'getBoundingClientRect').mockImplementation(() => ({ width }) as DOMRect);
   act(() => resizes[0]());
   const density = screen.getByRole('combobox', { name: '专辑每行数量' });
-  expect(density).toHaveTextContent('每行 3 个（当前宽度）');
+  expect(density).toHaveTextContent('每行 3 个');
+  expect(density).not.toHaveTextContent('当前宽度');
   expect(density).toBeDisabled();
   expect(useDisplayPreferences.getState().gridColumns.albums).toBe(8);
   width = 820; act(() => resizes[0]());
-  expect(density).toHaveTextContent('每行 4 个（当前宽度）'); expect(density).toBeEnabled();
+  expect(density).toHaveTextContent('每行 4 个'); expect(density).not.toHaveTextContent('当前宽度'); expect(density).toBeEnabled();
   fireEvent.click(density);
   expect(screen.getByRole('option', { name: '每行 6 个' })).toHaveAttribute('aria-disabled', 'true');
   fireEvent.keyDown(density, { key: 'Escape' });

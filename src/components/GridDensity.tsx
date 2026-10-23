@@ -30,10 +30,10 @@ export function GridDensitySelect({ kind }: { kind: GridKind }) {
     return () => observer?.disconnect();
   }, [kind, mobile]);
   if (mobile) return null;
-  const effective = Math.min(columns, limit); const constrained = effective !== columns;
+  const effective = Math.min(columns, limit);
   const options = limit < gridColumnOptions[0] ? [limit, ...gridColumnOptions] : gridColumnOptions;
   return <span className="grid-density-control" ref={anchor}><Select aria-label={`${kind === 'albums' ? '专辑' : '歌手'}每行数量`} value={String(effective)} disabled={limit <= gridColumnOptions[0]} onChange={(value) => setColumns(kind, Number(value))}>
-    {options.map((count) => <option key={count} value={count} disabled={count > limit}>每行 {count} 个{constrained && count === effective ? '（当前宽度）' : ''}</option>)}
+    {options.map((count) => <option key={count} value={count} disabled={count > limit}>每行 {count} 个</option>)}
   </Select></span>;
 }
 export function DensityGrid({ kind, children }: { kind: GridKind; children: ReactNode }) {
