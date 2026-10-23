@@ -408,7 +408,7 @@ Chrome 自动化提示扩展 UI 阻挡，按用户要求改用内置浏览器；
 
 ## 10 月 23 日安全、流媒体与容器查询
 
-本节起于公开安全公告、当前依赖和部署文件的只读查询；随后按用户确认的顺序完成 P0 第 1、2 项。没有升级 React/Vite 等应用依赖，也没有修改或重启用户正在使用的服务；运行时门槛、审计工具、接口边界和 Docker 基础镜像已按下述结果更新。
+本节起于公开安全公告、当前依赖和部署文件的只读查询；随后按用户确认的顺序完成 P0 第 1 至 3 项及第 4 项的生产配置。没有升级 React/Vite 等应用依赖，也没有修改或重启用户正在使用的服务；运行时门槛、审计工具、接口边界、音乐流授权和 Docker 配置已按下述结果更新。
 
 - 系统原有 Node.js 为 24.15.0。Node.js 官方在 2026-10-21 发布 24.22.1，修复 24.x 中的 DNS 名称截断、TLS 主机名绕过、Brotli 解码器越界写入等高危问题，以及 keep-alive、证书校验、随机数启动快照和权限模型问题。**24.15.0 已被 Tooku 最低版本门槛拒绝，开发和生产要求 24.22.1 或之后的受支持版本。**来源：[Node.js 2026-10-21 安全发布](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)。
 - 当前 Vite 为 8.3.4，已高于 2026-10-06 文件越界读取公告给 8.3.x 的修复版本 8.3.3；该问题还要求把开发服务器暴露到网络并满足特定路径条件。仍需把 `dev:lan` 纳入开发服务器文件边界与主机校验回归，不能据此把所有 Vite 风险视为已检查。来源：[Vite GHSA-rq7h-c2jc-7f22](https://github.com/vitejs/vite/security/advisories/GHSA-rq7h-c2jc-7f22)。
@@ -417,7 +417,7 @@ Chrome 自动化提示扩展 UI 阻挡，按用户要求改用内置浏览器；
 - 2026-10-23 已在官方 SHA-256 校验过的 Node 24.22.1 便携环境中完成 `pnpm audit`：生产 15 项、完整 267 项均为 0 个已知漏洞，267 个已安装包的 registry 签名全部通过。结果只代表当次 registry 公告数据库；后续发布和依赖变化仍需重跑。
 - 当前服务使用 HttpOnly + SameSite=Strict 会话 Cookie、严格 HTTP(S) Origin/Host 同源判断、JSON 正文容量限制、登录限流、固定 Navidrome 上游、代理路径白名单、no-store、Referrer-Policy 和 nosniff。生产入口现统一发送 CSP、`frame-ancestors 'none'`、X-Frame-Options 和 Permissions-Policy；策略保留任意 HTTP(S) Navidrome 的连接、封面与音频以及 blob Worker/媒体。HSTS 仅在 `TOOKU_HSTS=true` 且请求来自直接 TLS 或显式可信代理的单值 HTTPS 协议时发送，避免在 HTTP 部署误锁站点。
 - 浏览器必须取得能够解码的音频响应，网页无法从根本上阻止已授权用户录制或保存音乐。仅按 User-Agent 屏蔽 IDM、NDM、ABDM 很容易绕过，也可能误伤浏览器、系统媒体服务和无障碍工具。可实现目标是减少下载器扩展自动接管、限制媒体 URL 重放和批量抓取，并保留浏览器 Range、seek、后台播放与转码兼容性。
-- 当前 Dockerfile 已使用两阶段构建和非 root `node` 用户，Compose 已提供数据卷并默认仅映射 `127.0.0.1:8080`；基础镜像已固定为 Node 24.22.1 Alpine 官方多架构 digest。使用 `127.0.0.1:7890` 本地代理后，Trivy 0.76.1 成功取得 2026-10-23 漏洞库：仓库扫描为 0 个依赖漏洞、0 个密钥，另准确报告缺少 HEALTHCHECK 的 1 个低危配置项；基础 Node 镜像扫描发现 13 个均位于全局 npm 工具链的公告（高危 4、中危 8、低危 1），不是 Tooku 应用依赖。运行镜像当前仍经 npm 启动，因此不能忽略；第 4 项将改为 Node 直接启动、移除运行层 npm/corepack、增加健康检查并扫描最终 Tooku 镜像。只读根文件系统、能力收缩、资源限制及真实 Docker 验收仍属于 P0 Docker 生产化任务。
+- Dockerfile 使用两阶段构建和固定 Node 24.22.1 Alpine 官方多架构 digest。使用 `127.0.0.1:7890` 本地代理后，Trivy 0.76.1 成功取得 2026-10-23 漏洞库：最初仓库扫描为 0 个依赖漏洞、0 个密钥，基础 Node 镜像发现的 13 个公告（高危 4、中危 8、低危 1）全部位于全局 npm 工具链。运行层现删除 npm/corepack、由 Node 直接启动并加入健康检查；最新 Dockerfile 配置扫描为 0 个误配。Compose 已加入独立数据/密钥卷、只读根文件系统、受限 tmpfs、能力收缩、资源限制及本机绑定。由于本机没有 Docker/Podman/nerdctl/buildah，不能据此宣称最终镜像漏洞为 0，真实构建、卷权限、重建恢复和多架构仍待 Docker 主机验收。
 
 ## 后续待开发功能
 
@@ -432,7 +432,9 @@ Chrome 自动化提示扩展 UI 阻挡，按用户要求改用内置浏览器；
 3. **音乐流访问加固与下载器自动接管抑制（2026-10-23 已完成实现与模拟流回归）**：固定上游受管播放先用同源 POST 取得 256 位随机路径，服务端只保存摘要，并绑定当前 HttpOnly 会话摘要、owner、歌曲 ID、原始/兼容模式与四小时期限；通用 Navidrome stream/download 代理已关闭。新曲、新登录、认证撤销、退出和关闭会撤销旧授权并中止活动上游流；每个授权最多 64 次请求、3 路并发，只接受 GET/HEAD 与单段 Range，多 Range 返回 416。上游仍收到服务端注入的 token/salt；浏览器 URL、队列、历史和备份均不含认证参数。响应保留 Range/Content-Range，固定 inline、private/no-store、same-origin，阻止上游重定向及 Location、Cookie、附件名泄漏；Nginx 模板关闭授权路径访问日志。PlayerEngine 快切继续按 generation 忽略迟到授权，等待期间暂停不会晚到自播；暂停到临近过期后恢复会重新授权并保留进度。没有使用 IDM/NDM/ABDM 名称或 User-Agent 黑名单。该实现降低扩展自动接管、重放和批量枚举，不能阻止已授权用户录音或保存可解码内容，也不构成 DRM；未匹配固定上游的直连模式仍待受管多服务器后统一。
 
    代码提交 **`381dd71`**。合成上游的真实 Node HTTP 测试覆盖 206 与单段 Range 转发、兼容 MP3 参数、无 Cookie/跨账号拒绝、多 Range、3 路并发上限、四小时过期、新授权和退出撤销、上游重定向脱敏、响应缓存/内联策略及通用 stream/download 关闭；播放器测试覆盖授权快切、等待时暂停和临近过期恢复。Node 24.22.1 下 `npm.cmd run lint`、`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run build` 与 `git diff --check` 通过；全量为 47 个 Vitest 文件、494 项测试，另有 2 项原生 Node 运行时测试。构建保留已有主 JS 超过 500 kB 提示（本次约 602.90 kB）。未使用真实账号、真实音频或实际下载器扩展；真实格式、长曲、后台、弱网、浏览器/下载器矩阵归第 5 项。
-4. **Docker 生产化设置与验收**：沿用已固定的 Node 安全镜像及 digest，加入应用健康检查、`init`、只读根文件系统、`tmpfs /tmp`、`cap_drop: ALL`、`no-new-privileges`、PID/内存/CPU 限制与明确的非 root UID/GID；验证数据卷、安全库和独立密钥文件的权限及备份恢复，不把密钥内容放进镜像、Compose、环境变量或日志。分别提供宿主机 Navidrome、同一 Compose 网络和远程 HTTPS 上游示例；默认只绑定本机，公网入口统一经 HTTPS 反向代理，并验证可信代理、Range、长请求和上传大小。实际执行 build/up/down、健康检查、重建保留、版本升级、回滚、amd64/arm64（如承诺）及镜像扫描。
+4. **Docker 生产化设置（2026-10-23 配置完成，实机验收待 Docker 主机）**：运行镜像删除 npm/corepack 并以 `node server/index.ts` 直接启动，应用健康检查验证 Tooku 标识与持久化版本。Compose 明确 UID/GID 1000、`init`、只读根文件系统、`tmpfs /tmp`、`cap_drop: ALL`、`no-new-privileges`、128 PID、512 MiB 内存和 1 CPU 限制；数据库/安全库与 AES 主密钥使用两个独立命名卷，默认仅绑定 `127.0.0.1`。新增宿主机、已有 Docker 网络和远程 HTTPS Navidrome 示例，以及完整卷快照、账号备份、HTTPS 可信代理、升级/回滚和架构声明边界。Nginx 模板关闭播放授权路径日志，显式保留 Range/If-Range，并为代理响应和上传保留 300 秒/13 MiB 边界。
+
+   代码提交 **`edc2bfb`**。Node 24.22.1 下 `npm.cmd run container:check` 的配置不变量通过，健康检查 2 项原生 Node 测试通过；Trivy 0.76.1 Dockerfile 配置扫描为 0 个误配。`npm.cmd run lint`、`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run build` 与 `git diff --check` 通过；全量为 47 个 Vitest 文件、494 项测试，另有 4 项原生 Node 测试。构建保留已有主 JS 超过 500 kB 提示（本次约 602.91 kB）。此电脑未安装 Docker/Podman/nerdctl/buildah，`docker compose config`、build/up/down、容器健康状态、实际 UID/卷权限、重建持久化、备份恢复、升级/回滚、amd64/arm64 和最终 Tooku 镜像漏洞扫描尚未执行；这些必须在具备 Docker 的主机完成后才能关闭本项验收。
 5. **真实服务发布回归**：用授权测试资源完成浏览器认证、封面、原始流、转码流、seek、失效恢复、30 分钟连续播放、重复循环、多标签页竞争、快切/删除与恢复；覆盖 Chrome、Edge、Firefox、iOS Safari、Android Chrome、反向代理和 Docker。对流访问加固额外验证常见下载器扩展不会自动接管，同时确认正常浏览器、系统媒体键和弱网续播没有退化；结论只能表述为降低自动探测与滥用，不能宣传 DRM 或绝对防下载。
 
 ### P1：核心能力
