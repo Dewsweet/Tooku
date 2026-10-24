@@ -71,7 +71,7 @@ React 页面 / 通用控件
 | 左栏文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 横线排序、变色移入文件夹、末尾横线移到根目录；主体管理页不参与拖放 |
 | API 与统一模型 | `src/api/client.ts`、`src/domain/models.ts` | HTTP/业务错误分开，DTO 转换集中；不要照抄旧文档示意字段名 |
 | 播放引擎与算法 | `src/features/player/engine.ts`、`src/domain/queue.ts` | 单实例媒体、异步竞争、队列条目身份与有效收听 |
-| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx`、`PlayerPages.tsx`、`player-pages.css` | UI 发命令，不创建音频；桌面左右布局，手机控制/歌词横向整屏切换，三点菜单集中歌曲操作 |
+| 底栏与完整播放器 | `src/features/player/PlayerUI.tsx`、`ExpandedPlayer.tsx`、`PlayerPages.tsx`、`player-pages.css` | 常驻底栏留在主包，完整播放器按首次打开加载；UI 发命令，不创建音频；桌面左右布局，手机控制/歌词横向整屏切换，三点菜单集中歌曲操作 |
 | 浏览器全屏 | `src/features/player/FullscreenButton.tsx` | 顶部/底栏复用；Fullscreen API 进入根节点、同步退出状态、重新提升原生弹窗，保持 DOM、查询与音频；不支持时禁用 |
 | 桌面歌词 | `src/features/player/DesktopLyrics.tsx`、`desktop-lyrics.css` | 底栏按钮打开 Document Picture-in-Picture；Portal 共用歌词查询与状态，当前句原文/译文同步显示，静态歌词手动滚动；窗口位置由浏览器控制，保留用户拖动位置；关闭、切账号与迟到请求清理，不接管音频 |
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`MobileQueueSheet.tsx`、`PanelResizeHandle.tsx` | 完整队列覆盖在原侧栏内，关闭恢复；分栏拖动条由 App 放在面板间隙 |

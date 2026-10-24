@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MusicApi } from '../src/api/client';
 import { Interactions } from '../src/components/Interactions';
-import { LyricsPlayer } from '../src/features/player/PlayerUI';
+import { LyricsPlayer } from '../src/features/player/ExpandedPlayer';
 import { player, usePlayer } from '../src/features/player/engine';
 import { usePreferences } from '../src/state/preferences';
 import { useLyricsProfiles } from '../src/state/lyrics';

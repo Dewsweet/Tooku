@@ -1,9 +1,8 @@
 import { mobileLayoutQuery, useMediaQuery } from './components/useMediaQuery';
 import { MobileQueueSheet } from './features/player/MobileQueueSheet';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Disc3, Mic2, Heart, Clock3, X, Sparkles } from 'lucide-react';
-import { Recommendations } from './features/recommendations/Recommendations';
 import { queryClient, useSession, errorMessage } from './state/session';
 import { panelWidthCss, usePreferences } from './state/preferences';
 import { fontFamilyCss, normalizeBaseFontSize, useDisplayPreferences } from './state/display';
@@ -13,8 +12,7 @@ import { AlbumDetail, Albums, ArtistDetail, Artists } from './pages/Library';
 import { Search } from './pages/Search';
 import { Favorites, History } from './pages/Collection';
 import { AddToPlaylist, PlaylistDetail, Playlists } from './pages/Playlists';
-import { Settings } from './pages/Settings';
-import { PlayerBar, LyricsPlayer } from './features/player/PlayerUI';
+import { PlayerBar } from './features/player/PlayerUI';
 import { IconButton } from './components/Common';
 import type { Track } from './domain/models';
 import { clearProfile } from './storage/local';
@@ -29,6 +27,10 @@ import { PanelResizeHandle } from './features/player/PanelResizeHandle';
 import { ContentScrollbar } from './components/ContentScrollbar';
 import { ScrollArea } from './components/ScrollArea';
 import { loadSavedRecommendationCredentials } from './state/recommendations';
+
+const Settings = lazy(() => import('./pages/Settings').then((module) => ({ default: module.Settings })));
+const Recommendations = lazy(() => import('./features/recommendations/Recommendations').then((module) => ({ default: module.Recommendations })));
+const LyricsPlayer = lazy(() => import('./features/player/ExpandedPlayer').then((module) => ({ default: module.LyricsPlayer })));
 
 const navigation = [
   { to: '/albums', name: '专辑', icon: Disc3 }, { to: '/artists', name: '歌手', icon: Mic2 },
@@ -99,14 +101,14 @@ export default function App() {
       <ScrollArea className="sidebar-scroll" scope={library.libraryId} label="歌单导航滚动条"><PlaylistTree key={library.libraryId} closeNavigation={() => setMenu(false)} /></ScrollArea>
     </aside>{menu && <button className="menu-scrim" aria-label="关闭导航遮罩" onClick={() => setMenu(false)} />}
     <div className="app-main" inert={mobile && menu || panelOverlay}><main id="workspace-content" tabIndex={-1} ref={contentRef} className="content with-overlay-scrollbar" key={library.libraryId}><Routes>
-      <Route path="/" element={<Home />} /><Route path="/songs" element={<Navigate to="/search?type=songs" replace />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Settings logout={() => logout(false)} />} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
-      <Route path="/recommendations" element={<Recommendations />} />
+      <Route path="/" element={<Home />} /><Route path="/songs" element={<Navigate to="/search?type=songs" replace />} /><Route path="/albums" element={<Albums />} /><Route path="/albums/:id" element={<AlbumDetail addToPlaylist={setAdding} />} /><Route path="/artists" element={<Artists />} /><Route path="/artists/:id" element={<ArtistDetail />} /><Route path="/search" element={<Search addToPlaylist={setAdding} />} /><Route path="/favorites" element={<Favorites addToPlaylist={setAdding} />} /><Route path="/playlists" element={<Playlists />} /><Route path="/playlists/:id" element={<PlaylistDetail addToPlaylist={setAdding} />} /><Route path="/history" element={<History addToPlaylist={setAdding} />} /><Route path="/settings" element={<Suspense fallback={<div className="loading" role="status">正在打开设置…</div>}><Settings logout={() => logout(false)} /></Suspense>} /><Route path="*" element={<div className="empty"><h1>页面不存在</h1><NavLink to="/">回到主页</NavLink></div>} />
+      <Route path="/recommendations" element={<Suspense fallback={<div className="loading" role="status">正在打开推荐…</div>}><Recommendations /></Suspense>} />
     </Routes></main><ContentScrollbar viewport={contentRef} scope={JSON.stringify([location.key, library.libraryId])} /></div>
     {!mobile && !compactPanel && prefs.sidePanel && <PanelResizeHandle />}{!mobile && panelOverlay && <button className="panel-scrim" aria-label="关闭播放侧栏遮罩" onClick={() => setPanelOverlay(false)} />}
     {!mobile && (prefs.sidePanel || panelOverlay) && <NowPlayingPanel queueOpen={queue && panelVisible} queueTrigger={queueTrigger} closeQueue={() => setQueue(false)} openQueue={openQueue} openPlayer={() => currentId && setLyrics(true)} onClose={() => { setQueue(false); if (compactPanel) setPanelOverlay(false); else prefs.update({sidePanel:false}); }} />}
     <div inert={mobile && menu || panelOverlay}><PlayerBar mobile={mobile} queueOpen={queue && (mobile || panelVisible)} openQueue={toggleQueue} openLyrics={() => currentId && setLyrics(true)} /></div>
     {mobile && queue && <MobileQueueSheet onClose={() => setQueue(false)} />}
-    {lyrics && <LyricsPlayer onClose={() => setLyrics(false)} addToPlaylist={setAdding} />}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
+    {lyrics && <Suspense fallback={null}><LyricsPlayer onClose={() => setLyrics(false)} addToPlaylist={setAdding} /></Suspense>}{adding && <AddToPlaylist track={adding} onClose={() => setAdding(null)} />}
     {notice && <div className="toast" role="status">{notice}<IconButton label="关闭提示" onClick={() => useSession.getState().notify('')}><X size={17} /></IconButton></div>}
   </div>;
 }

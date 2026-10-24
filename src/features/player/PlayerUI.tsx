@@ -1,19 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, ListPlus, ChevronUp, X, ChevronDown, LoaderCircle, Heart, Mic2, Disc3, Ellipsis } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Volume1, ListMusic, ChevronUp, X, ChevronDown, LoaderCircle, Heart } from 'lucide-react';
 import { Cover, Empty, IconButton, formatTime, useApi, toggleFavorite } from '../../components/Common';
 import { Modal } from '../../components/Modal';
 import { usePlayer, player } from './engine';
-import { Lyrics } from './Lyrics';
-import { useContextMenu, type MenuItem } from '../../components/Interactions';
 import { usePlaybackPosition, useReducedMotion } from './playback-hooks';
 import type { QueueEntry, Track } from '../../domain/models';
 import { PlaybackSourceLink, ArtistLinks } from '../../components/TrackLinks';
 import { FullscreenButton } from './FullscreenButton';
 import { ScrollingText } from './ScrollingText';
 import { DesktopLyricsButton } from './DesktopLyrics';
-import { PlayerPages } from './PlayerPages';
 
 export function Progress({ context = 'dock' }: { context?: 'dock' | 'room' }) {
   const position = usePlaybackPosition(); const duration = usePlayer((s) => s.duration); const entryId = usePlayer((s) => s.currentId);
@@ -57,7 +53,7 @@ function Equalizer({ playing }: { playing: boolean }) {
   return <span className={`playback-equalizer ${playing ? 'is-playing' : ''}`} aria-hidden="true"><i /><i /><i /><i /></span>;
 }
 
-function Favorite({ track, compact = false }: { track?: Track; compact?: boolean }) {
+export function Favorite({ track, compact = false }: { track?: Track; compact?: boolean }) {
   const api = useApi(); const [busy, setBusy] = useState(false);
   const query = useQuery({ queryKey: [api.identity, 'favorites'], queryFn: ({ signal }) => api.favorites(signal) });
   const starred = track && (query.data ? query.data.songs.some((s) => s.id === track.id) : Boolean(track.starred));
@@ -196,41 +192,4 @@ export function QueueContents({ embedded = false }: { embedded?: boolean }) {
 }
 export function Queue({ onClose }: { onClose: () => void }) {
   return <Modal title="播放队列" variant="queue" onClose={onClose}><QueueContents /></Modal>;
-}
-
-export function LyricsPlayer({ onClose, addToPlaylist }: { onClose: () => void; addToPlaylist: (track: Track) => void }) {
-  const [lyricToolbar, setLyricToolbar] = useState<HTMLDivElement | null>(null);
-  const state = usePlayer(); const track = state.entries.find((e) => e.entryId === state.currentId)?.track;
-  const api = useApi(); const menu = useContextMenu(); const navigate = useNavigate();
-  const detail = useQuery({ queryKey: [api.identity, 'song', track?.id], enabled: Boolean(track && (!track.albumId || !(track.artistId || track.artists?.some((artist) => artist.id)))), queryFn: ({ signal }) => api.song(track!.id, signal) });
-  const source = track && detail.data?.id === track.id ? {
-    ...track, ...detail.data,
-    albumId: detail.data.albumId ?? track.albumId,
-    artistId: detail.data.artistId ?? track.artistId,
-    artists: detail.data.artists?.some((artist) => artist.id) ? detail.data.artists : track.artists,
-  } : track;
-  const artists = source?.artists?.some((artist) => artist.id) ? source.artists : [{ id: source?.artistId, name: source?.artist ?? '' }];
-  const playbackSource = state.entries.find((entry) => entry.entryId === state.currentId)?.source;
-  const playlistId = playbackSource?.kind === 'playlist' ? playbackSource.id : undefined;
-  const showPage = (path: string) => { onClose(); navigate(path); };
-  const items: MenuItem[] = [
-    { label: '查看专辑', icon: <Disc3 size={16} />, disabled: !source?.albumId, action: () => { if (source?.albumId) showPage(`/albums/${encodeURIComponent(source.albumId)}`); } },
-    ...artists.map((artist) => ({ label: artists.length > 1 ? `查看歌手 ${artist.name}` : '查看歌手', icon: <Mic2 size={16} />, disabled: !artist.id, action: () => { if (artist.id) showPage(`/artists/${encodeURIComponent(artist.id)}`); } })),
-    { label: '查看歌单', icon: <ListMusic size={16} />, disabled: !playlistId, action: () => { if (playlistId) showPage(`/playlists/${encodeURIComponent(playlistId)}`); } },
-    { label: '添加到歌单', icon: <ListPlus size={16} />, divider: true, disabled: !track, action: () => { if (track) addToPlaylist(track); } },
-  ];
-  return <Modal title="正在播放" variant="player" onClose={onClose} headerActions={<><div className="player-lyric-actions" ref={setLyricToolbar} /><span className="player-toolbar-divider" aria-hidden="true" /><FullscreenButton /></>} onContextMenu={(event) => {
-    const target = event.target;
-    if (!(target instanceof Element) || target.closest('dialog') !== event.currentTarget) return;
-    if (target.closest('[role="menu"], [role="listbox"]')) { event.preventDefault(); event.stopPropagation(); return; }
-    menu(event, items);
-  }}>
-    <div className="room-backdrop" aria-hidden="true"><Cover id={track?.coverArt} size={240} /></div>
-    <PlayerPages controls={<><div className="room-artwork-slot"><div key={track?.id} className="room-artwork"><Cover id={track?.coverArt} size={900} /><div className="artwork-sheen" /></div></div>
-      <div className="room-song"><div key={track?.id} className="room-song-copy"><h1><ScrollingText text={track?.title ?? '选择一首喜欢的歌'} /></h1><p><ScrollingText text={track?.artist ?? 'Tooku'} /></p></div><div className="room-song-actions"><Favorite track={track} /><IconButton label="当前歌曲更多选项" aria-haspopup="menu" disabled={!track} onClick={(event) => menu(event, items)}><Ellipsis size={22} /></IconButton></div></div>
-      <Progress context="room" /><Transport large />
-      {state.status === 'blocked' && !state.error && <div className="room-error" role="status">点击播放以继续</div>}
-      {state.error && <div className="room-error" role="alert"><p>{state.error}</p><button className="text-button" onClick={() => player.mode('compatible')}>使用兼容模式重试</button></div>}
-    </>} lyrics={<Lyrics key={track?.id} track={track} toolbarHost={lyricToolbar} />} />
-  </Modal>;
 }
