@@ -32,15 +32,15 @@ React 页面 / 通用控件
   └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
 ```
 
-开发环境由 Vite 挂载业务 API，并通过 `/api/navidrome/rest` 固定转发协议请求及白名单内的原生登录/歌手图片接口；旧 `/nd` 路由仅保留兼容。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址首次留空，成功后由 `src/storage/loginServer.ts` 保存安全的地址并在返回/刷新时回填；拒绝认证信息、查询、锚点及异常内容，浏览器存储不可用不阻断登录，不保存账号密码、不进入账号同步/备份。连接准备阶段只把当前站点、旧 `/nd` 和与固定 `NAVIDROME_UPSTREAM` 匹配的真实地址解析为受管连接；浏览器 `identity` 继续采用规范化后的输入地址以读取旧 localStorage/IndexedDB，恢复会话也保存该地址。未匹配配置的其他完整 Navidrome 地址仍直连，只保存本地。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+开发环境由 Vite 挂载业务 API，并通过 `/api/navidrome/rest` 转发协议请求及白名单内的原生登录/歌手图片接口；旧 `/nd` 路由仅保留兼容。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址首次留空，成功后由 `src/storage/loginServer.ts` 保存安全的地址并在返回/刷新时回填；拒绝认证信息、查询、锚点及异常内容，浏览器存储不可用不阻断登录，不保存账号密码、不进入账号同步/备份。连接准备阶段把当前站点、旧 `/nd` 和固定 `NAVIDROME_UPSTREAM` 映射到默认上游；其他地址由后端验证 Navidrome 后签发短时连接票据，登录成功再固定到加密会话。浏览器 `identity` 继续采用规范化输入地址以读取旧 localStorage/IndexedDB，恢复会话也保存该地址。私网与回环登记需部署者显式设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true`，固定上游始终兼容。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
 
-生产浏览器安全头及 Origin/HTTPS 判断集中在 `server/security.ts`；API handler 复用 `sameOriginRequest`，不能各自重新解析不可信 Origin。固定上游转发的头清理、原生登录/图片正文边界和路径白名单集中在 `server/navidromeProxy.ts`。只有受控 HTTPS 反向代理可启用 `TOOKU_TRUST_PROXY=true`，HSTS 另需 `TOOKU_HSTS=true`；部署调整后回归 Secure Cookie、单值 X-Forwarded-Proto、CSP 对直连 Navidrome 音频/封面/API 和画中画歌词的影响。
+生产浏览器安全头及 Origin/HTTPS 判断集中在 `server/security.ts`；API handler 复用 `sameOriginRequest`，不能各自重新解析不可信 Origin。受管上游转发的头清理、原生登录/图片正文边界和路径白名单集中在 `server/navidromeProxy.ts`，地址解析、私网策略与 DNS 固定集中在 `server/navidromeTarget.ts`。只有受控 HTTPS 反向代理可启用 `TOOKU_TRUST_PROXY=true`，HSTS 另需 `TOOKU_HSTS=true`；部署调整后回归 Secure Cookie、单值 X-Forwarded-Proto、CSP 对直连 Navidrome 音频/封面/API 和画中画歌词的影响。
 
 登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。8 秒超时，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
 
 `Login.tsx` 保持连接配置与凭据为两个独立 POST 表单，`username` / `password` 的 id/name 和标准 autocomplete 不随文案变更；服务器地址使用不含 login 字样的 `navidrome-server` 标识，关闭自动补全并加 `data-bwignore` 提示，继续支持旧 `/nd` 文本输入。提交以 FormData 和实际服务器输入值为准，兼容密码管理器未派发 React change 的填写，并在重绘前同步内存草稿；不新增凭据持久化。参考 [Bitwarden 字段识别说明](https://contributing.bitwarden.com/architecture/deep-dives/autofill/generating-fill-scripts/)，独立表单和明确的字段名是主要措施；[Bitwarden 当前源码](https://github.com/bitwarden/clients/blob/main/apps/browser/src/autofill/services/collect-autofill-content.service.ts) 中 `data-bwignore` 受用户选项控制，不应仅依赖它，也不使用隐藏诱饵或临时只读字段。真实扩展自动填写需人工验收。
 
-固定上游登录后浏览器使用 HttpOnly Cookie，`features/session/restoreSession.ts` 在挂载工作区前恢复登录、用户数据和暂停队列。`server/vault.ts` 在独立安全库中加密存储认证材料与服务密钥，`navidromeProxy.ts` 为当前 Cookie 会话注入上游认证，前端 URL 不携带 token/salt。数据接口附已验证 owner，媒体和推荐请求附当前账号以拒绝旧标签页串号。用户数据 `/api/tooku` 通过验证过的账号会话隔离；`/api/lyrics` 与 `/api/recommendations` 是同源限流服务；歌词不依赖登录，推荐使用保存密钥时必须验证当前 Tooku 会话，同源检查不等于账号授权。公开部署由外层入口控制访问，不能把它们改成任意代理。歌词的 SQLite 公共缓存与推荐的受限进程内存缓存均不进入账号备份。
+受管上游登录后浏览器使用 HttpOnly Cookie，`features/session/restoreSession.ts` 在挂载工作区前恢复登录、用户数据和暂停队列。`server/vault.ts` 在独立安全库中加密存储目标、认证材料与服务密钥，`navidromeProxy.ts` 从当前 Cookie 会话读取目标并注入上游认证，前端 URL 不携带 token/salt。数据接口附已验证 owner，媒体和推荐请求附当前账号；新客户端的媒体请求也附 owner 摘要，避免同用户名的另一服务器覆盖 Cookie 后旧标签页串号。用户数据 `/api/tooku` 通过验证过的账号会话隔离；`/api/lyrics` 与 `/api/recommendations` 是同源限流服务；歌词不依赖登录，推荐使用保存密钥时必须验证当前 Tooku 会话，同源检查不等于账号授权。公开部署由外层入口控制访问，不能把它们改成任意代理。歌词的 SQLite 公共缓存与推荐的受限进程内存缓存均不进入账号备份。
 
 ## 3. 源码与修改入口
 
@@ -81,7 +81,7 @@ React 页面 / 通用控件
 | 音乐推荐 | `src/features/recommendations/`、`RecommendationSettings.tsx`、`server/recommendations/`（含 `cache.ts` 受限内存缓存） | 左栏为你推荐与主页文字入口；Last.fm / AI 扩展及补量、多样性筛选、整批四平台外链核实；服务端按账号加密保存密钥，详见 [音乐推荐](16-music-recommendations.md) |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
 | 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 空端自动迁移/恢复、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
-| 后端与共享格式 | `server/api.ts`、`store.ts`、`vault.ts`、`index.ts`、`src/domain/userData.ts` | 固定上游认证、SQLite 原子 revision、限额与白名单 |
+| 后端与共享格式 | `server/api.ts`、`navidromeTarget.ts`、`store.ts`、`vault.ts`、`index.ts`、`src/domain/userData.ts` | 受管目标验证与会话绑定、SQLite 原子 revision、限额与白名单 |
 | 启动与部署 | `scripts/dev-server.mjs`、`scripts/port-selection.mjs`、`start-tooku.cmd`、`deploy/` | 有界端口回退、健康检查与复用现有服务 |
 
 新增功能优先扩展这些边界，不要求为了符合早期“目录建议”搬动整个仓库。已有文件包含较长 JSX，新代码优先写清晰的组件和函数；拆分只服务当前任务。
@@ -98,7 +98,7 @@ React 页面 / 通用控件
 - 设置不再提供默认浏览入口，主页始终以「全部」开始，旧 `views` 数据仅兼容保存、不再影响入口。主题色将默认（红色）、蓝色/紫色/绿色/橙色模板、自定义合并到统一 `Select`，菜单及当前值均带色块；自定义色块与六位色值共用边框，无效色值不写入偏好。歌词检测以红/绿/灰状态灯及文字表达异常/可用/未检测或停用，保留详情；音乐推荐显示「Last.fm 推荐」与「新歌手目标占比」，Last.fm / AI 可折叠且默认展开，Apple Music / Spotify 默认折叠，四项标题保留检测灯，检测中为黄灯。地区只显示代码，Apple 常用项为 `cn/us/jp/hk/tw`，Spotify 为 `US/JP/HK/TW/GB`；原配置中的其他合法地区只保留当前值，避免丢失设置。共用 Select 捕获外部滚动并更新定位，按钮离开视口时收起，忽略列表内部滚动；窗口 resize 和按钮尺寸变化也会更新位置，卸载清理监听。
 - 默认界面字体为思源黑体 Adobe Source Han Sans 2.005R 的原始 Pan-CJK WOFF2（简体中文默认字形，覆盖中/日/英），约 14.27 MB，构建后为带哈希、独立缓存的字体资源；使用 `font-display: swap`，不依赖第三方字体 CDN。原始字体及许可不修改，许可完整记录在 `public/fonts/source-han-sans/LICENSE.txt` 与第三方许可清单中。固定像素文字使用 `--ui-font-scale` 按 14 px 标准缩放，歌词的独立字号和视口自适应字号保留原有约束。基础字号提供 13/14/16/18 px，属于设备显示偏好，不同步到其他设备，也不进入账号导出/恢复；桌面歌词复用字体定义，控件文字随字号同步，歌词保持独立。
 - 字体菜单增加思源宋体（Adobe Source Han Serif 2.003R 原始 Pan-CJK WOFF2，约 19.75 MB）、系统黑体及系统宋体；两款思源字体均按 OFL 1.1 附完整许可证，不分发系统字体。字体资源仅在匹配的字体被实际使用时请求，系统字体直接使用设备字体；不通过菜单预览同时加载全部字体。字体选择与字号一起保存在 `tooku-display`，旧版只有字号的设备配置自动保留字号并默认思源黑体。
-- 固定上游账号数据以 SQLite 为主，设置日常仅显示保存状态、统一导出和恢复。迁移冲突、409 或未知结果读回后才出现版本比较，继续保护旧缓存和导入前副本。未匹配部署配置的直连模式只保存在本机，也能导出/恢复。恢复不接管当前音频，queue/history 的保存保护保持到下一次登录。
+- 受管上游账号数据以 SQLite 为主，设置日常仅显示保存状态、统一导出和恢复。迁移冲突、409 或未知结果读回后才出现版本比较，继续保护旧缓存和导入前副本。未通过后端策略或验证的直连模式只保存在本机，也能导出/恢复。恢复不接管当前音频，queue/history 的保存保护保持到下一次登录。
 - 独立歌曲页已取消，旧 `/songs` 兼容地址转到 `/search?type=songs`。主页筛选为全部、歌单、专辑、歌手；歌手卡片复用 `components/ArtistGrid.tsx` 并进入现有歌手详情页。主页不显示底部曲库名与“浏览所有歌曲”小字。综合搜索保留歌曲分类，不再读取旧默认视图配置，也不改写这部分存储数据。
 - 专辑列表使用 `MusicApi.allAlbums`，自动按最多 500 张顺序读取，读完统一显示；不监听滚动追加，也不使用 `content-visibility` 跳过卡片绘制，以免滚动时估算高度闪动。请求可取消，按 ID 合并并在没有新 ID 时停止；失败显示统一重试，后台刷新失败保留上次完整结果。随机发现先按稳定顺序完整读取再打乱，其他排序由服务端处理。主页仍可使用小批量 `albums`。专辑/歌手列表各自提供每行 3/4/5/6/8 个，保存在 `tooku-display.gridColumns`，不进入账号同步和备份；按内容容器宽度限制实际列数，歌手详情专辑区沿用专辑选择。手机固定两列并隐藏每行数量菜单，不改写桌面列数。
 - 歌手列表保持圆形卡片；详情统一为柔化背景、方形前景图片、大号歌手名、播放/随机/收藏和专辑区。旧版私人图片仍优先展示；管理员原生会话可悬停/键盘聚焦显示“选择照片”，点击打开文件选择与共享裁剪弹窗。新图由 `MusicApi.saveArtistImage` 上传 Navidrome，读回核实后清除该歌手的旧私人覆盖；不批量迁移，不写 Tooku 账号文档。右键可恢复服务器默认、重新读取或移除旧私人图片。写入结果未知时停止写入，先“重新读取”再人工核实。歌手图使用 `getArtist` 明确返回的 `coverArt` 经 `MusicApi.coverUrl` 生成图片地址；缺图/图片失败依次尝试该歌手本库专辑封面、主题渐变；专辑封面以方形主体和柔化横幅展示，不作为真实歌手照。封面按稳定专辑 ID 选择，排除明确属于其他专辑歌手的记录，所有图片失败后停止重试。播放和专辑区使用纯色背景。所有路由的主浏览区隐藏原生滚动条，由 `ContentScrollbar` 在右缘叠加无箭头、透明轨道和 8 px 半透明滑块，贴边且悬停变亮，不占内容宽度，也不替换主滚动容器；左栏与播放侧栏复用 `ScrollArea`，弹窗、菜单、横向表格使用全站原生回退样式；支持轨道点击、拖动、方向键、翻页键及 Home/End。Navidrome 的图片源取决于服务端本地图与外部元数据设置，当前页面展示旧版私人图片与 Navidrome 图片，管理员可手动上传到 Navidrome，不存图片认证 URL；联网来源仅通过独立脚本试验，尚未自动接入页面。播放仅在主动点击后读取本库歌手专辑，全部成功后统一交给 `player`，切页/切库取消未完成操作。
@@ -159,7 +159,7 @@ React 页面 / 通用控件
 | 查询结果 | TanStack Query 内存 | 按身份与相关库隔离，不等于持久化服务端数据 |
 | 推荐普通设置、最近一批及有限避重元数据 | SQLite 账号文档 / IndexedDB sync；`tooku-recommendations` 本机回退 | 服务密钥在独立安全库，平台链接与目录缓存不进账号文档 |
 | 推荐目录结果 / Spotify 临时令牌 | `server/recommendations/cache.ts` 受限进程内存 | 按相关凭据/地区隔离并过期，不落库；取消和关闭清理规则见 16 号文档 |
-| 密码、认证材料与服务密钥 | 密码不保存；认证材料/密钥经 `server/vault.ts` 加密进入独立安全库 | 固定上游持久会话；账号备份不含凭据，直连模式仍仅会话内存 |
+| 密码、认证材料与服务密钥 | 密码不保存；目标、认证材料/密钥经 `server/vault.ts` 加密进入独立安全库 | 受管上游持久会话；账号备份不含凭据，未登记直连模式仍仅会话内存 |
 
 当前 `MusicApi.identity` 使用 `${base}|${username}`。更换访问 origin、代理基址、账号写法或身份规则，可能让旧数据不可见；不能通过简单更名身份来解决串号问题。
 

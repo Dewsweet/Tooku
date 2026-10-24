@@ -19,6 +19,7 @@ services:
       - "${TOOKU_BIND_ADDRESS:-127.0.0.1}:${TOOKU_HTTP_PORT:-8080}:8080"
     environment:
       NAVIDROME_UPSTREAM: "${NAVIDROME_UPSTREAM:-http://host.docker.internal:44533}"
+      TOOKU_ALLOW_PRIVATE_NAVIDROME: "${TOOKU_ALLOW_PRIVATE_NAVIDROME:-false}"
       TOOKU_SECRET_KEY_FILE: /run/tooku-secret/tooku-secret.key
       TOOKU_TRUST_PROXY: "${TOOKU_TRUST_PROXY:-false}"
       TOOKU_COOKIE_SECURE: "${TOOKU_COOKIE_SECURE:-false}"

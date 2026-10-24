@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { testServerConnection } from '../src/api/client';
+import { MusicApi, testServerConnection } from '../src/api/client';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function response(body: Record<string, unknown>, status = 200) {
@@ -34,6 +34,39 @@ it('uses the same-origin proxy alias without sending credentials', async () => {
   const fetch = vi.fn((...args: [string, RequestInit?]) => Promise.resolve(args[0] === '/api/tooku/connection' ? connection(true) : response({ status: 'failed', error: { code: 10 } }))); vi.stubGlobal('fetch', fetch);
   await testServerConnection(window.location.origin);
   expect(new URL(fetch.mock.calls[1][0]).pathname).toBe('/api/navidrome/rest/ping.view');
+});
+
+it('uses an opaque registration ticket for a newly verified managed server', async () => {
+  const connectionId = 'a'.repeat(43);
+  const fetch = vi.fn((...args: [string, RequestInit?]) => Promise.resolve(args[0] === '/api/tooku/connection'
+    ? new Response(JSON.stringify({ managed: true, connectionId }), { headers: { 'Content-Type': 'application/json' } })
+    : response({ status: 'ok', type: 'navidrome' })));
+  vi.stubGlobal('fetch', fetch);
+  await testServerConnection('https://music.example.test');
+  expect(new URL(fetch.mock.calls[1][0]).pathname).toBe('/api/navidrome/rest/ping.view');
+  expect(fetch.mock.calls[1][1]?.headers).toEqual({ 'X-Tooku-Connection': connectionId });
+});
+
+it('carries the verified target ticket through login into the persistent session', async () => {
+  const connectionId = 'b'.repeat(43); const calls: [string, RequestInit?][] = [];
+  const fetch = vi.fn(async (...args: [string, RequestInit?]) => {
+    calls.push(args); const [url] = args;
+    if (url === '/api/tooku/connection') return new Response(JSON.stringify({ managed: true, connectionId }));
+    if (url === '/api/tooku/session') return new Response(JSON.stringify({ owner: 'owner-1', persistent: true }));
+    if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 'native-token', isAdmin: true }));
+    if (url.includes('getOpenSubsonicExtensions')) return response({ status: 'ok', openSubsonicExtensions: [] });
+    return response({ status: 'ok', type: 'navidrome', serverVersion: 'fixture' });
+  });
+  vi.stubGlobal('fetch', fetch);
+  const api = new MusicApi('https://music.example.test', 'Alice', 'synthetic-password', 'a'.repeat(32));
+  await api.prepare(); await api.connect('synthetic-password'); await api.userData();
+  expect(api.managed).toBe(true); expect(api.persistent).toBe(true);
+  const session = calls.find(([url]) => url === '/api/tooku/session');
+  expect(JSON.parse(String(session?.[1]?.body))).toMatchObject({ clientBase: 'https://music.example.test', connectionId, nativeToken: 'native-token', admin: true });
+  for (const [, options] of calls.filter(([url]) => url.startsWith(`${window.location.origin}/api/navidrome`))) {
+    expect(options?.headers).toMatchObject({ 'X-Tooku-Connection': connectionId });
+  }
+  api.dispose();
 });
 
 it.each(['', 'not-a-url', 'ftp://fixture.example.test', 'https://user:synthetic@fixture.example.test', 'https://fixture.example.test?token=synthetic'])('rejects invalid input before sending a request: %s', async (input) => {

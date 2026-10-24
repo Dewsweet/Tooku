@@ -17,6 +17,7 @@ Navidrome 与 Tooku 位于同一个已有 Docker 网络时，使用叠加文件�
 ```powershell
 $env:NAVIDROME_NETWORK = 'media'
 $env:NAVIDROME_UPSTREAM = 'http://navidrome:4533'
+$env:TOOKU_ALLOW_PRIVATE_NAVIDROME = 'true'
 docker compose -f compose.yaml -f deploy/compose.same-network.yaml up --build -d
 ```
 
@@ -27,7 +28,7 @@ $env:NAVIDROME_UPSTREAM = 'https://music.example.com'
 docker compose up --build -d
 ```
 
-地址可包含 Navidrome 子路径，但不能包含用户名、密码、query、hash 或尾斜杠。当前版本仍只有部署者配置的这个固定上游属于受管服务；登录页填写的其他地址是浏览器直连，账号数据不会写入 Tooku 服务端。
+地址可包含 Navidrome 子路径，但不能包含用户名、密码、query、hash 或尾斜杠。`NAVIDROME_UPSTREAM` 始终作为默认和兼容上游。登录页登记其他公网 HTTP(S) Navidrome 无需额外开关；若还要登记局域网、Docker 内网或回环地址，显式设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true`。该开关允许 Tooku 服务进程访问私网地址，应只在可信用户可访问的部署中启用；链路本地、云元数据地址、未识别服务和重定向仍会被拒绝。
 
 ## 数据、密钥与备份
 

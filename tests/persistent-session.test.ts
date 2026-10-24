@@ -51,10 +51,46 @@ describe('persistent browser sessions and encrypted credentials', () => {
     const resolve = (server: string) => app.call('connection', 'POST', { server });
     expect(await (await resolve(upstream)).json()).toEqual({ managed: true });
     expect(await (await resolve('http://localhost:44533')).json()).toEqual({ managed: true });
-    expect(await (await resolve('https://other.example.test')).json()).toEqual({ managed: false });
+    expect((await resolve('https://other.example.test')).status).toBe(502);
     const login = await app.login('Alice', upstream);
     expect(await (await app.call('session', 'GET', undefined, login.cookie)).json()).toMatchObject({ username: 'Alice', clientBase: upstream, persistent: true });
     expect((await app.call('session', 'POST', { ...login.auth, persistent: true, clientBase: 'https://other.example.test' })).status).toBe(400);
+  });
+  it('registers a verified server with a short connection ticket and binds proxy, data and playback to its session', async () => {
+    const seen: URL[] = [];
+    const remote = await listen(createServer(async (req, res) => {
+      const url = new URL(req.url!, 'http://fixture'); seen.push(url);
+      if (url.pathname === '/rest/ping.view') {
+        res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ 'subsonic-response': { status: 'ok', type: 'navidrome', serverVersion: 'fixture' } })); return;
+      }
+      if (url.pathname === '/auth/login') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ token: 'native', isAdmin: false })); return; }
+      if (url.pathname === '/rest/stream.view') { res.setHeader('Content-Type', 'audio/mpeg'); res.end('remote-audio'); return; }
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ 'subsonic-response': { status: 'ok', song: { id: 'remote-song' } } }));
+    }));
+    const verifiedTargets: string[] = [];
+    const verify = vi.fn(async ({ u }: { u: string }, target: string) => { verifiedTargets.push(target); return u.toLowerCase(); });
+    const app = await fixture({ filename: ':memory:', upstream: 'http://127.0.0.1:1', allowPrivateServers: true, verify });
+    const fixed = await app.login('Alice');
+    const registration = await app.call('connection', 'POST', { server: remote.origin });
+    expect(registration.status).toBe(200);
+    const connection = await registration.json() as { managed: boolean; connectionId: string };
+    expect(connection.managed).toBe(true); expect(connection.connectionId).toMatch(/^[\w-]{43}$/);
+    expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view`, { headers: { 'X-Tooku-Connection': connection.connectionId } })).status).toBe(200);
+    expect((await fetch(`${app.origin}/api/navidrome/rest/getSong.view?id=remote-song`, { headers: { 'X-Tooku-Connection': connection.connectionId } })).status).toBe(403);
+    const auth = { u: 'Alice', t: randomBytes(16).toString('hex'), s: randomBytes(16).toString('hex') };
+    expect((await app.call('session', 'POST', { ...auth, persistent: true, clientBase: remote.origin })).status).toBe(400);
+    const login = await app.call('session', 'POST', { ...auth, persistent: true, clientBase: remote.origin, connectionId: connection.connectionId });
+    expect(login.status).toBe(200); const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    expect((await login.clone().json() as { owner: string }).owner).not.toBe(fixed.info.owner);
+    expect(verifiedTargets).toContain(remote.origin);
+    const restored = await (await app.call('session', 'GET', undefined, cookie)).json();
+    expect(restored).toMatchObject({ username: 'Alice', clientBase: remote.origin, persistent: true });
+    const song = await fetch(`${app.origin}/api/navidrome/rest/getSong.view?id=remote-song&tookuSession=1&tookuUser=Alice`, { headers: { Cookie: cookie } });
+    expect(song.status).toBe(200); expect(await song.text()).toContain('remote-song');
+    const grant = await (await app.call('playback', 'POST', { id: 'remote-song', mode: 'original' }, cookie)).json() as { url: string };
+    const audio = await fetch(`${app.origin}${grant.url}`, { headers: { Cookie: cookie } });
+    expect(audio.status).toBe(200); expect(await audio.text()).toBe('remote-audio');
+    expect(seen.some((url) => url.pathname === '/rest/stream.view' && url.searchParams.get('id') === 'remote-song')).toBe(true);
   });
   it('survives a server restart, revalidates upstream auth, keeps secrets server-side and revokes logout', async () => {
     const dir = directory(); const filename = join(dir, 'tooku.sqlite');
@@ -151,6 +187,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     }
     expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1`)).status).toBe(401);
     expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1&tookuUser=another-user`, { headers: { Cookie: login.cookie } })).status).toBe(401);
+    expect((await fetch(`${app.origin}/api/navidrome/rest/ping.view?tookuSession=1&tookuUser=Alice&tookuOwner=another-server`, { headers: { Cookie: login.cookie } })).status).toBe(401);
     expect((await fetch(`${app.origin}/api/navidrome/api/artist/artist?tookuSession=1&tookuUser=Alice`, { headers: { Cookie: login.cookie } })).status).toBe(200);
     expect(seen[2].headers['x-nd-authorization']).toBe('Bearer synthetic-native-token');
     expect((await fetch(`${app.origin}/api/navidrome/api/artist/artist/image?tookuSession=1&tookuUser=Alice`, { method: 'POST', headers: { Cookie: login.cookie, 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(415);

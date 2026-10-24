@@ -1,7 +1,7 @@
-import { request as httpRequest, type IncomingMessage, type ServerResponse, type OutgoingHttpHeaders } from 'node:http';
-import { request as httpsRequest } from 'node:https';
+import type { IncomingMessage, ServerResponse, OutgoingHttpHeaders } from 'node:http';
 import type { createUserApi } from './api.ts';
 import { DataError } from './store.ts';
+import { requestResolvedTarget } from './navidromeTarget.ts';
 
 const hopByHopHeaders = [
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
@@ -19,7 +19,7 @@ export function proxyRequestHeaders(req: IncomingMessage, host: string, preserve
     ...hopByHopHeaders,
     ...connectionHeaders(req.headers.connection),
     'authorization', 'cookie', 'forwarded', 'x-forwarded-for', 'x-forwarded-host',
-    'x-forwarded-port', 'x-forwarded-proto', 'x-real-ip', 'x-tooku-owner', 'x-tooku-user',
+    'x-forwarded-port', 'x-forwarded-proto', 'x-real-ip', 'x-tooku-owner', 'x-tooku-user', 'x-tooku-connection',
   ];
   if (!preserveNativeAuth) remove.push('x-nd-authorization');
   for (const name of remove) delete headers[name];
@@ -72,14 +72,21 @@ export function createNavidromeProxy(upstream: string, users: ReturnType<typeof 
       const relative = requestUrl.slice(prefix.length);
       const policy = uploadPolicy(req, relative.split('?')[0]);
       if (policy.status) { res.writeHead(policy.status); res.end(); return; }
-      const target = new URL(`${upstream}${relative}`);
       // This public marker opts into the Cookie session. Login and anonymous probes must not inherit an older account.
-      const needsSession = target.searchParams.has('tookuSession');
+      const requested = new URL(relative, 'http://tooku.invalid');
+      const needsSession = requested.searchParams.has('tookuSession');
       const session = needsSession ? await users.authenticate(req) : undefined;
       if (needsSession && !session) { res.writeHead(401); res.end(); return; }
-      if (session && target.searchParams.has('tookuUser') && target.searchParams.get('tookuUser') !== session.auth.u) { res.writeHead(401); res.end(); return; }
+      if (session && requested.searchParams.has('tookuUser') && requested.searchParams.get('tookuUser') !== session.auth.u) { res.writeHead(401); res.end(); return; }
+      if (session && requested.searchParams.has('tookuOwner') && requested.searchParams.get('tookuOwner') !== session.owner) { res.writeHead(401); res.end(); return; }
+      const pendingTarget = session ? undefined : users.connectionTarget(req);
+      if (req.headers['x-tooku-connection'] && !pendingTarget) { res.writeHead(401); res.end(); return; }
+      if (pendingTarget && !['/rest/ping.view', '/rest/getOpenSubsonicExtensions.view', '/auth/login'].includes(requested.pathname)) { res.writeHead(403); res.end(); return; }
+      const checked = await users.resolveUpstream(session?.upstream ?? pendingTarget ?? upstream);
+      const target = new URL(`${checked.base}${relative}`);
       target.searchParams.delete('tookuSession');
       target.searchParams.delete('tookuUser');
+      target.searchParams.delete('tookuOwner');
       const nativeRequest = relative.startsWith('/api/');
       const headers = proxyRequestHeaders(req, target.host, nativeRequest && !session);
       if (session && relative.startsWith('/rest/')) {
@@ -88,7 +95,7 @@ export function createNavidromeProxy(upstream: string, users: ReturnType<typeof 
       if (session && relative.startsWith('/api/')) {
         headers['x-nd-authorization'] = `Bearer ${session.nativeToken}`;
       }
-      const upstreamRequest = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, { method: req.method, headers }, (reply) => {
+      const upstreamRequest = requestResolvedTarget(checked, target, { method: req.method, headers }, (reply) => {
         const replyHeaders = proxyResponseHeaders(reply.headers);
         const refreshed = reply.headers['x-nd-authorization'];
         if (session && typeof refreshed === 'string' && refreshed.length <= 8192) users.refreshNativeToken(session.token, refreshed.replace(/^Bearer\s+/i, ''));
@@ -113,7 +120,7 @@ export function createNavidromeProxy(upstream: string, users: ReturnType<typeof 
   };
 }
 
-export function createPlaybackProxy(upstream: string, users: ReturnType<typeof createUserApi>) {
+export function createPlaybackProxy(_upstream: string, users: ReturnType<typeof createUserApi>) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const path = req.url?.split('?')[0] ?? '';
     if (!path.startsWith('/api/tooku-stream/')) { next(); return; }
@@ -124,10 +131,11 @@ export function createPlaybackProxy(upstream: string, users: ReturnType<typeof c
     let access: Awaited<ReturnType<typeof users.authorizePlayback>> | undefined;
     try {
       access = await users.authorizePlayback(req, token);
-      const target = new URL(`${upstream}/rest/stream.view`);
+      const checked = await users.resolveUpstream(access.upstream);
+      const target = new URL(`${checked.base}/rest/stream.view`);
       for (const [key, value] of Object.entries({ ...access.auth, id: access.id, v: '1.16.1', c: 'Tooku', ...(access.mode === 'compatible' ? { format: 'mp3', maxBitRate: '320' } : {}) })) target.searchParams.set(key, value);
       const headers = proxyRequestHeaders(req, target.host, false);
-      const upstreamRequest = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, { method: req.method, headers }, (reply) => {
+      const upstreamRequest = requestResolvedTarget(checked, target, { method: req.method, headers }, (reply) => {
         const replyHeaders = proxyResponseHeaders(reply.headers);
         delete replyHeaders.location; delete replyHeaders['content-location']; delete replyHeaders['content-disposition'];
         // Keep the grant opaque to extensions that classify responses solely by media MIME.

@@ -6,6 +6,7 @@ import { isUserData, maxUserDataBytes } from '../src/domain/userData.ts';
 import { emptyRecommendationCredentials, type RecommendationCredentials } from '../src/domain/recommendations.ts';
 import { CredentialVault, sessionLifetime } from './vault.ts';
 import { requestAllowsSecureCookie, sameOriginRequest } from './security.ts';
+import { normalizeNavidromeTarget, requestResolvedTarget, resolveNavidromeTarget, type ResolvedNavidromeTarget } from './navidromeTarget.ts';
 
 const cookieName = 'tooku-session';
 export const playbackGrantLifetime = 4 * 60 * 60 * 1000;
@@ -32,11 +33,7 @@ function setCookie(req: IncomingMessage, res: ServerResponse, token: string, sec
 }
 
 const object = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
-export function upstreamUrl(input: string) {
-  const url = new URL(input);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Invalid NAVIDROME_UPSTREAM');
-  return url.href.replace(/\/+$/, '');
-}
+export function upstreamUrl(input: string) { try { return normalizeNavidromeTarget(input); } catch { throw new Error('Invalid NAVIDROME_UPSTREAM'); } }
 function normalizedClientBase(input: unknown) {
   if (typeof input !== 'string' || input.length > 2048) return;
   try {
@@ -76,7 +73,7 @@ async function body(req: IncomingMessage, limit = maxUserDataBytes + 4096): Prom
   if (size > limit) throw new DataError(413, '上传数据过大。');
   try { return object(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { throw new DataError(400, 'JSON 格式无效。'); }
 }
-export function createUserApi(options: { upstream?: string; filename?: string; securityFilename?: string; keyFile?: string; verify?: (auth: { u: string; t: string; s: string }) => Promise<string>; now?: () => number } = {}) {
+export function createUserApi(options: { upstream?: string; filename?: string; securityFilename?: string; keyFile?: string; verify?: (auth: { u: string; t: string; s: string }, upstream: string) => Promise<string>; resolveTarget?: (upstream: string, allowPrivate: boolean) => Promise<ResolvedNavidromeTarget>; allowPrivateServers?: boolean; now?: () => number } = {}) {
   const upstream = upstreamUrl(options.upstream ?? process.env.NAVIDROME_UPSTREAM ?? 'http://127.0.0.1:44533');
   const filename = options.filename ?? resolve(process.env.TOOKU_DATA_DIR || '.local/data', 'tooku.sqlite');
   const vault = new CredentialVault(options.securityFilename ?? (filename === ':memory:' ? ':memory:' : resolve(dirname(filename), 'tooku-security.sqlite')), options.keyFile ?? process.env.TOOKU_SECRET_KEY_FILE);
@@ -84,6 +81,8 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
   const now = options.now ?? Date.now;
   const sessions = new Map<string, { owner: string; expires: number }>();
   const attempts = new Map<string, { count: number; reset: number }>();
+  const connectionAttempts = new Map<string, { count: number; reset: number }>();
+  const connections = new Map<string, { upstream: string; expires: number }>();
   const playbackGrants = new Map<string, PlaybackGrant>();
   const digest = (value: string) => createHash('sha256').update(value).digest('hex');
   const revokeGrant = (key: string, grant: PlaybackGrant) => {
@@ -100,33 +99,48 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
     vault.sweep(now());
     for (const [key, s] of sessions) if (s.expires <= now()) sessions.delete(key);
     for (const [key, a] of attempts) if (a.reset <= now()) attempts.delete(key);
+    for (const [key, a] of connectionAttempts) if (a.reset <= now()) connectionAttempts.delete(key);
     for (const [key, grant] of playbackGrants) if (grant.expiresAt <= now()) revokeGrant(key, grant);
+    for (const [key, connection] of connections) if (connection.expires <= now()) connections.delete(key);
   }, 60000); sweep.unref();
-  async function verify(auth: { u: string; t: string; s: string }): Promise<string> {
-    if (options.verify) return options.verify(auth);
-    // Fixed configured upstream only. Form bodies keep credentials out of URLs/logs.
-    const response = await fetch(`${upstream}/rest/getUser.view`, {
-      method: 'POST', body: new URLSearchParams({ ...auth, username: auth.u, v: '1.16.1', c: 'Tooku', f: 'json' }),
-      redirect: 'error', signal: AbortSignal.timeout(10000),
+  const allowPrivateServers = options.allowPrivateServers ?? process.env.TOOKU_ALLOW_PRIVATE_NAVIDROME === 'true';
+  const resolveTarget = options.resolveTarget ?? resolveNavidromeTarget;
+  const trustedTarget = (target: string) => sameConfiguredServer(target, upstream);
+  async function resolved(target: string) { return resolveTarget(target, trustedTarget(target) || allowPrivateServers); }
+  async function protocolRequest(target: string, method: 'ping' | 'getUser', auth?: { u: string; t: string; s: string }) {
+    const checked = await resolved(target); const url = new URL(`${checked.base}/rest/${method}.view`);
+    const parameters = new URLSearchParams({ ...(auth ?? {}), ...(auth ? { username: auth.u } : {}), v: '1.16.1', c: 'Tooku', f: 'json' });
+    return await new Promise<Record<string, unknown>>((resolveRequest, reject) => {
+      const request = requestResolvedTarget(checked, url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(parameters.toString()) } }, (response) => {
+        const chunks: Buffer[] = []; let size = 0;
+        response.on('data', (chunk: Buffer) => { size += chunk.length; if (size <= 1024 * 1024) chunks.push(chunk); else request.destroy(); });
+        response.on('end', () => {
+          if ((response.statusCode ?? 502) >= 400 || size > 1024 * 1024) { reject(new DataError(502, '无法验证音乐服务。')); return; }
+          try { resolveRequest(object(object(JSON.parse(Buffer.concat(chunks).toString('utf8')))['subsonic-response'])); }
+          catch { reject(new DataError(502, '未识别到 Navidrome 服务。')); }
+        });
+      });
+      request.setTimeout(10000, () => request.destroy()); request.on('error', () => reject(new DataError(502, '无法连接音乐服务。'))); request.end(parameters.toString());
     });
-    if (!response.ok) throw new DataError(502, '无法验证音乐服务账号。');
-    const result = object(object(await response.json())['subsonic-response']);
+  }
+  async function verify(auth: { u: string; t: string; s: string }, target = upstream): Promise<string> {
+    if (options.verify) return options.verify(auth, target);
+    const result = await protocolRequest(target, 'getUser', auth);
     if (result.status !== 'ok') throw new DataError(401, '音乐服务认证未通过，请重新登录。');
     const username = object(result.user).username;
     if (typeof username !== 'string' || !username || username.length > 256) throw new DataError(502, '音乐服务未返回有效账号。');
     return username;
   }
-  const ownerFor = (username: string) => createHash('sha256').update(JSON.stringify([upstream, username])).digest('hex');
+  const ownerFor = (target: string, username: string) => createHash('sha256').update(JSON.stringify([target, username])).digest('hex');
   async function authenticate(req: IncomingMessage, force = false) {
     assertSameOrigin(req);
     const token = sessionCookie(req);
     const session = vault.session(token, now());
     if (!session) return;
-    if (session.upstream !== upstream) { revokePlaybackSession(token); vault.deleteSession(token); return; }
     if (req.headers['x-tooku-owner'] && req.headers['x-tooku-owner'] !== session.owner || req.headers['x-tooku-user'] && req.headers['x-tooku-user'] !== session.auth.u) throw new DataError(401, '浏览器登录账号已变化，请重新登录。');
     if (force || now() - session.verifiedAt > 15 * 60000) {
       try {
-        if (ownerFor(await verify(session.auth)) !== session.owner) throw new DataError(401, '账号已变化，请重新登录。');
+        if (ownerFor(session.upstream, await verify(session.auth, session.upstream)) !== session.owner) throw new DataError(401, '账号已变化，请重新登录。');
         session.verifiedAt = now(); vault.updateSession(token, session);
       } catch (error) { if (error instanceof DataError && error.status === 401) { revokePlaybackSession(token); vault.deleteSession(token); } throw error; }
     }
@@ -148,8 +162,21 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       assertSameOrigin(req);
       if (path === '/api/tooku/health' && req.method === 'GET') { send(200, { app: 'tooku', persistence: 1 }); return; }
       if (path === '/api/tooku/connection' && req.method === 'POST') {
+        const ip = req.socket.remoteAddress ?? '';
+        let rate = connectionAttempts.get(ip); if (!rate || rate.reset <= now()) { rate = { count: 0, reset: now() + 60000 }; connectionAttempts.set(ip, rate); }
+        if (++rate.count > 30 || connectionAttempts.size > 10000) throw new DataError(429, '连接请求过于频繁，请稍后重试。');
         const data = await body(req);
-        send(200, { managed: isManagedBase(req, data.server, upstream) }); return;
+        const candidate = normalizedClientBase(data.server);
+        if (!candidate) throw new DataError(400, '服务器地址无效。');
+        if (isManagedBase(req, candidate, upstream)) { send(200, { managed: true }); return; }
+        const result = await protocolRequest(candidate, 'ping');
+        const errorCode = Number(object(result.error).code);
+        const authenticationRequired = result.status === 'failed' && [10, 40, 41, 42, 43, 44, 50].includes(errorCode);
+        if (result.status !== 'ok' && !authenticationRequired) throw new DataError(502, '未识别到 Navidrome 服务。');
+        if (connections.size >= 10000) throw new DataError(429, '连接请求过于频繁，请稍后重试。');
+        const connectionId = randomBytes(32).toString('base64url');
+        connections.set(digest(connectionId), { upstream: candidate, expires: now() + 10 * 60000 });
+        send(200, { managed: true, connectionId }); return;
       }
       if (path === '/api/tooku/session' && req.method === 'POST') {
         const ip = req.socket.remoteAddress ?? '';
@@ -157,13 +184,20 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
         if (++rate.count > 15 || sessions.size >= 10000 || attempts.size > 10000) throw new DataError(429, '请求过于频繁，请稍后重试。');
         const data = await body(req);
         if (typeof data.u !== 'string' || !data.u || data.u.length > 256 || typeof data.t !== 'string' || !/^[a-f0-9]{32}$/i.test(data.t) || typeof data.s !== 'string' || !/^[a-f0-9]{16,128}$/i.test(data.s)) throw new DataError(400, '认证参数无效。');
-        const username = await verify({ u: data.u, t: data.t, s: data.s });
-        const owner = ownerFor(username);
+        const clientBase = normalizedClientBase(data.clientBase);
+        let sessionUpstream = upstream;
+        const connectionId = typeof data.connectionId === 'string' ? data.connectionId : '';
+        if (clientBase && !isManagedBase(req, clientBase, upstream)) {
+          const pending = /^[\w-]{43}$/.test(connectionId) ? connections.get(digest(connectionId)) : undefined;
+          if (!pending || pending.expires <= now() || pending.upstream !== clientBase) throw new DataError(400, '服务器连接已过期，请重新检测。');
+          sessionUpstream = pending.upstream;
+        }
+        const username = await verify({ u: data.u, t: data.t, s: data.s }, sessionUpstream);
+        const owner = ownerFor(sessionUpstream, username);
         if (data.persistent === true) {
-          const clientBase = normalizedClientBase(data.clientBase);
-          if (clientBase && !isManagedBase(req, clientBase, upstream)) throw new DataError(400, '服务地址与 Tooku 配置不一致。');
           const old = sessionCookie(req); revokePlaybackSession(old); const expires = now() + sessionLifetime;
-          const token = vault.createSession({ owner, upstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
+          const token = vault.createSession({ owner, upstream: sessionUpstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
+          if (connectionId) connections.delete(digest(connectionId));
           setCookie(req, res, token, sessionLifetime / 1000);
           send(200, { owner, username: data.u, admin: data.admin === true, persistent: true, clientBase }); return;
         }
@@ -230,12 +264,19 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
     grant.requests++; grant.active++;
     let aborter: (() => void) | undefined; let released = false;
     return {
-      id: grant.id, mode: grant.mode, expiresAt: grant.expiresAt, auth: session.auth,
+      id: grant.id, mode: grant.mode, expiresAt: grant.expiresAt, auth: session.auth, upstream: session.upstream,
       bindAbort(value: () => void) { aborter = value; grant.aborters.add(value); },
       release() { if (released) return; released = true; grant.active = Math.max(0, grant.active - 1); if (aborter) grant.aborters.delete(aborter); },
     };
   }
   return { handle, authenticate, authorizePlayback, recommendationCredentials,
+    async resolveUpstream(target: string) { return resolved(target); },
+    connectionTarget(req: IncomingMessage) {
+      const token = req.headers['x-tooku-connection'];
+      if (typeof token !== 'string' || !/^[\w-]{43}$/.test(token)) return;
+      const connection = connections.get(digest(token));
+      return connection && connection.expires > now() ? connection.upstream : undefined;
+    },
     refreshNativeToken(token: string, value: string) { const session = vault.session(token, now()); if (session) { session.nativeToken = value; vault.updateSession(token, session); } },
-    close() { clearInterval(sweep); sessions.clear(); for (const [key, grant] of playbackGrants) revokeGrant(key, grant); store.close(); vault.close(); } };
+    close() { clearInterval(sweep); sessions.clear(); connections.clear(); attempts.clear(); connectionAttempts.clear(); for (const [key, grant] of playbackGrants) revokeGrant(key, grant); store.close(); vault.close(); } };
 }

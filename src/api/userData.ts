@@ -30,8 +30,8 @@ export class UserDataApi {
     }
     try { return await response.json(); } catch { throw new UserDataError('同步接口不可用，本地数据仍保留。'); }
   }
-  async connect(auth: { u: string; t: string; s: string }, native?: { nativeToken: string; admin: boolean }, clientBase?: string) {
-    const session = await this.request('session', 'POST', { ...auth, ...native, persistent: true, clientBase });
+  async connect(auth: { u: string; t: string; s: string }, native?: { nativeToken: string; admin: boolean }, clientBase?: string, connectionId?: string) {
+    const session = await this.request('session', 'POST', { ...auth, ...native, persistent: true, clientBase, connectionId });
     if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string') throw new UserDataError('同步接口不可用。');
     if ('token' in session && typeof session.token === 'string') this.#token = session.token;
     this.owner = session.owner;

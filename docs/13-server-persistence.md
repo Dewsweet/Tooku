@@ -1,6 +1,6 @@
 # Tooku 服务端用户数据
 
-更新日期：2026-10-23。此文描述当前实现，替代早期文档中“尚无后端”的描述。
+更新日期：2026-10-24。此文描述当前实现，替代早期文档中“尚无后端”的描述。
 
 ## 当前存储方式
 
@@ -10,11 +10,15 @@
 
 Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm 依赖。音乐文件、歌曲元信息、收藏、歌单名称/简介/曲序继续由 Navidrome 管理。Tooku SQLite 保存一个版本化账号文档，包含头像、歌单自定义封面、歌手自定义图片、目录与排序、曲库视图、外观/歌词/布局偏好、最后保存的队列和最多 200 条历史。
 
-客户端先通过同源 `/api/tooku/connection` 判断登录地址是否对应部署配置的固定上游。当前 Tooku 站点、旧 `/nd`、正式 `/api/navidrome` 以及与 `NAVIDROME_UPSTREAM` 匹配的真实地址均建立同步，并统一通过 `/api/navidrome` 传输；`/nd` 只保留旧版本兼容。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；浏览器 `MusicApi.identity` 仍按规范化后的输入地址生成，因此直接填写 `http://127.0.0.1:44533` 能读取此前该身份下的 localStorage/IndexedDB。恢复会话会取回这份地址；旧会话未保存地址时按原 `/nd` 身份恢复。「测试连接」只做地址解析和匿名 ping，不创建会话或同步数据。后端只验证 `NAVIDROME_UPSTREAM` 配置的固定地址，不代理客户端任意 URL。认证时将当前会话的 Subsonic token/salt 放在 POST 表单中，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。数据库 owner 是 `[规范化固定上游地址, 规范用户名]` 的 SHA-256。修改部署上游地址会改变命名空间，迁移部署时应保留该地址配置。不同输入身份仍访问同一服务端账号记录，首次出现真实数据差异时沿用冲突保护。
+客户端先通过同源 `/api/tooku/connection` 提交规范化登录地址。当前 Tooku 站点、旧 `/nd`、正式 `/api/navidrome` 以及与 `NAVIDROME_UPSTREAM` 匹配的真实地址继续直接映射默认上游；其他地址由后端解析并固定 DNS 结果、匿名请求 Navidrome ping，成功后签发十分钟随机连接票据。票据仅可访问登录前需要的 ping、扩展检测和原生登录，不接受逐请求目标，也不能调用其他协议方法。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；浏览器 `MusicApi.identity` 仍按规范化后的输入地址生成，因此已有 localStorage/IndexedDB 身份不改名。恢复会话会取回原输入地址；旧会话未保存地址时按原 `/nd` 身份恢复。「测试连接」只取得票据并匿名 ping，不创建账号会话或同步数据。
 
-固定上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据单值 `X-Forwarded-Proto: https` 判断 HTTPS；逗号链、客户端伪造的 Forwarded/Host 信息不参与判断，不要在不可信入口启用此选项。最终入口确认全站 HTTPS 后可设置 `TOOKU_HSTS=true`，只在可信 HTTPS 请求发送 `Strict-Transport-Security: max-age=31536000`。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、上游改变或退出后需要重新登录。
+创建持久会话时，后端用票据中固定的目标再次验证 Subsonic token/salt，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。验证成功后，目标与认证材料一起加密保存在会话中，普通 API、封面和临时播放授权均只从会话读取目标。数据库 owner 是 `[规范化上游地址, 规范用户名]` 的 SHA-256，同名账号在不同服务器之间隔离；固定上游沿用原 owner 算法，不迁移或清空已有数据。浏览器继续使用原输入地址作为本地 identity，首次出现真实数据差异时沿用冲突保护。
 
-`server/navidromeProxy.ts` 为固定白名单请求注入会话对应的认证，前端媒体 URL 不包含 token/salt。普通代理关闭 stream/download 方法；受管播放器 POST `/api/tooku/playback` 后取得 256 位随机路径，服务端只保存摘要，并绑定当前 Cookie 会话摘要、owner、歌曲 ID、原始/兼容模式和最长四小时有效期。开始新授权、重新登录、明确认证撤销、退出或服务关闭会撤销旧授权并终止活动上游请求；每个授权最多 64 次请求、3 路并发，只接受 GET/HEAD 和单段 Range。暂停后若授权将在五分钟内到期，恢复时重新申请并从当前秒数继续。流响应移除重定向、上游 Cookie、附件文件名和服务指纹，固定 inline、private/no-store、same-origin；`deploy/default.conf.template` 对授权路径关闭访问日志。代理在请求侧移除 Cookie、Authorization、Forwarded/X-Forwarded-*、Tooku 内部身份头及逐跳头，在响应侧移除上游 Cookie、服务指纹和逐跳头；保留播放所需的 Range/Content-Range。原生登录只接受不超过 64 KiB 的 JSON，歌手图片只接受带 boundary、正文不超过 2 MiB 加封装余量的 multipart。账号数据请求绑定已验证 owner；媒体/推荐请求绑定当前登录名。旧标签页遇到另一个账号的 Cookie 会被拒绝，不能读写新账号数据或撤销新账号会话。登录、创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。直连其他完整 Navidrome 地址仅会话登录、账号数据仅本地，也支持本地备份恢复；不保存任意外部服务器凭据，不开放任意代理。临时授权降低扩展自动接管和批量枚举，不构成 DRM；直连模式须等受管多服务器实现后才能使用同一保护。
+登记地址默认只允许公网 HTTP(S)。设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true` 后允许私网、回环和 Docker 内网目标，供可信自托管环境使用；固定 `NAVIDROME_UPSTREAM` 始终允许。链路本地、组播、未指定地址和已知云元数据地址即使打开私网开关也拒绝。每次代理连接重新解析域名，若任一结果落入禁止范围则拒绝，并把实际 socket 固定到检查过的地址，避免检查后再次解析造成 DNS 重绑定；上游重定向不跟随。连接探测与会话创建分别按来源地址限流。
+
+受管上游登录会创建最长 30 天的随机 Cookie 会话：HttpOnly、SameSite=Strict、Path=/；HTTPS 登录及 `TOOKU_COOKIE_SECURE=true` 时使用 Secure。可信反向代理可配置 `TOOKU_TRUST_PROXY=true`，再根据单值 `X-Forwarded-Proto: https` 判断 HTTPS；逗号链、客户端伪造的 Forwarded/Host 信息不参与判断，不要在不可信入口启用此选项。最终入口确认全站 HTTPS 后可设置 `TOOKU_HSTS=true`，只在可信 HTTPS 请求发送 `Strict-Transport-Security: max-age=31536000`。数据库只保存会话令牌的 SHA-256 摘要。上游 token/salt、可选原生 JWT 在独立安全库中加密保存，密码始终不保存。页面启动先 GET session 重新验证会话绑定的上游，再读取账号数据并暂停恢复队列；退出先保存未提交变更，再由服务器撤销当前 Cookie 会话。普通已登录请求最多每 15 分钟重新验证一次上游；明确认证失效立即撤销，网络错误保留原记录。后端重启可恢复会话；过期、认证撤销或退出后需要重新登录。
+
+`server/navidromeProxy.ts` 为白名单请求注入会话对应的认证与目标，前端媒体 URL 不包含 token/salt。普通代理关闭 stream/download 方法；受管播放器 POST `/api/tooku/playback` 后取得 256 位随机路径，服务端只保存摘要，并绑定当前 Cookie 会话摘要、owner、歌曲 ID、原始/兼容模式和最长四小时有效期。开始新授权、重新登录、明确认证撤销、退出或服务关闭会撤销旧授权并终止活动上游请求；每个授权最多 64 次请求、3 路并发，只接受 GET/HEAD 和单段 Range。暂停后若授权将在五分钟内到期，恢复时重新申请并从当前秒数继续。流响应移除重定向、上游 Cookie、附件文件名和服务指纹，固定 inline、private/no-store、same-origin；`deploy/default.conf.template` 对授权路径关闭访问日志。代理在请求侧移除 Cookie、Authorization、Forwarded/X-Forwarded-*、Tooku 内部身份头及逐跳头，在响应侧移除上游 Cookie、服务指纹和逐跳头；保留播放所需的 Range/Content-Range。原生登录只接受不超过 64 KiB 的 JSON，歌手图片只接受带 boundary、正文不超过 2 MiB 加封装余量的 multipart。账号数据请求绑定已验证 owner；媒体请求同时绑定当前登录名与 owner 摘要，同用户名的另一服务器覆盖 Cookie 后，旧标签页也会被拒绝。登录、连接探测和创建会话有限流、同源和超时检查；保留旧内存 Bearer 会话接口供兼容使用（12 小时，不持久化）。无法通过地址策略或协议验证的地址不会登记为受管连接；前端仍可按原直连路径尝试，受浏览器 CORS 与本地存储边界限制。已登记地址的认证材料只进入独立加密安全库，不开放任意代理。临时授权降低扩展自动接管和批量枚举，不构成 DRM。
 
 生产 Node 入口统一发送 CSP、`frame-ancestors 'none'`、X-Frame-Options、Permissions-Policy、no-referrer 与 nosniff。CSP 允许同源应用资源、data/blob 图片、blob 媒体，以及 HTTP(S) Navidrome 的 API、图片和音频；禁止对象、跨源表单、页面嵌入和非本站脚本。新增或调整图片、音频、Worker、画中画及外部连接入口时，应先更新共享 `server/security.ts` 并执行安全头回归，不能在页面局部绕过。
 
@@ -65,12 +69,12 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 公开歌词保存在独立 `.local/data/lyrics-cache.sqlite`（也遵循 `TOOKU_DATA_DIR`），缓存上限约 100 MB / 5000 条，故障降级内存；不与 `tooku.sqlite` 共用表，也不推进账号 revision。账号 JSON / 用户库备份包含个人选择，不包含可重建平台缓存；恢复时无须复制或清除缓存。详见 [歌词组件](15-lyrics-service-design.md)。
 
-用户数据 API 位于 `/api/tooku/`，不缓存。`health`、`connection` 和创建 session 无需账号会话，其余接口使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。`connection` 只比较规范地址并返回布尔值，不返回固定上游地址，也不代表账号认证。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
+用户数据 API 位于 `/api/tooku/`，不缓存。`health`、`connection` 和创建 session 无需账号会话，其余接口使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。`connection` 验证候选服务并可返回短时随机票据，不返回解析地址，也不代表账号认证。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
 
 | 路径 | 方法 | 用途 |
 | --- | --- | --- |
 | `health` | GET | `{ app: 'tooku', persistence: 1 }` |
-| `connection` | POST | 判断地址是否为当前部署的固定上游；只返回 `managed` 布尔值 |
+| `connection` | POST | 识别默认上游，或验证候选 Navidrome 并返回 `managed` 与可选十分钟连接票据 |
 | `session` | POST / GET / DELETE | 验证并创建 Cookie 会话 / 恢复且重新验证 / 注销会话 |
 | `playback` | POST | 为当前会话、歌曲和转码模式签发随机短时播放路径 |
 | `credentials` | GET / PUT | 仅读保存状态与 revision / 按版本更新密钥字段；不返回密钥 |
@@ -82,11 +86,11 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 `server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
 
-## 后续：受管多服务器
+## 受管多服务器的当前边界与后续工作
 
-后续计划允许登录页接受任意可验证的 Navidrome HTTP(S) 地址，并让验证成功的服务器获得与当前固定上游相同的持久登录、账号数据、服务密钥和备份能力。它不是把客户端地址直接拼到通用代理请求中，而是增加受管服务器注册与会话绑定：首次登录由后端规范化地址、探测 Navidrome 协议并验证账号，成功后为该上游建立稳定服务器 ID；加密会话只保存这个已验证目标，后续音乐代理从会话取目标，单次请求不能改写。
+第一阶段已允许登录页接受服务端可达、策略允许且验证成功的 Navidrome HTTP(S) 地址，并让它获得与固定上游相同的持久登录、账号数据、服务密钥、备份和临时播放授权。它没有把客户端地址直接拼到通用代理请求中；短时票据与加密会话固定目标，后续音乐代理从会话取目标，单次请求不能改写。
 
-实现时需要一并处理：按 `[服务器 ID, 规范账号]` 隔离 owner、同地址别名归一与已有固定上游数据迁移、DNS 重绑定和重定向、云元数据/特殊地址防护、私网与回环地址的自托管策略、端口和子路径、连接超时与限流、服务器改址/删除、备份 owner 校验，以及多个服务器同时登录时的 Cookie/标签页隔离。私网 Navidrome 是正常使用场景，不能简单全面禁止；公开部署应由管理员策略或显式允许列表决定可登记范围。当前 `NAVIDROME_UPSTREAM` 保留为默认服务器和兼容入口，完成这些边界前不把现有固定代理改成任意代理。
+仍需继续完成稳定服务器 ID 与同地址别名合并、服务器列表/改址/删除管理，以及一个浏览器中多个服务器同时保持独立 Cookie 会话。当前单个浏览器 origin 仍只有一个登录 Cookie；新标签页切换服务器会使旧标签页请求因 owner 不匹配而失败，不会串到同用户名的另一服务器。私网开关目前是部署级布尔策略，后续可增加明确主机/CIDR 允许列表。`NAVIDROME_UPSTREAM` 继续作为默认服务器和旧 `/nd` 兼容入口。
 
 ## 运行与部署
 

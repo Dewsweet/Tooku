@@ -59,12 +59,14 @@ async function managedServer(base: string, signal?: AbortSignal) {
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server: base }),
       signal: signal ?? AbortSignal.timeout(8000),
     });
-    if (!response.ok) return false;
+    if (!response.ok) return { managed: false, connectionId: '' };
     const result: unknown = await response.json();
-    return Boolean(result && typeof result === 'object' && 'managed' in result && result.managed === true);
+    if (!result || typeof result !== 'object' || !('managed' in result) || result.managed !== true) return { managed: false, connectionId: '' };
+    const connectionId = 'connectionId' in result && typeof result.connectionId === 'string' && /^[\w-]{43}$/.test(result.connectionId) ? result.connectionId : '';
+    return { managed: true, connectionId };
   } catch (error) {
     if (signal?.aborted) throw error;
-    return false;
+    return { managed: false, connectionId: '' };
   }
 }
 
@@ -74,11 +76,12 @@ export async function testServerConnection(input: string, signal?: AbortSignal):
   const timeout = AbortSignal.timeout(8000);
   const requestSignal = AbortSignal.any([timeout, ...(signal ? [signal] : [])]);
   try {
-    const transport = await managedServer(base, requestSignal) ? managedTransport() : base;
+    const connection = await managedServer(base, requestSignal);
+    const transport = connection.managed ? managedTransport() : base;
     const started = performance.now();
     const params = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json' });
     const response = await fetch(`${transport}/rest/ping.view?${params}`, {
-      credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
+      credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', headers: connection.connectionId ? { 'X-Tooku-Connection': connection.connectionId } : undefined,
       signal: requestSignal,
     });
     if (!response.ok && response.status !== 401 && response.status !== 403) throw new ApiError(`连接失败（HTTP ${response.status}）。`);
@@ -110,6 +113,8 @@ export class MusicApi {
   #nativeAdmin = false;
   #cookieSession = false;
   #managed = false;
+  #connectionId = '';
+  #owner = '';
   #transportBase: string;
   #uncertainArtistImages = new Set<string>();
   #writingArtistImages = new Set<string>();
@@ -122,31 +127,32 @@ export class MusicApi {
     this.identity = `${base}|${username}`;
     this.#transportBase = base;
   }
-  dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; this.#nativeToken = ''; this.#nativeAdmin = false; this.#uncertainArtistImages.clear(); this.#writingArtistImages.clear(); }
+  dispose() { this.#abort.abort(); this.#userData?.dispose(); this.#userData = null; this.#auth = { u: '', t: '', s: '' }; this.#nativeToken = ''; this.#nativeAdmin = false; this.#connectionId = ''; this.#owner = ''; this.#uncertainArtistImages.clear(); this.#writingArtistImages.clear(); }
   static async restoreSession() {
     const client = new UserDataApi(); const session = await client.restore();
     if (!session) return null;
     const api = new MusicApi(session.clientBase ?? `${window.location.origin}/nd`, session.username, '');
-    api.#auth = { u: '', t: '', s: '' }; api.#cookieSession = true; api.#managed = true; api.#transportBase = managedTransport(); api.#nativeAdmin = session.admin; api.#userData = client;
+    api.#auth = { u: '', t: '', s: '' }; api.#cookieSession = true; api.#managed = true; api.#transportBase = managedTransport(); api.#nativeAdmin = session.admin; api.#owner = client.owner; api.#userData = client;
     try { const version = await api.connect(); return { api, version }; }
     catch (error) { api.dispose(); throw error; }
   }
   async logout() { if (this.#cookieSession) await this.#userData?.logout(); }
   async prepare(signal?: AbortSignal) {
-    this.#managed = await managedServer(this.base, signal);
+    const connection = await managedServer(this.base, signal);
+    this.#managed = connection.managed; this.#connectionId = connection.connectionId;
     this.#transportBase = this.#managed ? managedTransport() : this.base;
   }
   async userData() {
     if (!this.#managed) await this.prepare(this.#abort.signal);
     if (!this.#managed) return null;
     if (this.#cookieSession && this.#userData) return this.#userData;
-    const client = new UserDataApi(); await client.connect(this.#auth, { nativeToken: this.#nativeToken, admin: this.#nativeAdmin }, this.base);
+    const client = new UserDataApi(); await client.connect(this.#auth, { nativeToken: this.#nativeToken, admin: this.#nativeAdmin }, this.base, this.#connectionId);
     if (this.#abort.signal.aborted) { client.dispose(); throw new ApiError('连接已关闭。'); }
-    this.#userData = client; this.#cookieSession = true; this.#nativeToken = ''; this.#auth = { u: '', t: '', s: '' }; return client;
+    this.#userData = client; this.#cookieSession = true; this.#nativeToken = ''; this.#connectionId = ''; this.#owner = client.owner; this.#auth = { u: '', t: '', s: '' }; return client;
   }
   supports(name: string, version = 1) { return (this.extensions.get(name) ?? []).some((v) => v >= version); }
   #params(params: Params) {
-    const out = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json', ...(this.#cookieSession ? { tookuSession: '1', tookuUser: this.username } : this.#auth) });
+    const out = new URLSearchParams({ v: '1.16.1', c: 'Tooku', f: 'json', ...(this.#cookieSession ? { tookuSession: '1', tookuUser: this.username, tookuOwner: this.#owner } : this.#auth) });
     for (const [key, value] of Object.entries(params)) {
       if (value === undefined) continue;
       if (Array.isArray(value)) value.forEach((item) => out.append(key, item));
@@ -185,12 +191,13 @@ export class MusicApi {
   async request(method: string, params: Params = {}, signal?: AbortSignal, write = false): Promise<DTO> {
     const args = this.#params(params);
     const post = this.supports('formPost');
-    const endpoint = `${this.#transportBase}/rest/${method}.view${post && this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`;
+    const endpoint = `${this.#transportBase}/rest/${method}.view${post && this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}&tookuOwner=${encodeURIComponent(this.#owner)}` : ''}`;
     if (!post && endpoint.length + args.toString().length > 8000) throw new ApiError('请求过长；服务器需要支持表单 POST 才能保存此列表。');
     let response: Response;
     try {
       response = await fetch(post ? endpoint : `${endpoint}?${args}`, {
         method: post ? 'POST' : 'GET', body: post ? args : undefined,
+        headers: this.#connectionId ? { 'X-Tooku-Connection': this.#connectionId } : undefined,
         credentials: this.#cookieSession ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer',
         signal: AbortSignal.any([this.#abort.signal, ...(signal ? [signal] : []), AbortSignal.timeout(write ? 30000 : 12000)]),
       });
@@ -219,7 +226,7 @@ export class MusicApi {
     if (str(ping.type)?.toLowerCase() === 'navidrome' && password !== undefined) {
       try {
         const response = await fetch(`${this.#transportBase}/auth/login`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: this.username, password }),
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.#connectionId ? { 'X-Tooku-Connection': this.#connectionId } : {}) }, body: JSON.stringify({ username: this.username, password }),
           credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
           signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(12000)]),
         });
@@ -238,7 +245,7 @@ export class MusicApi {
     const write = Boolean(body || remove);
     let response: Response;
     try {
-      response = await fetch(`${this.#transportBase}/api/${path}${this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}` : ''}`, {
+      response = await fetch(`${this.#transportBase}/api/${path}${this.#cookieSession ? `?tookuSession=1&tookuUser=${encodeURIComponent(this.username)}&tookuOwner=${encodeURIComponent(this.#owner)}` : ''}`, {
         method: remove ? 'DELETE' : body ? 'POST' : 'GET', body,
         headers: this.#cookieSession ? {} : { 'x-nd-authorization': `Bearer ${this.#nativeToken}` }, credentials: this.#cookieSession ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
         signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(write ? 30000 : 12000)]),
