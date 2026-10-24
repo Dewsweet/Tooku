@@ -57,6 +57,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     expect((await app.call('session', 'POST', { ...login.auth, persistent: true, clientBase: 'https://other.example.test' })).status).toBe(400);
   });
   it('registers a verified server with a short connection ticket and binds proxy, data and playback to its session', async () => {
+    let now = Date.now();
     const seen: URL[] = [];
     const remote = await listen(createServer(async (req, res) => {
       const url = new URL(req.url!, 'http://fixture'); seen.push(url);
@@ -69,7 +70,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     }));
     const verifiedTargets: string[] = [];
     const verify = vi.fn(async ({ u }: { u: string }, target: string) => { verifiedTargets.push(target); return u.toLowerCase(); });
-    const app = await fixture({ filename: ':memory:', upstream: 'http://127.0.0.1:1', allowPrivateServers: true, verify });
+    const app = await fixture({ filename: ':memory:', upstream: 'http://127.0.0.1:1', allowPrivateServers: true, verify, now: () => now });
     const fixed = await app.login('Alice');
     const registration = await app.call('connection', 'POST', { server: remote.origin });
     expect(registration.status).toBe(200);
@@ -91,6 +92,9 @@ describe('persistent browser sessions and encrypted credentials', () => {
     const audio = await fetch(`${app.origin}${grant.url}`, { headers: { Cookie: cookie } });
     expect(audio.status).toBe(200); expect(await audio.text()).toBe('remote-audio');
     expect(seen.some((url) => url.pathname === '/rest/stream.view' && url.searchParams.get('id') === 'remote-song')).toBe(true);
+    const expiring = await (await app.call('connection', 'POST', { server: remote.origin })).json() as { connectionId: string };
+    now += 10 * 60000 + 1;
+    expect((await app.call('session', 'POST', { ...auth, persistent: true, clientBase: remote.origin, connectionId: expiring.connectionId })).status).toBe(400);
   });
   it('survives a server restart, revalidates upstream auth, keeps secrets server-side and revokes logout', async () => {
     const dir = directory(); const filename = join(dir, 'tooku.sqlite');
