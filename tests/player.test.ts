@@ -112,6 +112,17 @@ describe('player lifecycle integration', () => {
     player.replace([songs[0]]); const audio = FakeAudio.instance; audio.tick(12); player.pause(); player.play();
     expect(grant).toHaveBeenCalledTimes(2); expect(usePlayer.getState().position).toBe(12);
   });
+  it('requests a fresh grant and restores position when retrying a failed stream', () => {
+    const grant = vi.spyOn(api, 'playbackUrl')
+      .mockReturnValueOnce({ url: 'https://example.test/revoked', expiresAt: Date.now() + 3600000 })
+      .mockReturnValueOnce({ url: 'https://example.test/retry', expiresAt: Date.now() + 3600000 });
+    player.replace([songs[0]]); const audio = FakeAudio.instance; audio.tick(42);
+    audio.dispatchEvent(new Event('error'));
+    expect(usePlayer.getState()).toMatchObject({ status: 'error', position: 42 });
+    audio.currentTime = 0; player.play(); audio.dispatchEvent(new Event('loadedmetadata'));
+    expect(grant).toHaveBeenCalledTimes(2); expect(audio.src).toBe('https://example.test/retry');
+    expect(audio.currentTime).toBe(42); expect(usePlayer.getState()).toMatchObject({ status: 'playing', position: 42, error: '' });
+  });
   it('removing current while paused keeps the successor paused', () => { player.replace(songs); player.pause(); player.remove(usePlayer.getState().currentId!); FakeAudio.instance.dispatchEvent(new Event('loadedmetadata')); expect(usePlayer.getState().entries[0].track.id).toBe('two'); expect(usePlayer.getState().status).toBe('paused'); expect(FakeAudio.instance.paused).toBe(true); });
   it('does not count a seek jump toward a scrobble threshold', () => { player.replace(songs); FakeAudio.instance.tick(1); player.seek(150); FakeAudio.instance.tick(151); expect(api.scrobble).not.toHaveBeenCalledWith('one', expect.any(Number), true); });
   it('submits only once when the listening threshold is reached', async () => { player.replace(songs); for (let second = 1; second <= 100; second++) FakeAudio.instance.tick(second); await Promise.resolve(); const submits = vi.mocked(api.scrobble).mock.calls.filter((call) => call[2]); expect(submits).toHaveLength(1); expect(usePlayer.getState().history).toHaveLength(1); });
