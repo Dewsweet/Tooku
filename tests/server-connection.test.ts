@@ -72,7 +72,7 @@ it('carries the verified target ticket through login into the persistent session
   const fetch = vi.fn(async (...args: [string, RequestInit?]) => {
     calls.push(args); const [url] = args;
     if (url === '/api/tooku/connection') return new Response(JSON.stringify({ managed: true, connectionId }));
-    if (url === '/api/tooku/session') return new Response(JSON.stringify({ owner: 'owner-1', persistent: true }));
+    if (url === '/api/tooku/session') return new Response(JSON.stringify({ owner: 'owner-1', persistent: true, serviceProtocol: 1 }));
     if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 'native-token', isAdmin: true }));
     if (url.includes('getOpenSubsonicExtensions')) return response({ status: 'ok', openSubsonicExtensions: [] });
     return response({ status: 'ok', type: 'navidrome', serverVersion: 'fixture' });

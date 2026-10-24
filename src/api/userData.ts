@@ -1,5 +1,6 @@
 import { isBackup, isUserDocument, type UserData } from '../domain/userData';
 import { emptyRecommendationCredentials, type RecommendationCredentials } from '../domain/recommendations';
+import { tookuServiceProtocol } from '../domain/serviceProtocol';
 
 export type SavedCredentials = Record<keyof RecommendationCredentials, boolean>;
 export interface CredentialStatus { revision: number; saved: SavedCredentials }
@@ -14,6 +15,11 @@ function credentialStatus(value: unknown): CredentialStatus {
   const saved = value.saved;
   if (!Object.keys(emptyRecommendationCredentials).every((field) => field in saved && typeof Reflect.get(saved, field) === 'boolean')) throw new UserDataError('密钥保存状态无效。');
   return { revision: value.revision, saved: { lastfmKey: Reflect.get(saved, 'lastfmKey') === true, aiKey: Reflect.get(saved, 'aiKey') === true, appleToken: Reflect.get(saved, 'appleToken') === true, spotifyClientId: Reflect.get(saved, 'spotifyClientId') === true, spotifyClientSecret: Reflect.get(saved, 'spotifyClientSecret') === true } };
+}
+function assertServiceProtocol(value: unknown) {
+  if (!value || typeof value !== 'object' || Reflect.get(value, 'serviceProtocol') !== tookuServiceProtocol) {
+    throw new UserDataError('Tooku 前后端版本不兼容，请刷新页面；如仍出现，请升级并重启 Tooku 服务。', 426);
+  }
 }
 
 export class UserDataError extends Error {
@@ -36,12 +42,13 @@ export class UserDataApi {
       if (useServerError) {
         try { const result: unknown = await response.json(); const value = result && typeof result === 'object' ? Reflect.get(result, 'error') : undefined; if (typeof value === 'string' && value.length <= 200) serverError = value; } catch { /* Fall back to the stable client message. */ }
       }
-      throw new UserDataError(serverError || (response.status === 409 ? '另一设备已修改数据，请选择保留的版本。' : response.status === 401 ? '同步会话已失效，请重新连接。' : response.status === 413 ? '账号数据超过 12 MB，请减少封面。' : '服务器暂不可用，本地数据仍保留。'), response.status);
+      throw new UserDataError(serverError || (response.status === 426 ? 'Tooku 前后端版本不兼容，请刷新页面；如仍出现，请升级并重启 Tooku 服务。' : response.status === 409 ? '另一设备已修改数据，请选择保留的版本。' : response.status === 401 ? '同步会话已失效，请重新连接。' : response.status === 413 ? '账号数据超过 12 MB，请减少封面。' : '服务器暂不可用，本地数据仍保留。'), response.status);
     }
     try { return await response.json(); } catch { throw new UserDataError('同步接口不可用，本地数据仍保留。'); }
   }
   async connect(auth: { u: string; t: string; s: string }, native?: { nativeToken: string; admin: boolean }, clientBase?: string, connectionId?: string) {
     const session = await this.request('session', 'POST', { ...auth, ...native, persistent: true, clientBase, connectionId });
+    assertServiceProtocol(session);
     if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string') throw new UserDataError('同步接口不可用。');
     if ('token' in session && typeof session.token === 'string') this.#token = session.token;
     this.owner = session.owner;
@@ -49,6 +56,7 @@ export class UserDataApi {
   async restore() {
     let session: unknown;
     try { session = await this.request('session'); } catch (error) { if (error instanceof UserDataError && error.status === 401) return null; throw error; }
+    assertServiceProtocol(session);
     if (!session || typeof session !== 'object' || !('owner' in session) || typeof session.owner !== 'string' || !('username' in session) || typeof session.username !== 'string' || !session.username || !('admin' in session) || typeof session.admin !== 'boolean') throw new UserDataError('登录状态无效，请重新登录。');
     this.owner = session.owner;
     const clientBase = Reflect.get(session, 'clientBase');

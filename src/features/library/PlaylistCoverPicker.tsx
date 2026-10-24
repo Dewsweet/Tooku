@@ -5,6 +5,7 @@ import { EntityArtwork } from '../../components/EntityArtwork';
 import { useApi } from '../../components/Common';
 import type { Playlist } from '../../domain/models';
 import { useProfiles } from '../../state/profile';
+import { browserStorageWriteRevision } from '../../storage/browserStorage';
 
 export function PlaylistCoverPicker({ playlist, editable, disabled, fallback }: { playlist: Playlist; editable: boolean; disabled: boolean; fallback?: string }) {
   const api = useApi();
@@ -12,11 +13,14 @@ export function PlaylistCoverPicker({ playlist, editable, disabled, fallback }: 
   const [file, setFile] = useState<File | null>(null);
   function save(image: string) {
     const previous = useProfiles.getState().playlistCovers[api.identity]?.[playlist.id];
-    try { useProfiles.getState().setPlaylistCover(api.identity, playlist.id, image); }
-    catch {
-      try { useProfiles.getState().setPlaylistCover(api.identity, playlist.id, previous); } catch { /* Restore the visible cover even if device storage is full. */ }
-      throw new Error('封面未能保存，请检查浏览器存储空间。');
-    }
+    const before = browserStorageWriteRevision();
+    try {
+      useProfiles.getState().setPlaylistCover(api.identity, playlist.id, image);
+      if (browserStorageWriteRevision() === before) return;
+    } catch { /* Restore below after an unexpected store failure. */ }
+    try { useProfiles.getState().setPlaylistCover(api.identity, playlist.id, previous); }
+    catch { /* The in-memory adapter normally keeps the visible previous cover available. */ }
+    throw new Error('封面未能保存，请检查浏览器存储空间。');
   }
   return <>
     <button type="button" className="playlist-hero-cover" disabled={!editable || disabled} aria-label={editable ? '更换歌单封面' : '歌单封面（只读）'} data-tooltip={editable ? '更换歌单封面' : '当前账号没有编辑权限，无法更换封面'} onDragStart={(event) => event.preventDefault()} onClick={() => input.current?.click()}>

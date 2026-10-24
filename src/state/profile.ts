@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { browserJsonStorage } from '../storage/browserStorage';
 
 interface Profiles {
   avatars: Record<string, string>;
@@ -23,4 +24,4 @@ export const useProfiles = create<Profiles>()(persist((set) => ({
     const covers = { ...s.artistCovers?.[identity] }; if (image) covers[id] = image; else delete covers[id];
     return { artistCovers: { ...s.artistCovers, [identity]: covers } };
   }),
-}), { name: 'tooku-profiles', version: 1 }));
+}), { name: 'tooku-profiles', version: 1, storage: browserJsonStorage<Profiles>() }));

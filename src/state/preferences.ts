@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { browserJsonStorage } from '../storage/browserStorage';
 
 export const panelSectionNames = { cover: '封面', lyrics: '歌词', details: '歌曲详情', queue: '播放队列' } as const;
 export type PanelSectionId = keyof typeof panelSectionNames;
@@ -28,4 +29,4 @@ interface Preferences {
 export const usePreferences = create<Preferences>()(persist((set) => ({
   theme: 'light', accent: '#c83e55', sidePanel: true, panelWidth: 328, trackColumns: [2.8, 1.5, 1.8, .6], panelSections: defaultPanelSections, lyricSize: 30, lyricDelay: 0, reducedMotion: false, shortcuts: true,
   update: (patch) => set(patch),
-}), { name: 'tooku-preferences', version: 1 }));
+}), { name: 'tooku-preferences', version: 1, storage: browserJsonStorage<Preferences>() }));

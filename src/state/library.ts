@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSession } from './session';
 import { useEffect } from 'react';
 import type { MusicLibrary, Playlist } from '../domain/models';
+import { browserJsonStorage } from '../storage/browserStorage';
 const noLibraries: MusicLibrary[] = [];
 
 export interface PlaylistFolder { id: string; name: string; libraryId: string; parentId: string | null }
@@ -61,7 +62,7 @@ export const useLibrary = create<LibraryState>()(persist((set) => ({
     if (!valid) return state;
     return { profiles: { ...state.profiles, [identity]: { ...profile, placements: { ...profile.placements, [playlistId]: { libraryId, folderId } } } } };
   }),
-}), { name: 'tooku-library-organization', version: 1 }));
+}), { name: 'tooku-library-organization', version: 1, storage: browserJsonStorage<LibraryState>() }));
 
 export function useMusicLibrary() {
   const api = useSession((s) => s.api);

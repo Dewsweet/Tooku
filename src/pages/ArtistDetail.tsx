@@ -16,6 +16,7 @@ import { useProfiles } from '../state/profile';
 import { PlaybackButtons } from '../components/PlaybackButtons';
 import { DensityGrid, GridDensitySelect } from '../components/GridDensity';
 import './artist-detail.css';
+import { browserStorageWriteRevision } from '../storage/browserStorage';
 
 function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; coverArt?: string; albums: Album[] }) {
   const api = useApi();
@@ -42,12 +43,18 @@ function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; 
     void client.invalidateQueries({ queryKey: [api.identity, 'artist'] });
     void client.invalidateQueries({ queryKey: [api.identity, 'artists'] });
   }
+  function clearLegacyCover() {
+    const before = browserStorageWriteRevision();
+    try {
+      useProfiles.getState().setArtistCover(api.identity, id, undefined);
+      return browserStorageWriteRevision() === before;
+    } catch { return false; }
+  }
   async function saveImage(image?: string) {
     const info = await api.saveArtistImage(id, image);
     client.setQueryData([api.identity, 'artist-image-info', id], info);
     refreshImage(image);
-    try { useProfiles.getState().setArtistCover(api.identity, id, undefined); }
-    catch { if (useSession.getState().api === api) useSession.getState().notify('图片已保存到 Navidrome，本机旧图片缓存未能清除。'); }
+    if (!clearLegacyCover() && useSession.getState().api === api) useSession.getState().notify('图片已保存到 Navidrome，本机旧图片缓存未能清除。');
   }
   async function verifyImage() {
     const info = await api.artistImage(id);
@@ -66,7 +73,7 @@ function ArtistHero({ id, name, coverArt, albums }: { id: string; name: string; 
       { label: '选择照片', icon: <Pencil size={16} />, action: () => input.current?.click() },
       { label: '重新读取服务器图片', action: verifyImage },
       { label: '恢复服务器默认图片', disabled: !imageInfo.data?.uploadedImage, action: restoreImage },
-      ...(custom ? [{ label: '移除旧版私人图片', action: () => useProfiles.getState().setArtistCover(api.identity, id, undefined) }] : []),
+      ...(custom ? [{ label: '移除旧版私人图片', action: () => { if (!clearLegacyCover()) useSession.getState().notify('本机旧图片缓存未能清除。'); } }] : []),
     ])}>
       {hasArt ? <img src={src} alt={candidate?.kind === 'album' ? '专辑封面' : `${name}的图片`} referrerPolicy="no-referrer" /> : <span className="artist-portrait-initials" aria-hidden="true">{name.trim().slice(0, 2)}</span>}
       {editable && <span className="artist-portrait-edit"><Pencil size={34} /><span>{restoring ? '正在恢复…' : '选择照片'}</span></span>}

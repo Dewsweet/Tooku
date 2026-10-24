@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { browserJsonStorage } from '../storage/browserStorage';
 
 export const baseFontSizes = [13, 14, 16, 18] as const;
 export type BaseFontSize = typeof baseFontSizes[number];
@@ -29,6 +30,7 @@ interface DisplayPreferences {
   setBaseFontSize: (value: number) => void; setFontFamily: (value: string) => void;
   setGridColumns: (kind: 'albums' | 'artists', value: number) => void;
 }
+type PersistedDisplayPreferences = Pick<DisplayPreferences, 'baseFontSize' | 'fontFamily' | 'gridColumns'>;
 
 // Display preferences follow this browser, outside account sync and backups.
 export const useDisplayPreferences = create<DisplayPreferences>()(persist((set) => ({
@@ -40,6 +42,7 @@ export const useDisplayPreferences = create<DisplayPreferences>()(persist((set) 
   setGridColumns: (kind, value) => set((state) => ({ gridColumns: { ...state.gridColumns, [kind]: normalizeGridColumns(value) } })),
 }), {
   name: 'tooku-display', version: 1,
+  storage: browserJsonStorage<PersistedDisplayPreferences>(),
   partialize: ({ baseFontSize, fontFamily, gridColumns }) => ({ baseFontSize, fontFamily, gridColumns }),
   merge: (stored, current) => ({ ...current,
     baseFontSize: normalizeBaseFontSize(stored && typeof stored === 'object' && 'baseFontSize' in stored ? stored.baseFontSize : undefined),

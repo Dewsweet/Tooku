@@ -7,6 +7,7 @@ import { connectUserSync, disconnectUserSync, useUserSync } from '../storage/use
 import { TookuMark } from '../components/TookuMark';
 import { enterWorkspace } from '../features/session/enterWorkspace';
 import { readLoginServer, rememberLoginServer } from '../storage/loginServer';
+import { browserStorageWarning } from '../storage/browserStorage';
 import './login.css';
 
 type ConnectionState = { status: 'checking' } | { status: 'success'; latencyMs: number } | { status: 'error'; message: string };
@@ -70,7 +71,9 @@ export function Login() {
       await enterWorkspace(() => {
         rememberLoginServer(address);
         useSession.getState().setSession(connected, version);
-        const sync = useUserSync.getState(); useSession.getState().notify(['review', 'offline'].includes(sync.status) ? `${sync.message} 入口：头像 → 账户与设置 → 用户数据。` : '');
+        const sync = useUserSync.getState();
+        const syncWarning = ['review', 'offline'].includes(sync.status) ? `${sync.message} 入口：头像 → 账户与设置 → 用户数据。` : '';
+        useSession.getState().notify([syncWarning, browserStorageWarning()].filter(Boolean).join(' '));
       });
     } catch (error) { disconnectUserSync(); api?.dispose(); setError(errorMessage(error)); } finally { inFlight.current = false; setPending(false); }
   }

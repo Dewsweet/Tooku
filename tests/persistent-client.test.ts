@@ -10,7 +10,7 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const playback = () => json({ url: `/api/tooku-stream/${'a'.repeat(43)}`, expiresAt: Date.now() + 3600000 });
 it('restores a cookie session without exposing authentication parameters and includes account binding on form POST', async () => {
   const fetcher = vi.fn(async (input: string, options?: RequestInit) => {
-    if (input === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: '合成账号', admin: true, clientBase: 'http://127.0.0.1:44533' });
+    if (input === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: '合成账号', admin: true, clientBase: 'http://127.0.0.1:44533', serviceProtocol: 1 });
     if (input === '/api/tooku/playback') return playback();
     if (input.includes('getOpenSubsonicExtensions')) return json({ 'subsonic-response': { status: 'ok', openSubsonicExtensions: [{ name: 'formPost', versions: [1] }] } });
     expect(options?.credentials).toBe('same-origin');
@@ -36,7 +36,7 @@ it('restores a cookie session without exposing authentication parameters and inc
   api.dispose(); expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
 });
 it('binds account data operations to the verified owner and keeps logout separate from disposal', async () => {
-  const fetcher = vi.fn<typeof fetch>(async () => json({ owner: 'synthetic-owner', username: 'user', admin: false })); vi.stubGlobal('fetch', fetcher);
+  const fetcher = vi.fn<typeof fetch>(async () => json({ owner: 'synthetic-owner', username: 'user', admin: false, serviceProtocol: 1 })); vi.stubGlobal('fetch', fetcher);
   const client = new UserDataApi(); await client.restore();
   fetcher.mockResolvedValueOnce(json({ revision: 0, saved: { lastfmKey: false, aiKey: true, appleToken: false, spotifyClientId: false, spotifyClientSecret: false } }));
   expect((await client.credentials()).saved.aiKey).toBe(true);
@@ -61,7 +61,7 @@ it('promotes the configured direct Navidrome address to managed persistence with
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
     if (url === '/api/tooku/connection') return json({ managed: true });
-    if (url === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: 'user', admin: false, persistent: true, clientBase: direct });
+    if (url === '/api/tooku/session') return json({ owner: 'synthetic-owner', username: 'user', admin: false, persistent: true, clientBase: direct, serviceProtocol: 1 });
     if (url === '/api/tooku/playback') return playback();
     return json({ 'subsonic-response': { status: 'ok', serverVersion: 'fixture' } });
   });
@@ -80,4 +80,9 @@ it('does not send persistent cookies or request saved keys while using a direct 
   await new RecommendationsApi().check('lastfm', defaultRecommendationSettings, { ...emptyRecommendationCredentials, lastfmKey: 'synthetic-draft' });
   const init = fetcher.mock.calls[0]?.[1]; expect(init).toMatchObject({ credentials: 'omit' });
   expect(JSON.parse(String(init?.body))).not.toHaveProperty('useSavedCredentials');
+});
+
+it('reports an incompatible Tooku service before accepting a restored session', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => json({ owner: 'synthetic-owner', username: 'user', admin: false, serviceProtocol: 2 })));
+  await expect(new UserDataApi().restore()).rejects.toMatchObject({ status: 426, message: expect.stringContaining('前后端版本不兼容') });
 });

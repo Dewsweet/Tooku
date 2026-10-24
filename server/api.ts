@@ -7,6 +7,7 @@ import { emptyRecommendationCredentials, type RecommendationCredentials } from '
 import { CredentialVault, sessionLifetime } from './vault.ts';
 import { requestAllowsSecureCookie, sameOriginRequest } from './security.ts';
 import { normalizeNavidromeTarget, requestResolvedTarget, resolveNavidromeTarget, type ResolvedNavidromeTarget } from './navidromeTarget.ts';
+import { tookuServiceProtocol } from '../src/domain/serviceProtocol.ts';
 
 const cookieName = 'tooku-session';
 export const playbackGrantLifetime = 4 * 60 * 60 * 1000;
@@ -163,7 +164,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
     try {
       // No CORS. Compare host (including port) without trusting forwarded headers.
       assertSameOrigin(req);
-      if (path === '/api/tooku/health' && req.method === 'GET') { send(200, { app: 'tooku', persistence: 1 }); return; }
+      if (path === '/api/tooku/health' && req.method === 'GET') { send(200, { app: 'tooku', persistence: 1, serviceProtocol: tookuServiceProtocol }); return; }
       if (path === '/api/tooku/connection' && req.method === 'POST') {
         const ip = req.socket.remoteAddress ?? '';
         let rate = connectionAttempts.get(ip); if (!rate || rate.reset <= now()) { rate = { count: 0, reset: now() + 60000 }; connectionAttempts.set(ip, rate); }
@@ -209,7 +210,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
           const token = vault.createSession({ owner, upstream: sessionUpstream, serverId: server.id, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
           if (connectionId) connections.delete(digest(connectionId));
           setCookie(req, res, token, sessionLifetime / 1000);
-          send(200, { owner, username: data.u, admin: data.admin === true, persistent: true, clientBase }); return;
+          send(200, { owner, username: data.u, admin: data.admin === true, persistent: true, clientBase, serviceProtocol: tookuServiceProtocol }); return;
         }
         const token = randomBytes(32).toString('base64url'); const expires = now() + 12 * 3600000;
         sessions.set(token, { owner, expires }); send(200, { token, owner, expires }); return;
@@ -217,7 +218,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       const cookieSession = await authenticate(req, path === '/api/tooku/session' && req.method === 'GET');
       if (path === '/api/tooku/session' && req.method === 'GET') {
         if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');
-        send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true, clientBase: cookieSession.clientBase }); return;
+        send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true, clientBase: cookieSession.clientBase, serviceProtocol: tookuServiceProtocol }); return;
       }
       if (path === '/api/tooku/server' && req.method === 'GET') {
         if (!cookieSession?.serverId) throw new DataError(401, '登录已过期，请重新登录。');

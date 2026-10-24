@@ -69,11 +69,11 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 公开歌词保存在独立 `.local/data/lyrics-cache.sqlite`（也遵循 `TOOKU_DATA_DIR`），缓存上限约 100 MB / 5000 条，故障降级内存；不与 `tooku.sqlite` 共用表，也不推进账号 revision。账号 JSON / 用户库备份包含个人选择，不包含可重建平台缓存；恢复时无须复制或清除缓存。详见 [歌词组件](15-lyrics-service-design.md)。
 
-用户数据 API 位于 `/api/tooku/`，不缓存。`health`、`connection` 和创建 session 无需账号会话，其余接口使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。`connection` 验证候选服务并可返回短时随机票据，不返回解析地址，也不代表账号认证。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
+用户数据 API 位于 `/api/tooku/`，不缓存。`health`、`connection` 和创建 session 无需账号会话，其余接口使用已验证的 HttpOnly Cookie（兼容旧内存 `Authorization: Bearer …`）；服务器由会话决定 owner，忽略客户端伪造 owner。健康与持久会话响应携带 `serviceProtocol`，前端只接受当前共享版本，不兼容时要求刷新或同步升级整个 Tooku 服务，避免把格式错配误报成账号数据损坏。`connection` 验证候选服务并可返回短时随机票据，不返回解析地址，也不代表账号认证。独立歌词 API `/api/lyrics/` 不使用账号认证。推荐 `/api/recommendations/` 使用已保存密钥时验证同一会话及当前账号，仅用请求草稿时保留同源、限流与固定来源规则；公开部署需外层访问控制。同源检查不等于账号授权，详见 [歌词组件](15-lyrics-service-design.md) 和 [音乐推荐](16-music-recommendations.md)。推荐目录/Spotify 临时令牌只在受限进程内存中复用，与歌词公共 SQLite 缓存不同，均不进入账号备份。
 
 | 路径 | 方法 | 用途 |
 | --- | --- | --- |
-| `health` | GET | `{ app: 'tooku', persistence: 1 }` |
+| `health` | GET | `{ app: 'tooku', persistence: 1, serviceProtocol: 1 }` |
 | `connection` | POST | 识别默认上游，或验证候选 Navidrome 并返回 `managed` 与可选十分钟连接票据 |
 | `session` | POST / GET / DELETE | 验证并创建 Cookie 会话 / 恢复且重新验证 / 注销会话 |
 | `server` | GET / PATCH | 读取当前服务器的稳定 ID、当前/首选/已验证地址；将已验证地址设为首选 |

@@ -8,6 +8,7 @@ import { useApi } from '../../components/Common';
 import type { Playlist } from '../../domain/models';
 import { useProfiles } from '../../state/profile';
 import { errorMessage, useSession } from '../../state/session';
+import { browserStorageWriteRevision } from '../../storage/browserStorage';
 
 export function PlaylistDetailsEditor({ playlist, onClose }: { playlist: Playlist; onClose: () => void }) {
   const api = useApi(); const queryClient = useQueryClient(); const [name, setName] = useState(playlist.name); const [comment, setComment] = useState(playlist.comment ?? ''); const storedCover = useProfiles((s) => s.playlistCovers?.[api.identity]?.[playlist.id]); const [cover, setCover] = useState<string | null | undefined>(storedCover); const [file, setFile] = useState<File | null>(null); const input = useRef<HTMLInputElement>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
@@ -15,7 +16,11 @@ export function PlaylistDetailsEditor({ playlist, onClose }: { playlist: Playlis
     e.preventDefault(); if (busy || !name.trim()) return; setBusy(true); setError('');
     try {
       if (name.trim() !== playlist.name || comment.trim() !== (playlist.comment ?? '')) { const saved = await api.updatePlaylistDetails(playlist.id, { name: name.trim(), comment: comment.trim() }, playlist.changed); queryClient.setQueryData([api.identity, 'playlist', playlist.id], saved); await queryClient.invalidateQueries({ queryKey: [api.identity, 'playlists'] }); }
-      if (cover !== storedCover) useProfiles.getState().setPlaylistCover(api.identity, playlist.id, cover ?? undefined);
+      if (cover !== storedCover) {
+        const before = browserStorageWriteRevision();
+        useProfiles.getState().setPlaylistCover(api.identity, playlist.id, cover ?? undefined);
+        if (browserStorageWriteRevision() !== before) throw new Error('封面未能保存，请检查浏览器存储空间。');
+      }
       useSession.getState().notify('歌单信息已保存'); onClose();
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }

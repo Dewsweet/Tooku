@@ -10,6 +10,7 @@ import { createLyricsApi } from './lyrics/http.ts';
 import { createRecommendationsApi } from './recommendations/http.ts';
 import { applySecurityHeaders } from './security.ts';
 import { startupErrorMessage } from './startupErrors.ts';
+import { tookuServiceProtocol } from '../src/domain/serviceProtocol.ts';
 
 assertSupportedNodeVersion();
 const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
@@ -30,7 +31,7 @@ const { api, lyrics, recommendations, proxy, playback } = services;
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json' };
 const server = createServer(async (req, res) => {
   applySecurityHeaders(req, res);
-  if (req.url?.split('?')[0] === '/__tooku/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ app: 'tooku', version: '0.1.0', persistence: 1 })); return; }
+  if (req.url?.split('?')[0] === '/__tooku/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ app: 'tooku', version: '0.1.0', persistence: 1, serviceProtocol: tookuServiceProtocol })); return; }
   if (req.url?.startsWith('/api/tooku-stream/')) { await playback(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/tooku/')) { await api.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }
   if (req.url?.startsWith('/api/lyrics/')) { await lyrics.handle(req, res, () => { res.statusCode = 404; res.end(); }); return; }

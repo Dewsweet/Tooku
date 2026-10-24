@@ -80,6 +80,7 @@ React 页面 / 通用控件
 | 网络歌词服务 | `server/lyrics/`、`NetworkLyricsSettings.tsx` | 同端口独立查询/检测、固定平台协议、受限缓存和真实观测；不依赖 Navidrome 会话 |
 | 音乐推荐 | `src/features/recommendations/`、`RecommendationSettings.tsx`、`server/recommendations/`（含 `cache.ts` 受限内存缓存） | 左栏为你推荐与主页文字入口；Last.fm / AI 扩展及补量、多样性筛选、整批四平台外链核实；服务端按账号加密保存密钥，详见 [音乐推荐](16-music-recommendations.md) |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
+| 浏览器存储降级 | `src/storage/browserStorage.ts` | localStorage 拒绝访问时退回页面内存，损坏 JSON 仅忽略对应项；记录 IndexedDB 失败并在登录/恢复后提示 |
 | 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 空端自动迁移/恢复、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
 | 后端与共享格式 | `server/api.ts`、`navidromeTarget.ts`、`store.ts`、`vault.ts`、`startupErrors.ts`、`index.ts`、`src/domain/userData.ts` | 受管目标验证与会话绑定、SQLite 原子 revision、限额与白名单；启动数据错误给出保守恢复提示并停止服务 |
 | 启动与部署 | `scripts/dev-server.mjs`、`scripts/port-selection.mjs`、`start-tooku.cmd`、`deploy/` | 有界端口回退、健康检查与复用现有服务 |

@@ -91,6 +91,7 @@ npm.cmd run build
 - 经固定上游或服务端验证登记的其他 Navidrome 登录后，头像、自定义封面、文件夹、归属/排序、偏好、队列与历史自动保存到 Tooku SQLite；新浏览器自动读取。已有两端个性数据冲突时才在设置中选择，空白默认状态不能阻断同步或抢先占用服务器记录。默认仅登记公网 HTTP(S)，私网/回环需部署者显式开启；未通过策略或验证的地址只保存本地。
 - 服务端按规范化受管上游和已验证的规范账号隔离，不能信任客户端 identity/owner；固定上游 owner 与本地旧身份规则保持不变。`tooku-preferences` 保留设备回退，账号偏好通过 IndexedDB 的 sync 缓存隔离。
 - IndexedDB 也是浏览器存储，不是服务端备份。增加持久化时先设计已有数据迁移、导出/恢复、账号隔离和失败回退；不得清空本地数据作为迁移步骤。
+- Zustand 本机 store 统一使用 `src/storage/browserStorage.ts`：localStorage 被拒绝时退回当前页面内存，损坏 JSON 只忽略对应项；IndexedDB 失败由同一模块记录并在登录/恢复后提示。不得重新引入会在模块初始化或状态写入时直接抛出的原生存储访问。
 - 用户数据整体使用原子 revision 检查；409 / 结果未知后停止写入，读回比较后再选择。同步与恢复不得调用 player.attach 或重建当前音频。明确恢复后，将 queue/history 的存储写入保护保持至退出；当前播放器的暂停、定时保存与收听提交不得覆盖恢复快照，下次登录再应用。维护 `src/domain/userData.ts` 的共享白名单与版本迁移，禁止落库认证 URL。
 - 登录密码始终不保存。受管上游目标、token/salt、可选原生 JWT 与第三方服务密钥仅允许在 `server/vault.ts` 使用 AES-256-GCM 按账号/用途绑定后落入独立 `tooku-security.sqlite`；密钥文件与数据库分离，支持 `TOOKU_SECRET_KEY_FILE`。浏览器仅使用 HttpOnly / SameSite=Strict 的随机会话 Cookie，HTTPS 使用 Secure，最长 30 天；重启后可恢复，退出须服务端撤销。不得把认证材料、Cookie 或原始第三方密钥写入前端持久化 store、账号备份、源码、环境文件、启动参数或日志；测试仅用合成凭据。Spotify 临时令牌仍仅限受限进程内存。未登记直连不建立持久会话或任意代理。
 - 受管上游音频通过同源随机临时授权播放，绑定当前会话、账号、歌曲和转码模式；不要恢复通用 stream/download 代理、在页面拼接授权或按下载器名称维护 User-Agent 黑名单。保留单段 Range、seek、暂停续播及快切 generation 保护，授权不进入快照、访问日志、截图说明或调试输出。未登记直连的音频/封面认证 URL 仍即时生成，同样不得持久化。

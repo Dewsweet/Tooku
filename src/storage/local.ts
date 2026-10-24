@@ -1,7 +1,11 @@
 import { openDB } from 'idb';
 import type { HistoryEntry, PlayerSnapshot } from '../domain/models';
+import { markIndexedDbUnavailable } from './browserStorage';
 
-const db = () => openDB('tooku', 1, { upgrade(database) { database.createObjectStore('profiles'); } });
+const db = async () => {
+  try { return await openDB('tooku', 1, { upgrade(database) { database.createObjectStore('profiles'); } }); }
+  catch (error) { markIndexedDbUnavailable(); throw error; }
+};
 export async function readProfile<T>(identity: string, kind: string): Promise<T | undefined> {
   try { return await (await db()).get('profiles', `${identity}|${kind}`); } catch { return undefined; }
 }

@@ -4,17 +4,19 @@ import { defaultRecommendationSettings, emptyRecommendationCredentials, isRecomm
 import { useSession } from './session';
 import type { CredentialStatus, SavedCredentials } from '../api/userData';
 import type { MusicApi } from '../api/client';
+import { browserJsonStorage } from '../storage/browserStorage';
 
 interface Profiles {
   profiles: Record<string, RecommendationProfile>;
   update: (identity: string, change: (profile: RecommendationProfile) => RecommendationProfile) => void;
   apply: (identity: string, profile?: RecommendationProfile) => void;
 }
+type PersistedProfiles = Pick<Profiles, 'profiles'>;
 export const useRecommendationProfiles = create<Profiles>()(persist((set) => ({
   profiles: {},
   update: (identity, change) => set((s) => { const value = change(s.profiles[identity] ?? { settings: defaultRecommendationSettings }); return isRecommendationProfile(value) ? { profiles: { ...s.profiles, [identity]: value } } : {}; }),
   apply: (identity, profile) => set((s) => { const profiles = { ...s.profiles }; if (profile && isRecommendationProfile(profile)) profiles[identity] = profile; else delete profiles[identity]; return { profiles }; }),
-}), { name: 'tooku-recommendations', version: 1, partialize: (s) => ({ profiles: s.profiles }), merge: (stored, current) => {
+}), { name: 'tooku-recommendations', version: 1, storage: browserJsonStorage<PersistedProfiles>(), partialize: (s) => ({ profiles: s.profiles }), merge: (stored, current) => {
   const profiles: Record<string, RecommendationProfile> = {};
   if (recommendationRecord(stored) && recommendationRecord(stored.profiles)) for (const [key, value] of Object.entries(stored.profiles)) if (isRecommendationProfile(value)) profiles[key] = value;
   return { ...current, profiles };

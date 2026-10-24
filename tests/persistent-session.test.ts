@@ -61,7 +61,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     expect(alias.connectionId).toMatch(/^[\w-]{43}$/);
     expect((await resolve('https://other.example.test')).status).toBe(502);
     const login = await app.login('Alice', upstream);
-    expect(await (await app.call('session', 'GET', undefined, login.cookie)).json()).toMatchObject({ username: 'Alice', clientBase: upstream, persistent: true });
+    expect(await (await app.call('session', 'GET', undefined, login.cookie)).json()).toMatchObject({ username: 'Alice', clientBase: upstream, persistent: true, serviceProtocol: 1 });
     expect((await app.call('session', 'POST', { ...login.auth, persistent: true, clientBase: 'https://other.example.test' })).status).toBe(400);
   });
   it('registers a verified server with a short connection ticket and binds proxy, data and playback to its session', async () => {

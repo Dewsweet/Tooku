@@ -9,6 +9,7 @@ import { useSession } from '../../state/session';
 import { usePlayer } from '../player/engine';
 import { RecommendationSongTable } from './RecommendationSongs';
 import './recommendations.css';
+import { browserStorageWriteRevision } from '../../storage/browserStorage';
 
 export function Recommendations() { const api = useApi(); return <RecommendationsView key={api.identity} />; }
 function RecommendationsView() {
@@ -29,15 +30,19 @@ function RecommendationsView() {
       const result = await recommendationsApi.generate(seeds, settings, credentials, excluded, controller.signal, recentSongs);
       if (controller.signal.aborted || useSession.getState().api !== api) return;
       if (!result.songs.length && batch?.songs.length) { setError('暂未找到更多合适的新歌曲，已保留当前推荐'); return; }
-      try { useRecommendationProfiles.getState().update(api.identity, (current) => rememberRecommendationBatch(current, result)); }
-      catch { setError('推荐结果暂未保存到本机，本次会话仍可查看；请核实用户数据同步或导出备份'); }
+      const before = browserStorageWriteRevision();
+      try { useRecommendationProfiles.getState().update(api.identity, (current) => rememberRecommendationBatch(current, result)); if (browserStorageWriteRevision() === before) return; }
+      catch { /* Report the persistence failure below. */ }
+      setError('推荐结果暂未保存到本机，本次会话仍可查看；请核实用户数据同步或导出备份');
     } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '推荐未完成'); }
     finally { if (request.current === controller) setBusy(false); }
   }
   function changeCount(value: string) {
     setError('');
-    try { useRecommendationProfiles.getState().update(api.identity, (current) => ({ ...current, settings: { ...current.settings, resultCount: Number(value) } })); }
-    catch { setError('推荐数量暂未保存到本机，请核实用户数据同步或导出备份'); }
+    const before = browserStorageWriteRevision();
+    try { useRecommendationProfiles.getState().update(api.identity, (current) => ({ ...current, settings: { ...current.settings, resultCount: Number(value) } })); if (browserStorageWriteRevision() === before) return; }
+    catch { /* Report the persistence failure below. */ }
+    setError('推荐数量暂未保存到本机，请核实用户数据同步或导出备份');
   }
   const ready = settings.mode === 'algorithm' ? Boolean(has('lastfmKey')) : settings.mode === 'ai' ? Boolean(settings.aiBaseUrl && settings.model.trim() && has('aiKey')) : Boolean(has('lastfmKey') || settings.aiBaseUrl && settings.model.trim() && has('aiKey'));
   return <div className="recommendations-page">

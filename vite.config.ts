@@ -4,6 +4,7 @@ import { createUserApi, upstreamUrl } from './server/api.ts';
 import { createNavidromeProxy, createPlaybackProxy } from './server/navidromeProxy.ts';
 import { createLyricsApi } from './server/lyrics/http.ts';
 import { createRecommendationsApi } from './server/recommendations/http.ts';
+import { tookuServiceProtocol } from './src/domain/serviceProtocol.ts';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'NAVIDROME_');
@@ -25,7 +26,7 @@ export default defineConfig(({ mode }) => {
         server.middlewares.use('/__tooku/health', (_req, res) => {
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Cache-Control', 'no-store');
-          res.end(JSON.stringify({ app: 'tooku', version: '0.1.0', persistence: 1 }));
+          res.end(JSON.stringify({ app: 'tooku', version: '0.1.0', persistence: 1, serviceProtocol: tookuServiceProtocol }));
         });
       },
     }],
