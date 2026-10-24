@@ -1,6 +1,6 @@
 # 开发记录与验证边界
 
-更新日期：2026-10-23；版本：0.1.0 开发版。产品名 Tooku，Apple Music 的简洁视觉与 Spotify 式布局，本地 Git 基线已提交，当前开发分支 codex/library-workspace。没有创建远程仓库、推送、云端发布或修改现有 Navidrome 配置。
+更新日期：2026-10-24；版本：0.1.0 开发版。产品名 Tooku，Apple Music 的简洁视觉与 Spotify 式布局，本地 Git 基线已提交，当前开发分支 codex/library-workspace。没有创建远程仓库、推送、云端发布或修改现有 Navidrome 配置。
 
 当前开发约定先读 [AGENTS.md](../AGENTS.md) 与 [开发接入指南](12-agent-development-guide.md)。以下带日期的验证保留为历史证据，不等于每次任务都重新验收。
 
@@ -18,7 +18,7 @@
 | 主界面浏览与来源定位 | 专辑/歌手/歌单详情统一播放操作；专辑完整读完后显示，每行数量可选并按本机保存，窄内容区显示实际有效列数并禁用无效选项；底栏标题按播放来源进入专辑/歌单并定位歌曲行，未知来源以专辑兜底 |
 | 账号数据 | 服务器 SQLite 为主，保留离线缓存和旧数据迁移；统一导出/恢复，异常才比较版本；明确恢复保护 queue/history 到下次登录，音乐与歌单仍由 Navidrome 管理 |
 | 登录与服务密钥 | 当前站点、配置的真实 Navidrome 地址和旧 `/nd` 均解析到正式 `/api/navidrome` 固定上游代理；保留输入地址的旧浏览器 identity；HttpOnly Cookie 最长 30 天，服务密钥按账号加密保存；其他直连仍仅本机 |
-| 受管音乐流 | 固定上游使用同源随机短时授权，绑定会话/账号/歌曲/转码并限制单 Range、并发和重放；退出、新登录与切歌撤销旧授权，通用 stream/download 代理关闭；真实格式、长曲和下载器扩展矩阵待发布回归 |
+| 受管音乐流 | 固定上游使用同源随机短时授权，绑定会话/账号/歌曲/转码并限制单 Range、并发和重放；响应掩码音频 MIME 并保留字节与 Range，退出、新登录与切歌撤销旧授权，通用 stream/download 代理关闭；Chrome + ABDM 的真实原始流/seek 已通过，其他格式、浏览器、长曲和扩展矩阵待发布回归 |
 | 歌词与播放器 | 本地优先，独立网易云/QQ 查询、双语整理、版本/排版/按版本偏移已实现；浏览器全屏和桌面画中画共用当前音频、歌词和偏好，画中画位置由浏览器决定 |
 | 为你推荐 | 手动生成 10/20/30 首，默认 30；参考最近 30–50 首不同歌曲，平衡来源、探索和跨批避重；AI 核实后不足最多追加两轮，仍不足说明缺额 |
 | 推荐页面与链接 | 主页简洁文字入口，推荐页单标题、无封面文字表格、共享列宽、“时间”表头；进入页面分组核实整批四平台链接，点击打开菜单，失败使用搜索兜底，无重试入口或本库播放 |
@@ -26,6 +26,16 @@
 | 账户与设置 | 六类导航、统一分区/设置行/开关/状态与操作；窄内容区顶部分类，推荐草稿和检测结果在分类切换后保留，同步/备份/旧版本恢复分层展示 |
 | 品牌与登录页 | 无文字的山湖 SVG 在湖面右侧使用音波；桌面登录页中同尺寸级别的 Navidrome 图标先藏在 Tooku 标志后方，悬停旋转滑出，并支持减少动态效果。登录页固定亮色中性色、黑色按钮、无边框输入；首次地址留空，成功后仅记住安全服务器地址，可匿名检测 API 延迟；登录成功后共享标志过渡并恢复用户主题 |
 | 明确未做 | 受管多服务器、拼音索引、智能歌单、歌词导入、逐词动画、PWA、实时跨设备同步、高级音频和离线歌曲未实现；网络歌手图片仅有试验；推荐“不感兴趣”反馈已暂缓 |
+
+### 2026-10-24 受管音频 MIME 与 Chrome 实机回归
+
+代码提交：`407bf32`（`fix: mask managed stream media types`）。
+
+真实 Chrome 在已安装 AB Download Manager 扩展、恢复既有 HttpOnly 会话和真实 Navidrome 曲库后，旧响应会被扩展按 `audio/*` Content-Type 识别并显示下载入口。根据该扩展公开源码的[响应监听与媒体 MIME 判断](https://github.com/amir1376/ab-download-manager-browser-integration/blob/master/src/linkgrabber/DownloadLinkInterceptor.ts)及[无扩展名时的 MIME 回退](https://github.com/amir1376/ab-download-manager-browser-integration/blob/master/src/media/MediaOnTab.ts)，受管播放代理现在将上游媒体 Content-Type 统一改为 `application/octet-stream`，同时继续转发原始字节、Content-Length、单段 Range 与 Content-Range，不维护 IDM、NDM、ABDM 名称或 User-Agent 黑名单。自动化测试新增 MIME 断言；这一做法只减少依赖媒体 MIME 的自动探测，不阻止已授权用户保存可解码内容。
+
+同一 Chrome 与扩展环境中，持久登录恢复出 525 张专辑、1,043 首歌曲和 357 位歌手；真实歌曲从头播放到 5 秒后暂停，跳到 1:30，再续播到 1:34，曲目、时间和播放状态均正常，扩展未再显示下载入口。没有修改歌单、收藏、文件夹或账号设置；测试结束时已暂停。Node 24.22.1 便携环境下 lint、typecheck、全量测试（47 个 Vitest 文件、494 项，另有 4 项 Node 原生测试）、build 与 diff 检查通过；构建保留已有主 JS 超过 500 kB 提示（约 602.91 kB）。系统 Node 24.15.0 会被最低版本门槛按预期拒绝。
+
+该结果仅覆盖本机 Chrome、当前扩展版本、固定上游原始流和一次 seek。兼容 MP3、失效恢复、30 分钟连续播放、循环、多标签页、快切/删除恢复、弱网、系统媒体键、Edge、Firefox、iOS Safari、Android Chrome、HTTPS 反向代理与 Docker 仍待发布回归。
 
 ### 2026-10-23 响应式浏览、移动切歌与品牌细节
 
@@ -429,13 +439,13 @@ Chrome 自动化提示扩展 UI 阻挡，按用户要求改用内置浏览器；
 2. **会话、代理与数据接口安全测试（2026-10-23 已完成自动化边界）**：共享同源判断现将畸形/非 HTTP(S)/Host 不匹配 Origin 稳定拒绝为 403；只有显式可信代理的单值 `X-Forwarded-Proto: https` 可影响 Secure Cookie/HSTS，Forwarded、X-Forwarded-* 和内部身份头不会转发 Navidrome。代理清除请求/响应逐跳头、浏览器 Cookie/Authorization、上游 Set-Cookie 与服务指纹，保留 Range；编码路径、反斜杠和点段继续被白名单拒绝。原生登录限制 64 KiB JSON，歌手图限制带 boundary 的 multipart 和 2 MiB 加封装余量，含分块正文运行时截断；用户文档、歌词和推荐保留各自类型、大小、限流、取消与超时控制。生产入口新增 CSP、frame-ancestors/X-Frame-Options、Permissions-Policy 和显式 HTTPS HSTS 开关。既有及新增测试覆盖会话重启/失效/退出/固定、跨账号、加密落盘、备份 revision、超大正文、错误脱敏、推荐密钥不回传以及代理头与响应凭据隔离；本轮 6 个相关测试文件共 106 项通过。真实 HTTPS 入口、各浏览器 CSP/画中画/音频兼容仍归第 5 项发布回归，不以模拟测试替代。
 
    代码提交 **`10175cf`**。在校验过的 Node 24.22.1 便携环境中，`npm.cmd run lint`、`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run build` 与 `git diff --check` 通过；全量为 47 个 Vitest 文件、489 项测试，另有 2 项原生 Node 运行时测试。隔离生产入口实际返回健康 200、SPA 路由 200、no-store、CSP、X-Frame-Options 和 Permissions-Policy，HTTP 下不发送 HSTS；随后已停止，未请求真实 Navidrome。构建保留已有主 JS 超过 500 kB 提示（本次约 601.55 kB）。
-3. **音乐流访问加固与下载器自动接管抑制（2026-10-23 已完成实现与模拟流回归）**：固定上游受管播放先用同源 POST 取得 256 位随机路径，服务端只保存摘要，并绑定当前 HttpOnly 会话摘要、owner、歌曲 ID、原始/兼容模式与四小时期限；通用 Navidrome stream/download 代理已关闭。新曲、新登录、认证撤销、退出和关闭会撤销旧授权并中止活动上游流；每个授权最多 64 次请求、3 路并发，只接受 GET/HEAD 与单段 Range，多 Range 返回 416。上游仍收到服务端注入的 token/salt；浏览器 URL、队列、历史和备份均不含认证参数。响应保留 Range/Content-Range，固定 inline、private/no-store、same-origin，阻止上游重定向及 Location、Cookie、附件名泄漏；Nginx 模板关闭授权路径访问日志。PlayerEngine 快切继续按 generation 忽略迟到授权，等待期间暂停不会晚到自播；暂停到临近过期后恢复会重新授权并保留进度。没有使用 IDM/NDM/ABDM 名称或 User-Agent 黑名单。该实现降低扩展自动接管、重放和批量枚举，不能阻止已授权用户录音或保存可解码内容，也不构成 DRM；未匹配固定上游的直连模式仍待受管多服务器后统一。
+3. **音乐流访问加固与下载器自动接管抑制（2026-10-24 已完成实现、模拟流及 Chrome + ABDM 原始流回归）**：固定上游受管播放先用同源 POST 取得 256 位随机路径，服务端只保存摘要，并绑定当前 HttpOnly 会话摘要、owner、歌曲 ID、原始/兼容模式与四小时期限；通用 Navidrome stream/download 代理已关闭。新曲、新登录、认证撤销、退出和关闭会撤销旧授权并中止活动上游流；每个授权最多 64 次请求、3 路并发，只接受 GET/HEAD 与单段 Range，多 Range 返回 416。上游仍收到服务端注入的 token/salt；浏览器 URL、队列、历史和备份均不含认证参数。响应保留字节、长度与 Range/Content-Range，将上游媒体 MIME 掩码为 `application/octet-stream`，并固定 inline、private/no-store、same-origin，阻止上游重定向及 Location、Cookie、附件名泄漏；Nginx 模板关闭授权路径访问日志。PlayerEngine 快切继续按 generation 忽略迟到授权，等待期间暂停不会晚到自播；暂停到临近过期后恢复会重新授权并保留进度。没有使用 IDM/NDM/ABDM 名称或 User-Agent 黑名单。该实现降低扩展自动接管、重放和批量枚举，不能阻止已授权用户录音或保存可解码内容，也不构成 DRM；未匹配固定上游的直连模式仍待受管多服务器后统一。
 
-   代码提交 **`381dd71`**。合成上游的真实 Node HTTP 测试覆盖 206 与单段 Range 转发、兼容 MP3 参数、无 Cookie/跨账号拒绝、多 Range、3 路并发上限、四小时过期、新授权和退出撤销、上游重定向脱敏、响应缓存/内联策略及通用 stream/download 关闭；播放器测试覆盖授权快切、等待时暂停和临近过期恢复。Node 24.22.1 下 `npm.cmd run lint`、`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run build` 与 `git diff --check` 通过；全量为 47 个 Vitest 文件、494 项测试，另有 2 项原生 Node 运行时测试。构建保留已有主 JS 超过 500 kB 提示（本次约 602.90 kB）。未使用真实账号、真实音频或实际下载器扩展；真实格式、长曲、后台、弱网、浏览器/下载器矩阵归第 5 项。
+   代码提交 **`381dd71`**、**`407bf32`**。合成上游的真实 Node HTTP 测试覆盖 206 与单段 Range 转发、兼容 MP3 参数、无 Cookie/跨账号拒绝、多 Range、3 路并发上限、四小时过期、新授权和退出撤销、上游重定向脱敏、响应缓存/内联/MIME 策略及通用 stream/download 关闭；播放器测试覆盖授权快切、等待时暂停和临近过期恢复。Node 24.22.1 下 `npm.cmd run lint`、`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run build` 与 `git diff --check` 通过；最新全量为 47 个 Vitest 文件、494 项测试，另有 4 项原生 Node 运行时测试。构建保留已有主 JS 超过 500 kB 提示（本次约 602.91 kB）。Chrome + ABDM 的固定上游原始流与 seek 已通过；其他真实格式、长曲、后台、弱网、浏览器/下载器矩阵归第 5 项。
 4. **Docker 生产化设置（2026-10-23 配置完成，实机验收待 Docker 主机）**：运行镜像删除 npm/corepack 并以 `node server/index.ts` 直接启动，应用健康检查验证 Tooku 标识与持久化版本。Compose 明确 UID/GID 1000、`init`、只读根文件系统、`tmpfs /tmp`、`cap_drop: ALL`、`no-new-privileges`、128 PID、512 MiB 内存和 1 CPU 限制；数据库/安全库与 AES 主密钥使用两个独立命名卷，默认仅绑定 `127.0.0.1`。新增宿主机、已有 Docker 网络和远程 HTTPS Navidrome 示例，以及完整卷快照、账号备份、HTTPS 可信代理、升级/回滚和架构声明边界。Nginx 模板关闭播放授权路径日志，显式保留 Range/If-Range，并为代理响应和上传保留 300 秒/13 MiB 边界。
 
    代码提交 **`edc2bfb`**。Node 24.22.1 下 `npm.cmd run container:check` 的配置不变量通过，健康检查 2 项原生 Node 测试通过；Trivy 0.76.1 Dockerfile 配置扫描为 0 个误配。`npm.cmd run lint`、`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run build` 与 `git diff --check` 通过；全量为 47 个 Vitest 文件、494 项测试，另有 4 项原生 Node 测试。构建保留已有主 JS 超过 500 kB 提示（本次约 602.91 kB）。此电脑未安装 Docker/Podman/nerdctl/buildah，`docker compose config`、build/up/down、容器健康状态、实际 UID/卷权限、重建持久化、备份恢复、升级/回滚、amd64/arm64 和最终 Tooku 镜像漏洞扫描尚未执行；这些必须在具备 Docker 的主机完成后才能关闭本项验收。
-5. **真实服务发布回归**：用授权测试资源完成浏览器认证、封面、原始流、转码流、seek、失效恢复、30 分钟连续播放、重复循环、多标签页竞争、快切/删除与恢复；覆盖 Chrome、Edge、Firefox、iOS Safari、Android Chrome、反向代理和 Docker。对流访问加固额外验证常见下载器扩展不会自动接管，同时确认正常浏览器、系统媒体键和弱网续播没有退化；结论只能表述为降低自动探测与滥用，不能宣传 DRM 或绝对防下载。
+5. **真实服务发布回归（2026-10-24 已完成 Chrome 持久登录、曲库恢复、原始流、seek 与 ABDM 单项）**：用授权测试资源继续完成浏览器认证、封面、兼容转码流、失效恢复、30 分钟连续播放、重复循环、多标签页竞争、快切/删除与恢复；覆盖 Edge、Firefox、iOS Safari、Android Chrome、反向代理和 Docker，并补充 Chrome 的弱网、系统媒体键与长时检查。当前同一 Chrome 扩展环境中，修改前 ABDM 会显示下载入口，MIME 掩码后真实原始流及 seek 正常且未再显示；这只是一个扩展版本的一次结果。后续仍需验证其他常见下载器扩展不会自动接管，同时确认正常浏览器、系统媒体键和弱网续播没有退化；结论只能表述为降低自动探测与滥用，不能宣传 DRM 或绝对防下载。
 
 ### P1：核心能力
 
