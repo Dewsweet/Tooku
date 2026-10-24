@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { MusicApi, testServerConnection } from '../src/api/client';
+import { MusicApi, prepareServerAlias, testServerConnection } from '../src/api/client';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function response(body: Record<string, unknown>, status = 200) {
@@ -45,6 +45,26 @@ it('uses an opaque registration ticket for a newly verified managed server', asy
   await testServerConnection('https://music.example.test');
   expect(new URL(fetch.mock.calls[1][0]).pathname).toBe('/api/navidrome/rest/ping.view');
   expect(fetch.mock.calls[1][1]?.headers).toEqual({ 'X-Tooku-Connection': connectionId });
+});
+
+it('prepares a server alias with only its normalized address and opaque ticket', async () => {
+  const connectionId = 'c'.repeat(43);
+  const fetch = vi.fn((input: string, options?: RequestInit) => {
+    void input; void options; return Promise.resolve(new Response(JSON.stringify({ managed: true, connectionId })));
+  });
+  vi.stubGlobal('fetch', fetch);
+  await expect(prepareServerAlias('https://music.example.test/library/')).resolves.toEqual({ base: 'https://music.example.test/library', connectionId });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0]).toBe('/api/tooku/connection');
+  expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+  expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ server: 'https://music.example.test/library', purpose: 'alias' });
+});
+
+it('rejects an alias when the server does not issue a valid ticket', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: string, options?: RequestInit) => {
+    void input; void options; return Promise.resolve(new Response(JSON.stringify({ managed: true })));
+  }));
+  await expect(prepareServerAlias('https://music.example.test')).rejects.toThrow('未通过 Navidrome 服务验证');
 });
 
 it('carries the verified target ticket through login into the persistent session', async () => {

@@ -44,6 +44,18 @@ it('binds account data operations to the verified owner and keeps logout separat
   await client.logout(); expect(fetcher.mock.calls.at(-1)?.[1]).toMatchObject({ method: 'DELETE' });
   client.dispose(); expect(fetcher).toHaveBeenCalledTimes(3);
 });
+it('validates managed server records and preserves their sanitized management errors', async () => {
+  const fetcher = vi.fn<typeof fetch>(); vi.stubGlobal('fetch', fetcher);
+  const client = new UserDataApi();
+  fetcher.mockResolvedValueOnce(json({ id: 'a'.repeat(22), address: 'https://old.example.test', primary: 'https://new.example.test', aliases: ['https://old.example.test', 'https://new.example.test'] }));
+  await expect(client.server()).resolves.toMatchObject({ primary: 'https://new.example.test' });
+  fetcher.mockResolvedValueOnce(json({ id: 'a'.repeat(22), address: 'https://old.example.test', primary: 'https://missing.example.test', aliases: ['https://old.example.test'] }));
+  await expect(client.server()).rejects.toThrow('音乐服务器记录无效');
+  fetcher.mockResolvedValueOnce(json({ error: '新地址的账号与当前服务器记录不一致。' }, 409));
+  await expect(client.addServerAlias('b'.repeat(43))).rejects.toThrow('新地址的账号与当前服务器记录不一致。');
+  fetcher.mockResolvedValueOnce(json({ error: 'internal detail must stay hidden' }, 409));
+  await expect(client.request('data', 'PUT', {})).rejects.toThrow('另一设备已修改数据');
+});
 it('promotes the configured direct Navidrome address to managed persistence without changing its local identity', async () => {
   const direct = 'http://127.0.0.1:44533';
   const fetcher = vi.fn<typeof fetch>(async (input) => {

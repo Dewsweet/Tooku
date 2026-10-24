@@ -12,7 +12,7 @@ Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm
 
 客户端先通过同源 `/api/tooku/connection` 提交规范化登录地址。当前 Tooku 站点、旧 `/nd`、正式 `/api/navidrome` 以及与 `NAVIDROME_UPSTREAM` 匹配的真实地址继续直接映射默认上游；其他地址由后端解析并固定 DNS 结果、匿名请求 Navidrome ping，成功后签发十分钟随机连接票据。票据仅可访问登录前需要的 ping、扩展检测和原生登录，不接受逐请求目标，也不能调用其他协议方法。登录页服务器地址首次留空，以后回填此浏览器上次成功登录的安全地址；浏览器 `MusicApi.identity` 仍按规范化后的输入地址生成，因此已有 localStorage/IndexedDB 身份不改名。恢复会话会取回原输入地址；旧会话未保存地址时按原 `/nd` 身份恢复。「测试连接」只取得票据并匿名 ping，不创建账号会话或同步数据。
 
-创建持久会话时，后端用票据中固定的目标再次验证 Subsonic token/salt，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。验证成功后，目标与认证材料一起加密保存在会话中，普通 API、封面和临时播放授权均只从会话读取目标。数据库 owner 是 `[规范化上游地址, 规范用户名]` 的 SHA-256，同名账号在不同服务器之间隔离；固定上游沿用原 owner 算法，不迁移或清空已有数据。浏览器继续使用原输入地址作为本地 identity，首次出现真实数据差异时沿用冲突保护。
+创建持久会话时，后端用票据中固定的目标再次验证 Subsonic token/salt，调用 `getUser` 并检查 HTTP 与业务状态；规范用户名来自已认证的上游响应。验证成功后，目标与认证材料一起加密保存在会话中，普通 API、封面和临时播放授权均只从会话读取目标。安全库 v2 为每台受管服务器分配稳定随机 ID，初始地址作为加密的内部 namespace；数据库 owner 是 `[namespace, 规范用户名]` 的 SHA-256，同名账号在不同服务器之间隔离。已有会话首次使用时自动补齐服务器 ID，初始 namespace 保持旧 `[规范化上游地址, 规范用户名]` 算法，因此不迁移或清空既有账号数据。浏览器继续使用原输入地址作为本地 identity，首次出现真实数据差异时沿用冲突保护。
 
 登记地址默认只允许公网 HTTP(S)。设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true` 后允许私网、回环和 Docker 内网目标，供可信自托管环境使用；固定 `NAVIDROME_UPSTREAM` 始终允许。链路本地、组播、未指定地址和已知云元数据地址即使打开私网开关也拒绝。每次代理连接重新解析域名，若任一结果落入禁止范围则拒绝，并把实际 socket 固定到检查过的地址，避免检查后再次解析造成 DNS 重绑定；上游重定向不跟随。连接探测与会话创建分别按来源地址限流。
 
@@ -76,6 +76,8 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 | `health` | GET | `{ app: 'tooku', persistence: 1 }` |
 | `connection` | POST | 识别默认上游，或验证候选 Navidrome 并返回 `managed` 与可选十分钟连接票据 |
 | `session` | POST / GET / DELETE | 验证并创建 Cookie 会话 / 恢复且重新验证 / 注销会话 |
+| `server` | GET / PATCH | 读取当前服务器的稳定 ID、当前/首选/已验证地址；将已验证地址设为首选 |
+| `server/aliases` | POST / DELETE | 用连接票据和当前账号凭据明确合并同服务器新地址；移除非当前会话地址 |
 | `playback` | POST | 为当前会话、歌曲和转码模式签发随机短时播放路径 |
 | `credentials` | GET / PUT | 仅读保存状态与 revision / 按版本更新密钥字段；不返回密钥 |
 | `data` | GET / PUT | 读取文档 / 提交 `{ revision, data }`；不匹配返回 409 |
@@ -84,13 +86,13 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 实际二进制流位于 `/api/tooku-stream/{grant}`，不属于账号 JSON API；只接受 GET/HEAD，外层代理必须转发 Range 并避免记录完整路径。
 
-`server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
+`server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要、稳定服务器记录和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复，`ServerSettings.tsx` 负责当前服务器地址。不会创建第二套播放器或 QueryClient。
 
 ## 受管多服务器的当前边界与后续工作
 
-第一阶段已允许登录页接受服务端可达、策略允许且验证成功的 Navidrome HTTP(S) 地址，并让它获得与固定上游相同的持久登录、账号数据、服务密钥、备份和临时播放授权。它没有把客户端地址直接拼到通用代理请求中；短时票据与加密会话固定目标，后续音乐代理从会话取目标，单次请求不能改写。
+登录页允许服务端可达、策略允许且验证成功的 Navidrome HTTP(S) 地址，并让它获得与固定上游相同的持久登录、账号数据、服务密钥、备份和临时播放授权。设置中的“服务器地址”可为当前记录增加同一 Navidrome 的新域名、端口或反向代理地址：先按原连接策略匿名探测，再用当前会话凭据验证规范账号，最后要求用户明确确认合并。首选地址只更新本设备下次登录回填；增加、设为首选和移除都不改变当前会话目标或播放。安全库仅在加密 payload 中保存完整地址，表索引使用 SHA-256；至少保留一个地址，当前会话使用的地址不能移除，已移除地址的其他会话会在下次请求时撤销。
 
-仍需继续完成稳定服务器 ID 与同地址别名合并、服务器列表/改址/删除管理，以及一个浏览器中多个服务器同时保持独立 Cookie 会话。当前单个浏览器 origin 仍只有一个登录 Cookie；新标签页切换服务器会使旧标签页请求因 owner 不匹配而失败，不会串到同用户名的另一服务器。私网开关目前是部署级布尔策略，后续可增加明确主机/CIDR 允许列表。`NAVIDROME_UPSTREAM` 继续作为默认服务器和旧 `/nd` 兼容入口。
+仍需继续完成整台服务器记录及其账号数据的明确删除策略，以及一个浏览器中多个服务器同时保持独立 Cookie 会话。当前单个浏览器 origin 仍只有一个登录 Cookie；新标签页切换服务器会使旧标签页请求因 owner 不匹配而失败，不会串到同用户名的另一服务器。地址合并只能以规范账号相同和用户明确确认为依据，Navidrome 没有可依赖的全局实例 ID，因此界面明确限定为域名、端口或反向代理变更。私网开关目前是部署级布尔策略，后续可增加明确主机/CIDR 允许列表。`NAVIDROME_UPSTREAM` 继续作为默认服务器和旧 `/nd` 兼容入口。
 
 ## 运行与部署
 

@@ -131,16 +131,19 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
     if (typeof username !== 'string' || !username || username.length > 256) throw new DataError(502, '音乐服务未返回有效账号。');
     return username;
   }
-  const ownerFor = (target: string, username: string) => createHash('sha256').update(JSON.stringify([target, username])).digest('hex');
+  const ownerFor = (namespace: string, username: string) => createHash('sha256').update(JSON.stringify([namespace, username])).digest('hex');
   async function authenticate(req: IncomingMessage, force = false) {
     assertSameOrigin(req);
     const token = sessionCookie(req);
     const session = vault.session(token, now());
     if (!session) return;
+    const server = session.serverId ? vault.server(session.serverId) : vault.ensureServer(session.upstream, now());
+    if (!server || !server.aliases.includes(session.upstream)) { revokePlaybackSession(token); vault.deleteSession(token); return; }
+    if (!session.serverId) { session.serverId = server.id; vault.updateSession(token, session); }
     if (req.headers['x-tooku-owner'] && req.headers['x-tooku-owner'] !== session.owner || req.headers['x-tooku-user'] && req.headers['x-tooku-user'] !== session.auth.u) throw new DataError(401, '浏览器登录账号已变化，请重新登录。');
     if (force || now() - session.verifiedAt > 15 * 60000) {
       try {
-        if (ownerFor(session.upstream, await verify(session.auth, session.upstream)) !== session.owner) throw new DataError(401, '账号已变化，请重新登录。');
+        if (ownerFor(server.namespace, await verify(session.auth, session.upstream)) !== session.owner) throw new DataError(401, '账号已变化，请重新登录。');
         session.verifiedAt = now(); vault.updateSession(token, session);
       } catch (error) { if (error instanceof DataError && error.status === 401) { revokePlaybackSession(token); vault.deleteSession(token); } throw error; }
     }
@@ -168,7 +171,13 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
         const data = await body(req);
         const candidate = normalizedClientBase(data.server);
         if (!candidate) throw new DataError(400, '服务器地址无效。');
-        if (isManagedBase(req, candidate, upstream)) { send(200, { managed: true }); return; }
+        if (isManagedBase(req, candidate, upstream)) {
+          if (data.purpose !== 'alias') { send(200, { managed: true }); return; }
+          if (connections.size >= 10000) throw new DataError(429, '连接请求过于频繁，请稍后重试。');
+          const connectionId = randomBytes(32).toString('base64url');
+          connections.set(digest(connectionId), { upstream, expires: now() + 10 * 60000 });
+          send(200, { managed: true, connectionId }); return;
+        }
         const result = await protocolRequest(candidate, 'ping');
         const errorCode = Number(object(result.error).code);
         const authenticationRequired = result.status === 'failed' && [10, 40, 41, 42, 43, 44, 50].includes(errorCode);
@@ -193,10 +202,11 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
           sessionUpstream = pending.upstream;
         }
         const username = await verify({ u: data.u, t: data.t, s: data.s }, sessionUpstream);
-        const owner = ownerFor(sessionUpstream, username);
+        const server = vault.ensureServer(sessionUpstream, now());
+        const owner = ownerFor(server.namespace, username);
         if (data.persistent === true) {
           const old = sessionCookie(req); revokePlaybackSession(old); const expires = now() + sessionLifetime;
-          const token = vault.createSession({ owner, upstream: sessionUpstream, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
+          const token = vault.createSession({ owner, upstream: sessionUpstream, serverId: server.id, auth: { u: data.u, t: data.t, s: data.s }, nativeToken: typeof data.nativeToken === 'string' && data.nativeToken.length <= 8192 ? data.nativeToken : '', admin: data.admin === true, expires, verifiedAt: now(), clientBase }, old);
           if (connectionId) connections.delete(digest(connectionId));
           setCookie(req, res, token, sessionLifetime / 1000);
           send(200, { owner, username: data.u, admin: data.admin === true, persistent: true, clientBase }); return;
@@ -208,6 +218,37 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       if (path === '/api/tooku/session' && req.method === 'GET') {
         if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');
         send(200, { owner: cookieSession.owner, username: cookieSession.auth.u, admin: cookieSession.admin, persistent: true, clientBase: cookieSession.clientBase }); return;
+      }
+      if (path === '/api/tooku/server' && req.method === 'GET') {
+        if (!cookieSession?.serverId) throw new DataError(401, '登录已过期，请重新登录。');
+        const server = vault.server(cookieSession.serverId); if (!server) throw new DataError(404, '音乐服务器记录不存在。');
+        send(200, { id: server.id, address: cookieSession.upstream, primary: server.primary, aliases: server.aliases }); return;
+      }
+      if (path === '/api/tooku/server/aliases' && req.method === 'POST') {
+        if (!cookieSession?.serverId) throw new DataError(401, '登录已过期，请重新登录。');
+        const data = await body(req, 4096); const connectionId = typeof data.connectionId === 'string' ? data.connectionId : '';
+        const pending = /^[\w-]{43}$/.test(connectionId) ? connections.get(digest(connectionId)) : undefined;
+        if (data.confirm !== true || !pending || pending.expires <= now()) throw new DataError(400, '服务器连接已过期，请重新检测。');
+        const server = vault.server(cookieSession.serverId); if (!server) throw new DataError(404, '音乐服务器记录不存在。');
+        const username = await verify(cookieSession.auth, pending.upstream);
+        if (ownerFor(server.namespace, username) !== cookieSession.owner) throw new DataError(409, '新地址的账号与当前服务器记录不一致。');
+        const updated = vault.addServerAlias(server.id, pending.upstream, now()); connections.delete(digest(connectionId));
+        send(200, { id: updated.id, address: cookieSession.upstream, primary: updated.primary, aliases: updated.aliases }); return;
+      }
+      if (path === '/api/tooku/server' && req.method === 'PATCH') {
+        if (!cookieSession?.serverId) throw new DataError(401, '登录已过期，请重新登录。');
+        const data = await body(req, 4096); const address = normalizedClientBase(data.primary);
+        if (!address) throw new DataError(400, '服务器地址无效。');
+        const updated = vault.setServerPrimary(cookieSession.serverId, address, now());
+        send(200, { id: updated.id, address: cookieSession.upstream, primary: updated.primary, aliases: updated.aliases }); return;
+      }
+      if (path === '/api/tooku/server/aliases' && req.method === 'DELETE') {
+        if (!cookieSession?.serverId) throw new DataError(401, '登录已过期，请重新登录。');
+        const data = await body(req, 4096); const address = normalizedClientBase(data.address);
+        if (data.confirm !== true || !address) throw new DataError(400, '服务器地址无效。');
+        if (address === cookieSession.upstream) throw new DataError(409, '不能移除当前会话正在使用的地址。');
+        const updated = vault.removeServerAlias(cookieSession.serverId, address, now());
+        send(200, { id: updated.id, address: cookieSession.upstream, primary: updated.primary, aliases: updated.aliases }); return;
       }
       if (path === '/api/tooku/playback' && req.method === 'POST') {
         if (!cookieSession) throw new DataError(401, '登录已过期，请重新登录。');

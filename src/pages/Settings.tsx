@@ -17,6 +17,7 @@ import { NetworkLyricsSettings } from '../features/settings/NetworkLyricsSetting
 import { RecommendationSettings } from '../features/settings/RecommendationSettings';
 import { SettingsSection } from '../features/settings/SettingsSection';
 import { AccentColorControl } from '../features/settings/AccentColorControl';
+import { ServerSettings } from '../features/settings/ServerSettings';
 import { baseFontSizes, fontFamilies, useDisplayPreferences } from '../state/display';
 
 const categories = [
@@ -74,6 +75,7 @@ export function Settings({ logout }: { logout: () => void }) {
             {avatarError && <p className="form-error" role="alert">{avatarError}</p>}
             <div className="setting-row"><div><strong>音乐服务器</strong><p>{serverUrl}</p></div><button className="subtle-button" onClick={logout}>切换账号</button></div>
           </SettingsSection>
+          <ServerSettings />
           <SettingsSection title="音乐库" action={<button className="text-button" onClick={() => library.refetch()}><RefreshCw size={16} />刷新</button>}>
             <div className="setting-row"><div><strong>当前音乐库</strong><p>切换浏览内容，保留当前播放。</p></div>
               <Select aria-label="当前音乐库" value={library.libraryId ?? ''} disabled={library.isPending || !library.libraries.length} onChange={(value) => {

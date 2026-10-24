@@ -3,6 +3,12 @@ import { emptyRecommendationCredentials, type RecommendationCredentials } from '
 
 export type SavedCredentials = Record<keyof RecommendationCredentials, boolean>;
 export interface CredentialStatus { revision: number; saved: SavedCredentials }
+export interface ManagedServer { id: string; address: string; primary: string; aliases: string[] }
+function managedServer(value: unknown): ManagedServer {
+  if (!value || typeof value !== 'object' || !('id' in value) || typeof value.id !== 'string' || !/^[\w-]{22}$/.test(value.id) || !('address' in value) || typeof value.address !== 'string' || !('primary' in value) || typeof value.primary !== 'string' || !('aliases' in value) || !Array.isArray(value.aliases) || !value.aliases.every((alias) => typeof alias === 'string')) throw new UserDataError('音乐服务器记录无效。');
+  if (!value.aliases.length || value.aliases.length > 20 || new Set(value.aliases).size !== value.aliases.length || !value.aliases.includes(value.address) || !value.aliases.includes(value.primary)) throw new UserDataError('音乐服务器记录无效。');
+  return { id: value.id, address: value.address, primary: value.primary, aliases: value.aliases };
+}
 function credentialStatus(value: unknown): CredentialStatus {
   if (!value || typeof value !== 'object' || !('revision' in value) || !Number.isSafeInteger(value.revision) || typeof value.revision !== 'number' || value.revision < 0 || !('saved' in value) || !value.saved || typeof value.saved !== 'object') throw new UserDataError('密钥保存状态无效。');
   const saved = value.saved;
@@ -17,7 +23,7 @@ export class UserDataError extends Error {
 export class UserDataApi {
   #token = '';
   owner = '';
-  async request(path: string, method = 'GET', data?: unknown): Promise<unknown> {
+  async request(path: string, method = 'GET', data?: unknown, useServerError = false): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(`/api/tooku/${path}`, { method, credentials: 'same-origin', referrerPolicy: 'no-referrer',
@@ -26,7 +32,11 @@ export class UserDataApi {
       });
     } catch { throw new UserDataError('服务器暂不可用，本地修改已保留。请重新读取同步状态。'); }
     if (!response.ok) {
-      throw new UserDataError(response.status === 409 ? '另一设备已修改数据，请选择保留的版本。' : response.status === 401 ? '同步会话已失效，请重新连接。' : response.status === 413 ? '账号数据超过 12 MB，请减少封面。' : '服务器暂不可用，本地数据仍保留。', response.status);
+      let serverError = '';
+      if (useServerError) {
+        try { const result: unknown = await response.json(); const value = result && typeof result === 'object' ? Reflect.get(result, 'error') : undefined; if (typeof value === 'string' && value.length <= 200) serverError = value; } catch { /* Fall back to the stable client message. */ }
+      }
+      throw new UserDataError(serverError || (response.status === 409 ? '另一设备已修改数据，请选择保留的版本。' : response.status === 401 ? '同步会话已失效，请重新连接。' : response.status === 413 ? '账号数据超过 12 MB，请减少封面。' : '服务器暂不可用，本地数据仍保留。'), response.status);
     }
     try { return await response.json(); } catch { throw new UserDataError('同步接口不可用，本地数据仍保留。'); }
   }
@@ -46,6 +56,10 @@ export class UserDataApi {
     return { username: session.username, admin: session.admin, clientBase };
   }
   async credentials() { return credentialStatus(await this.request('credentials')); }
+  async server() { return managedServer(await this.request('server', 'GET', undefined, true)); }
+  async addServerAlias(connectionId: string) { return managedServer(await this.request('server/aliases', 'POST', { connectionId, confirm: true }, true)); }
+  async setPrimaryServerAddress(primary: string) { return managedServer(await this.request('server', 'PATCH', { primary }, true)); }
+  async removeServerAlias(address: string) { return managedServer(await this.request('server/aliases', 'DELETE', { address, confirm: true }, true)); }
   async saveCredentials(revision: number, credentials: Partial<RecommendationCredentials>) {
     return credentialStatus(await this.request('credentials', 'PUT', { revision, credentials }));
   }

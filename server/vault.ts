@@ -7,8 +7,9 @@ import { DataError } from './store.ts';
 
 export interface StoredSession {
   owner: string; upstream: string; auth: { u: string; t: string; s: string }; nativeToken: string; admin: boolean;
-  expires: number; verifiedAt: number; clientBase?: string;
+  expires: number; verifiedAt: number; clientBase?: string; serverId?: string;
 }
+export interface StoredServer { id: string; namespace: string; primary: string; aliases: string[]; updatedAt: number }
 export const sessionLifetime = 30 * 24 * 3600000;
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -22,16 +23,18 @@ export class CredentialVault {
     try {
       this.#db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
       const version = this.#db.prepare('PRAGMA user_version').get()?.user_version;
-      if (version !== 0 && version !== 1) throw new Error('Unsupported Tooku security database version');
+      if (version !== 0 && version !== 1 && version !== 2) throw new Error('Unsupported Tooku security database version');
       this.#db.exec(`BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL, payload TEXT NOT NULL) STRICT;
         CREATE TABLE IF NOT EXISTS credentials (owner TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL) STRICT;
-        PRAGMA user_version=1; COMMIT;`);
+        CREATE TABLE IF NOT EXISTS servers (id TEXT PRIMARY KEY, namespace TEXT NOT NULL UNIQUE, updated INTEGER NOT NULL, payload TEXT NOT NULL) STRICT;
+        CREATE TABLE IF NOT EXISTS server_aliases (alias_hash TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE) STRICT;
+        PRAGMA user_version=2; COMMIT;`);
       if (filename === ':memory:') this.#key = randomBytes(32);
       else {
         const target = keyFile ?? resolve(dirname(filename), 'tooku-secret.key');
         if (!existsSync(target)) {
-          const used = this.#db.prepare('SELECT (SELECT COUNT(*) FROM sessions) + (SELECT COUNT(*) FROM credentials) AS count').get()?.count;
+          const used = this.#db.prepare('SELECT (SELECT COUNT(*) FROM sessions) + (SELECT COUNT(*) FROM credentials) + (SELECT COUNT(*) FROM servers) AS count').get()?.count;
           if (used !== 0) throw new Error('Tooku encryption key is missing; restore the original key file.');
           mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
           try { writeFileSync(target, randomBytes(32), { flag: 'wx', mode: 0o600 }); }
@@ -45,6 +48,9 @@ export class CredentialVault {
         }
         for (const row of this.#db.prepare('SELECT id, payload FROM sessions LIMIT 1').all()) {
           this.#open(String(row.payload), `session:${String(row.id)}`);
+        }
+        for (const row of this.#db.prepare('SELECT id, payload FROM servers LIMIT 1').all()) {
+          this.#open(String(row.payload), `server:${String(row.id)}`);
         }
       }
     } catch (error) { this.#db.close(); throw error; }
@@ -81,13 +87,72 @@ export class CredentialVault {
     if (!('upstream' in data) || typeof data.upstream !== 'string') throw new Error('Invalid Tooku session upstream');
     const clientBase = Reflect.get(data, 'clientBase');
     if (clientBase !== undefined && typeof clientBase !== 'string') throw new Error('Invalid Tooku session client base');
-    return { owner: data.owner, upstream: data.upstream, auth: { u: data.auth.u, t: data.auth.t, s: data.auth.s }, nativeToken: data.nativeToken, admin: data.admin, expires: data.expires, verifiedAt: data.verifiedAt, clientBase };
+    const serverId = Reflect.get(data, 'serverId');
+    if (serverId !== undefined && (typeof serverId !== 'string' || !/^[\w-]{22}$/.test(serverId))) throw new Error('Invalid Tooku session server');
+    return { owner: data.owner, upstream: data.upstream, auth: { u: data.auth.u, t: data.auth.t, s: data.auth.s }, nativeToken: data.nativeToken, admin: data.admin, expires: data.expires, verifiedAt: data.verifiedAt, clientBase, serverId };
   }
   updateSession(token: string, session: StoredSession) {
     const id = hash(token); this.#db.prepare('UPDATE sessions SET payload=? WHERE id=?').run(this.#seal(session, `session:${id}`), id);
   }
   deleteSession(token: string) { this.#db.prepare('DELETE FROM sessions WHERE id=?').run(hash(token)); }
   sweep(now: number) { this.#db.prepare('DELETE FROM sessions WHERE expires<=?').run(now); }
+  #server(row: Record<string, unknown> | undefined): StoredServer | undefined {
+    if (!row) return;
+    const id = String(row.id); const data = this.#open(String(row.payload), `server:${id}`);
+    if (!data || typeof data !== 'object' || !('namespace' in data) || typeof data.namespace !== 'string' || !('primary' in data) || typeof data.primary !== 'string' || !('aliases' in data) || !Array.isArray(data.aliases) || !data.aliases.every((alias) => typeof alias === 'string') || !('updatedAt' in data) || typeof data.updatedAt !== 'number') throw new Error('Invalid Tooku server');
+    return { id, namespace: data.namespace, primary: data.primary, aliases: data.aliases, updatedAt: data.updatedAt };
+  }
+  serverByAddress(address: string) {
+    const row = this.#db.prepare('SELECT servers.id, servers.payload FROM server_aliases JOIN servers ON servers.id=server_aliases.server_id WHERE alias_hash=?').get(hash(address));
+    const server = this.#server(row);
+    return server?.aliases.includes(address) ? server : undefined;
+  }
+  server(id: string) { return this.#server(this.#db.prepare('SELECT id, payload FROM servers WHERE id=?').get(id)); }
+  ensureServer(address: string, now = Date.now()) {
+    const existing = this.serverByAddress(address); if (existing) return existing;
+    const id = randomBytes(16).toString('base64url'); const server: StoredServer = { id, namespace: address, primary: address, aliases: [address], updatedAt: now };
+    this.#db.exec('BEGIN IMMEDIATE');
+    try {
+      const raced = this.serverByAddress(address); if (raced) { this.#db.exec('COMMIT'); return raced; }
+      this.#db.prepare('INSERT INTO servers VALUES (?, ?, ?, ?)').run(id, hash(address), now, this.#seal(server, `server:${id}`));
+      this.#db.prepare('INSERT INTO server_aliases VALUES (?, ?)').run(hash(address), id);
+      this.#db.exec('COMMIT'); return server;
+    } catch (error) { this.#db.exec('ROLLBACK'); throw error; }
+  }
+  addServerAlias(id: string, address: string, now = Date.now()) {
+    const server = this.server(id); if (!server) throw new DataError(404, '音乐服务器记录不存在。');
+    const occupied = this.serverByAddress(address);
+    if (occupied && occupied.id !== id) throw new DataError(409, '此地址已属于另一台音乐服务器。');
+    if (occupied) return server;
+    if (server.aliases.length >= 20) throw new DataError(400, '服务器地址别名过多。');
+    const updated = { ...server, aliases: [...server.aliases, address], updatedAt: now };
+    this.#db.exec('BEGIN IMMEDIATE');
+    try {
+      this.#db.prepare('INSERT INTO server_aliases VALUES (?, ?)').run(hash(address), id);
+      this.#db.prepare('UPDATE servers SET updated=?, payload=? WHERE id=?').run(now, this.#seal(updated, `server:${id}`), id);
+      this.#db.exec('COMMIT'); return updated;
+    } catch (error) { this.#db.exec('ROLLBACK'); throw error; }
+  }
+  setServerPrimary(id: string, address: string, now = Date.now()) {
+    const server = this.server(id); if (!server) throw new DataError(404, '音乐服务器记录不存在。');
+    if (!server.aliases.includes(address)) throw new DataError(400, '请先验证这个服务器地址。');
+    if (server.primary === address) return server;
+    const updated = { ...server, primary: address, updatedAt: now };
+    this.#db.prepare('UPDATE servers SET updated=?, payload=? WHERE id=?').run(now, this.#seal(updated, `server:${id}`), id); return updated;
+  }
+  removeServerAlias(id: string, address: string, now = Date.now()) {
+    const server = this.server(id); if (!server) throw new DataError(404, '音乐服务器记录不存在。');
+    if (!server.aliases.includes(address)) throw new DataError(404, '服务器地址不存在。');
+    if (server.aliases.length <= 1) throw new DataError(400, '至少保留一个服务器地址。');
+    const aliases = server.aliases.filter((alias) => alias !== address);
+    const updated = { ...server, primary: server.primary === address ? aliases[0] : server.primary, aliases, updatedAt: now };
+    this.#db.exec('BEGIN IMMEDIATE');
+    try {
+      this.#db.prepare('DELETE FROM server_aliases WHERE alias_hash=? AND server_id=?').run(hash(address), id);
+      this.#db.prepare('UPDATE servers SET updated=?, payload=? WHERE id=?').run(now, this.#seal(updated, `server:${id}`), id);
+      this.#db.exec('COMMIT'); return updated;
+    } catch (error) { this.#db.exec('ROLLBACK'); throw error; }
+  }
   credentials(owner: string) {
     const row = this.#db.prepare('SELECT revision, payload FROM credentials WHERE owner=?').get(owner);
     if (!row) return { revision: 0, credentials: { ...emptyRecommendationCredentials } };

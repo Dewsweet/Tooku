@@ -70,6 +70,25 @@ async function managedServer(base: string, signal?: AbortSignal) {
   }
 }
 
+export async function prepareServerAlias(input: string, signal?: AbortSignal) {
+  const base = normalizeServer(input); const timeout = AbortSignal.timeout(10000);
+  const requestSignal = AbortSignal.any([timeout, ...(signal ? [signal] : [])]);
+  let response: Response;
+  try {
+    response = await fetch('/api/tooku/connection', {
+      method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server: base, purpose: 'alias' }), signal: requestSignal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new ApiError(timeout.aborted ? '连接超时，请检查地址或稍后重试。' : '无法连接新的音乐服务器地址。');
+  }
+  const result: unknown = await response.json().catch(() => undefined);
+  const connectionId = result && typeof result === 'object' && 'connectionId' in result && typeof result.connectionId === 'string' ? result.connectionId : '';
+  if (!response.ok || !/^[\w-]{43}$/.test(connectionId)) throw new ApiError(response.status === 429 ? '连接请求过于频繁，请稍后再试。' : '新地址未通过 Navidrome 服务验证。');
+  return { base, connectionId };
+}
+
 /** Anonymous protocol probe: no session, credentials, extension discovery or account writes. */
 export async function testServerConnection(input: string, signal?: AbortSignal): Promise<{ latencyMs: number }> {
   const base = normalizeServer(input);

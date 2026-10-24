@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { createUserApi } from '../server/api';
 import { createNavidromeProxy, createPlaybackProxy } from '../server/navidromeProxy';
 import { CredentialVault, sessionLifetime } from '../server/vault';
@@ -15,9 +16,14 @@ import { defaultRecommendationSettings, emptyRecommendationCredentials } from '.
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => { for (const done of cleanups.splice(0).reverse()) await done(); vi.unstubAllEnvs(); });
 function directory() { const dir = mkdtempSync(join(tmpdir(), 'tooku-session-')); cleanups.push(() => rmSync(dir, { recursive: true, force: true })); return dir; }
+const forbiddenFetchPorts = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080]);
 async function listen(server: Server) {
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing test address');
+  let address: ReturnType<Server['address']>;
+  do {
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing test address');
+    if (forbiddenFetchPorts.has(address.port)) await new Promise<void>((done) => server.close(() => done()));
+  } while (forbiddenFetchPorts.has(address.port));
   let closed = false;
   const close = async () => { if (closed) return; closed = true; await new Promise<void>((done) => { server.close(() => done()); server.closeAllConnections(); }); };
   cleanups.push(close); return { origin: `http://127.0.0.1:${address.port}`, close };
@@ -51,6 +57,8 @@ describe('persistent browser sessions and encrypted credentials', () => {
     const resolve = (server: string) => app.call('connection', 'POST', { server });
     expect(await (await resolve(upstream)).json()).toEqual({ managed: true });
     expect(await (await resolve('http://localhost:44533')).json()).toEqual({ managed: true });
+    const alias = await (await app.call('connection', 'POST', { server: upstream, purpose: 'alias' })).json() as { connectionId: string };
+    expect(alias.connectionId).toMatch(/^[\w-]{43}$/);
     expect((await resolve('https://other.example.test')).status).toBe(502);
     const login = await app.login('Alice', upstream);
     expect(await (await app.call('session', 'GET', undefined, login.cookie)).json()).toMatchObject({ username: 'Alice', clientBase: upstream, persistent: true });
@@ -164,6 +172,50 @@ describe('persistent browser sessions and encrypted credentials', () => {
     expect(() => new CredentialVault(file)).toThrow('key is missing');
     writeFileSync(key, randomBytes(32)); expect(() => new CredentialVault(file)).toThrow();
     writeFileSync(key, original); const restored = new CredentialVault(file); expect(restored.credentials('owner').credentials.aiKey).toBe('synthetic-key'); restored.close();
+  });
+  it('migrates the security database and keeps stable server ids and aliases encrypted', () => {
+    const dir = directory(); const file = join(dir, 'security.sqlite');
+    const legacy = new DatabaseSync(file); legacy.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL, payload TEXT NOT NULL) STRICT;
+      CREATE TABLE credentials (owner TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL) STRICT; PRAGMA user_version=1;`); legacy.close();
+    let vault = new CredentialVault(file); const first = vault.ensureServer('https://private-name.example/music', 100);
+    expect(first.id).toMatch(/^[\w-]{22}$/); expect(vault.ensureServer('https://private-name.example/music').id).toBe(first.id);
+    expect(vault.addServerAlias(first.id, 'https://new-name.example/music', 200)).toMatchObject({ primary: 'https://private-name.example/music', aliases: ['https://private-name.example/music', 'https://new-name.example/music'] });
+    vault.close();
+    expect(readFileSync(file).includes(Buffer.from('private-name.example'))).toBe(false);
+    vault = new CredentialVault(file); expect(vault.serverByAddress('https://new-name.example/music')?.id).toBe(first.id);
+    expect(vault.removeServerAlias(first.id, 'https://private-name.example/music').aliases).toEqual(['https://new-name.example/music']);
+    expect(() => vault.removeServerAlias(first.id, 'https://new-name.example/music')).toThrow('至少保留一个'); vault.close();
+    const migrated = new DatabaseSync(file, { readOnly: true }); expect(migrated.prepare('PRAGMA user_version').get()?.user_version).toBe(2); migrated.close();
+  });
+  it('adds an explicitly confirmed address alias and reuses the original account owner', async () => {
+    const protocol = () => createServer((req, res) => {
+      const url = new URL(req.url!, 'http://fixture');
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ 'subsonic-response': url.pathname === '/rest/ping.view' ? { status: 'ok', type: 'navidrome' } : { status: 'ok' } }));
+    });
+    const original = await listen(protocol()); const replacement = await listen(protocol());
+    let mismatch = false;
+    const app = await fixture({ filename: ':memory:', upstream: original.origin, allowPrivateServers: true, verify: async ({ u }, target) => mismatch && target === replacement.origin ? 'different-account' : u.toLowerCase() });
+    const first = await app.login('Alice', original.origin);
+    const candidate = await (await app.call('connection', 'POST', { server: replacement.origin })).json() as { connectionId: string };
+    expect((await app.call('server/aliases', 'POST', { connectionId: candidate.connectionId }, first.cookie)).status).toBe(400);
+    mismatch = true; expect((await app.call('server/aliases', 'POST', { connectionId: candidate.connectionId, confirm: true }, first.cookie)).status).toBe(409); mismatch = false;
+    const linked = await app.call('server/aliases', 'POST', { connectionId: candidate.connectionId, confirm: true }, first.cookie);
+    expect(linked.status).toBe(200); expect(await linked.json()).toMatchObject({ address: original.origin, primary: original.origin, aliases: [original.origin, replacement.origin] });
+    const current = await app.call('server', 'GET', undefined, first.cookie); expect((await current.json() as { aliases: string[] }).aliases).toContain(replacement.origin);
+    const preferred = await app.call('server', 'PATCH', { primary: replacement.origin }, first.cookie);
+    expect(preferred.status).toBe(200); expect(await preferred.json()).toMatchObject({ primary: replacement.origin });
+    expect((await app.call('server', 'PATCH', { primary: 'https://unverified.example.test' }, first.cookie)).status).toBe(400);
+    expect((await app.call('server/aliases', 'DELETE', { address: original.origin, confirm: true }, first.cookie)).status).toBe(409);
+    const nextCandidate = await (await app.call('connection', 'POST', { server: replacement.origin })).json() as { connectionId: string };
+    const auth = { u: 'Alice', t: randomBytes(16).toString('hex'), s: randomBytes(16).toString('hex') };
+    const next = await app.call('session', 'POST', { ...auth, persistent: true, clientBase: replacement.origin, connectionId: nextCandidate.connectionId });
+    expect(next.status).toBe(200); expect((await next.clone().json() as { owner: string }).owner).toBe(first.info.owner);
+    const nextCookie = next.headers.get('set-cookie')?.split(';')[0]; if (!nextCookie) throw new Error('Missing replacement cookie');
+    const removed = await app.call('server/aliases', 'DELETE', { address: original.origin, confirm: true }, nextCookie);
+    expect(removed.status).toBe(200); expect(await removed.json()).toMatchObject({ address: replacement.origin, primary: replacement.origin, aliases: [replacement.origin] });
+    expect((await app.call('session', 'GET', undefined, first.cookie)).status).toBe(401);
+    expect((await app.call('server/aliases', 'DELETE', { address: replacement.origin, confirm: true }, nextCookie)).status).toBe(409);
   });
   it('authenticates protocol GET and form-POST requests through the same proxy without browser auth URLs', async () => {
     const seen: { url: URL; body: string; headers: IncomingHttpHeaders }[] = [];
