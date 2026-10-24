@@ -18,6 +18,6 @@ export async function restoreWorkspace() {
     useSession.getState().notify([syncWarning, browserStorageWarning()].filter(Boolean).join(' '));
   } catch {
     api?.dispose(); disconnectUserSync(); player.logout();
-    useSession.getState().notify('自动登录暂未完成，请重新登录。原有账号数据仍保留。');
+    useSession.getState().notify(navigator.onLine === false ? '当前离线，Navidrome 暂不可用。连接网络后可重新登录，原有账号数据仍保留。' : '自动登录暂未完成，请重新登录。原有账号数据仍保留。');
   }
 }

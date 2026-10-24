@@ -23,6 +23,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .workspace-recovery { display: grid; justify-items: center; align-content: center; gap: 20px; min-height: 100dvh; padding: 24px; background: var(--bg); color: var(--text); text-align: center; }
 .workspace-recovery h1 { font-size: calc(24px * var(--ui-font-scale, 1)); }
 .workspace-recovery p { margin: 0; color: var(--muted); }
+.pwa-update { position: fixed; z-index: 2000; top: max(14px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 28px); padding: 10px 12px 10px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); box-shadow: var(--card-shadow); font-size:calc(14px * var(--ui-font-scale, 1)); }
+.pwa-update span { white-space: nowrap; }
+.pwa-update button { min-height: 36px; padding-block: 7px; white-space: nowrap; }
+.pwa-update .text-button { padding-inline: 8px; }
 .workspace-shell button, .workspace-shell a { transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .2s ease, transform .2s ease; }
 .workspace-header { position: fixed; inset: 0 0 auto; height: var(--header-height); z-index: 60; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(300px, 570px) minmax(180px, 1fr); align-items: center; gap: 24px; padding: 0 26px; background: var(--shell); }
 .header-brand, .header-logo { display: flex; align-items: center; }
@@ -198,3 +202,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .folder-grid a { padding: 13px 11px; gap: 7px; font-size:calc(13px * var(--ui-font-scale, 1)); }
 }
 @media (hover:none) { .workspace-shell .track-actions { opacity: 1; } }
+@media (max-width: 520px) {
+  .pwa-update { top: max(8px, env(safe-area-inset-top, 0px)); width: calc(100vw - 16px); justify-content: center; flex-wrap: wrap; padding: 9px 10px; }
+  .pwa-update span { flex-basis: 100%; text-align: center; }
+}

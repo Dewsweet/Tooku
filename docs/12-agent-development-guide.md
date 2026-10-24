@@ -158,6 +158,7 @@ React 页面 / 通用控件
 | 队列、暂停位置、历史 | SQLite 最后保存的账号快照 / IndexedDB | key 由 `identity` 与种类组成；下次登录暂停恢复，不实时接管播放 |
 | 同步基线、未上传数据、导入前副本 | IndexedDB `profiles` 中 `sync` / `before-import` | 原数据保留；清除本机播放快照不清迁移基线 |
 | 查询结果 | TanStack Query 内存 | 按身份与相关库隔离，不等于持久化服务端数据 |
+| PWA 应用壳 | 浏览器 Cache Storage | 仅首页壳、构建 JS/CSS 与品牌图片；不含字体、API、音乐、封面、歌词、认证或账号数据，可从高级设置单独清除 |
 | 推荐普通设置、最近一批及有限避重元数据 | SQLite 账号文档 / IndexedDB sync；`tooku-recommendations` 本机回退 | 服务密钥在独立安全库，平台链接与目录缓存不进账号文档 |
 | 推荐目录结果 / Spotify 临时令牌 | `server/recommendations/cache.ts` 受限进程内存 | 按相关凭据/地区隔离并过期，不落库；取消和关闭清理规则见 16 号文档 |
 | 密码、认证材料与服务密钥 | 密码不保存；目标、认证材料/密钥经 `server/vault.ts` 加密进入独立安全库 | 受管上游持久会话；账号备份不含凭据，未登记直连模式仍仅会话内存 |

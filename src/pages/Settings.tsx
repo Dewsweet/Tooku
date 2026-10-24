@@ -18,6 +18,7 @@ import { RecommendationSettings } from '../features/settings/RecommendationSetti
 import { SettingsSection } from '../features/settings/SettingsSection';
 import { AccentColorControl } from '../features/settings/AccentColorControl';
 import { baseFontSizes, fontFamilies, useDisplayPreferences } from '../state/display';
+import { clearPwaCaches } from '../pwa';
 
 const categories = [
   { id: 'account', name: '账户与音乐库', icon: UserRound },
@@ -122,6 +123,12 @@ export function Settings({ logout }: { logout: () => void }) {
                 finally { setBusy(false); }
               }}>清除快照</button>
             </div>
+            <div className="setting-row"><div><strong>应用离线缓存</strong><p>只清除安装外壳和静态资源，不清除账号数据、队列或登录状态。</p></div><button className="subtle-button" disabled={busy} onClick={async () => {
+              setBusy(true);
+              try { await clearPwaCaches(); useSession.getState().notify('应用缓存已清除，将在需要时重新获取。'); }
+              catch (e) { useSession.getState().notify(errorMessage(e)); }
+              finally { setBusy(false); }
+            }}>清除应用缓存</button></div>
           </SettingsSection>
         </div>
       </div>
