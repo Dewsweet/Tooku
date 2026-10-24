@@ -190,6 +190,7 @@ describe('persistent browser sessions and encrypted credentials', () => {
     expect((await fetch(`${app.origin}${first.url}`, { headers: { Cookie: alice.cookie, Range: 'bytes=0-1,5-6' } })).status).toBe(416);
     const stream = await fetch(`${app.origin}${first.url}`, { headers: { Cookie: alice.cookie, Range: 'bytes=10-19' } });
     expect(stream.status).toBe(206); expect(await stream.text()).toBe('synthetic-audio');
+    expect(stream.headers.get('content-type')).toBe('application/octet-stream');
     expect(stream.headers.get('cache-control')).toBe('private, no-store'); expect(stream.headers.get('content-disposition')).toBe('inline');
     expect(stream.headers.get('cross-origin-resource-policy')).toBe('same-origin'); expect(stream.headers.get('set-cookie')).toBeNull();
     expect(seen).toHaveLength(1); expect(seen[0].range).toBe('bytes=10-19'); expect(seen[0].cookie).toBeUndefined();

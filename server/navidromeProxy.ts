@@ -130,6 +130,9 @@ export function createPlaybackProxy(upstream: string, users: ReturnType<typeof c
       const upstreamRequest = (target.protocol === 'https:' ? httpsRequest : httpRequest)(target, { method: req.method, headers }, (reply) => {
         const replyHeaders = proxyResponseHeaders(reply.headers);
         delete replyHeaders.location; delete replyHeaders['content-location']; delete replyHeaders['content-disposition'];
+        // Keep the grant opaque to extensions that classify responses solely by media MIME.
+        // Preserve the upstream bytes and Range framing while masking its media type.
+        replyHeaders['content-type'] = 'application/octet-stream';
         replyHeaders['cache-control'] = 'private, no-store';
         replyHeaders['content-disposition'] = 'inline';
         replyHeaders['cross-origin-resource-policy'] = 'same-origin';
