@@ -224,7 +224,12 @@ export class MusicApi {
       if (this.#abort.signal.aborted || signal?.aborted) throw error;
       throw new ApiError(write ? '保存结果暂时未知，请重新读取核实后再操作。' : '无法连接服务，请检查地址、网络和浏览器访问权限。');
     }
-    if (!response.ok) throw new ApiError(response.status === 401 ? '认证已失效，请重新连接。' : `服务请求失败（HTTP ${response.status}）。`, response.status === 401 ? 40 : undefined);
+    if (!response.ok) {
+      if (response.status === 401) throw new ApiError('认证已失效，请重新连接。', 40);
+      if (write && response.status >= 500) throw new ApiError('保存结果暂时未知，请重新读取核实后再操作。');
+      if (response.status === 502 || response.status === 504) throw new ApiError('Navidrome 暂时不可用，请检查服务状态后重试。');
+      throw new ApiError(`服务请求失败（HTTP ${response.status}）。`);
+    }
     let json: unknown;
     try { json = await response.json(); } catch { throw new ApiError('接口返回了网页或无法识别的数据，请检查反向代理。'); }
     const result = object(object(json)['subsonic-response']);

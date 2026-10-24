@@ -9,15 +9,24 @@ import { createNavidromeProxy, createPlaybackProxy } from './navidromeProxy.ts';
 import { createLyricsApi } from './lyrics/http.ts';
 import { createRecommendationsApi } from './recommendations/http.ts';
 import { applySecurityHeaders } from './security.ts';
+import { startupErrorMessage } from './startupErrors.ts';
 
 assertSupportedNodeVersion();
 const root = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 const upstream = upstreamUrl(process.env.NAVIDROME_UPSTREAM || 'http://127.0.0.1:44533');
-const api = createUserApi({ upstream });
-const lyrics = createLyricsApi();
-const recommendations = createRecommendationsApi(undefined, api.recommendationCredentials);
-const proxy = createNavidromeProxy(upstream, api);
-const playback = createPlaybackProxy(upstream, api);
+function createServices() {
+  const api = createUserApi({ upstream });
+  const lyrics = createLyricsApi();
+  const recommendations = createRecommendationsApi(undefined, api.recommendationCredentials);
+  return { api, lyrics, recommendations, proxy: createNavidromeProxy(upstream, api), playback: createPlaybackProxy(upstream, api) };
+}
+let services: ReturnType<typeof createServices>;
+try { services = createServices(); }
+catch (error) {
+  console.error(`Tooku 启动失败：${startupErrorMessage(error)}`);
+  process.exit(1);
+}
+const { api, lyrics, recommendations, proxy, playback } = services;
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json' };
 const server = createServer(async (req, res) => {
   applySecurityHeaders(req, res);

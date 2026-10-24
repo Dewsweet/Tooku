@@ -32,7 +32,7 @@ React 页面 / 通用控件
   └─ userSync → /api/tooku → 已验证账号 → SQLite 用户文档
 ```
 
-开发环境由 Vite 挂载业务 API，并通过 `/api/navidrome/rest` 转发协议请求及白名单内的原生登录/歌手图片接口；旧 `/nd` 路由仅保留兼容。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址首次留空，成功后由 `src/storage/loginServer.ts` 保存安全的地址并在返回/刷新时回填；拒绝认证信息、查询、锚点及异常内容，浏览器存储不可用不阻断登录，不保存账号密码、不进入账号同步/备份。连接准备阶段把当前站点、旧 `/nd` 和固定 `NAVIDROME_UPSTREAM` 映射到默认上游；其他地址由后端验证 Navidrome 后签发短时连接票据，登录成功再固定到加密会话。受管服务器在安全库中使用稳定随机 ID；同一服务器的新地址必须重新取得票据、用当前会话凭据验证规范账号，并由用户明确确认后才合并。`ServerSettings.tsx` 只管理当前会话所属记录的别名和首选登录地址，不在播放中切换上游。浏览器 `identity` 继续采用规范化输入地址以读取旧 localStorage/IndexedDB，恢复会话也保存该地址。私网与回环登记需部署者显式设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true`，固定上游始终兼容。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
+开发环境由 Vite 挂载业务 API，并通过 `/api/navidrome/rest` 转发协议请求及白名单内的原生登录/歌手图片接口；旧 `/nd` 路由仅保留兼容。生产 `server/index.ts` 同时提供静态页面、API 与代理，Docker 使用 Node 及持久化数据卷；生产先 build 再 `npm.cmd start`，`vite preview` 仅预览静态资源。登录服务器地址首次留空，成功后由 `src/storage/loginServer.ts` 保存安全的地址并在返回/刷新时回填；拒绝认证信息、查询、锚点及异常内容，浏览器存储不可用不阻断登录，不保存账号密码、不进入账号同步/备份。连接准备阶段把当前站点、旧 `/nd` 和固定 `NAVIDROME_UPSTREAM` 映射到默认上游；其他地址由后端验证 Navidrome 后签发短时连接票据，登录成功再固定到加密会话。受管服务器在安全库中使用稳定随机 ID。服务器选择只保留在登录流程，设置页不管理服务器记录、地址别名或切换；已有别名数据和兼容 API 暂不破坏，以便旧会话及数据库平稳升级。浏览器 `identity` 继续采用规范化输入地址以读取旧 localStorage/IndexedDB，恢复会话也保存该地址。私网与回环登记需部署者显式设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true`，固定上游始终兼容。服务端身份、版本与备份约定详见 [服务端持久化](13-server-persistence.md)。
 
 生产浏览器安全头及 Origin/HTTPS 判断集中在 `server/security.ts`；API handler 复用 `sameOriginRequest`，不能各自重新解析不可信 Origin。受管上游转发的头清理、原生登录/图片正文边界和路径白名单集中在 `server/navidromeProxy.ts`，地址解析、私网策略与 DNS 固定集中在 `server/navidromeTarget.ts`。只有受控 HTTPS 反向代理可启用 `TOOKU_TRUST_PROXY=true`，HSTS 另需 `TOOKU_HSTS=true`；部署调整后回归 Secure Cookie、单值 X-Forwarded-Proto、CSP 对直连 Navidrome 音频/封面/API 和画中画歌词的影响。
 
@@ -81,8 +81,7 @@ React 页面 / 通用控件
 | 音乐推荐 | `src/features/recommendations/`、`RecommendationSettings.tsx`、`server/recommendations/`（含 `cache.ts` 受限内存缓存） | 左栏为你推荐与主页文字入口；Last.fm / AI 扩展及补量、多样性筛选、整批四平台外链核实；服务端按账号加密保存密钥，详见 [音乐推荐](16-music-recommendations.md) |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
 | 用户数据同步 | `src/storage/userSync.ts`、`src/features/settings/UserDataSettings.tsx` | 空端自动迁移/恢复、版本冲突、离线缓存、备份恢复；不得操作当前音频 |
-| 服务器地址管理 | `src/features/settings/ServerSettings.tsx`、`src/api/userData.ts`、`server/vault.ts` | 当前服务器的稳定 ID、已验证地址别名、首选登录地址和旧地址移除；不得在播放中切换上游 |
-| 后端与共享格式 | `server/api.ts`、`navidromeTarget.ts`、`store.ts`、`vault.ts`、`index.ts`、`src/domain/userData.ts` | 受管目标验证与会话绑定、SQLite 原子 revision、限额与白名单 |
+| 后端与共享格式 | `server/api.ts`、`navidromeTarget.ts`、`store.ts`、`vault.ts`、`startupErrors.ts`、`index.ts`、`src/domain/userData.ts` | 受管目标验证与会话绑定、SQLite 原子 revision、限额与白名单；启动数据错误给出保守恢复提示并停止服务 |
 | 启动与部署 | `scripts/dev-server.mjs`、`scripts/port-selection.mjs`、`start-tooku.cmd`、`deploy/` | 有界端口回退、健康检查与复用现有服务 |
 
 新增功能优先扩展这些边界，不要求为了符合早期“目录建议”搬动整个仓库。已有文件包含较长 JSX，新代码优先写清晰的组件和函数；拆分只服务当前任务。

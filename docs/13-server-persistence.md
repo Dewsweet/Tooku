@@ -59,7 +59,7 @@ Tooku 后端使用 Node.js 24 的 `node:http` / `node:sqlite`，没有新增 npm
 
 新增 `tooku-security.sqlite`，与账号文档数据库同目录，由 `server/vault.ts` 管理独立 schema v2（v2 增加加密服务器记录与哈希地址索引）。会话和各账号服务密钥使用 AES-256-GCM，每条记录独立随机 nonce，AAD 绑定账号/会话摘要及用途；密钥写入使用独立原子 revision，409 和结果未知后需重新读取状态，不能自动重放。前端 GET 只返回五个字段的保存布尔值和版本，不返回密钥。输入替换已有值，明确删除操作可清空已保存密钥。普通数据恢复不覆盖凭据。
 
-32 字节随机主密钥默认保存在 `tooku-secret.key`，可用进程环境变量 `TOOKU_SECRET_KEY_FILE` 指向独立挂载的密钥文件；不把密钥内容放环境变量、源码或命令行。新数据目录首次生成，权限为当前服务用户可读写（POSIX 0600/目录 0700；Windows 需由管理员限制目录 ACL）。安全库已有记录时若主密钥缺失或错误，拒绝打开，不重新生成并覆盖原数据。磁盘加密用于隔离数据库备份泄漏，不能防御同时取得主密钥或控制服务进程的攻击者。应独立备份主密钥、限制服务目录权限并使用 HTTPS。
+32 字节随机主密钥默认保存在 `tooku-secret.key`，可用进程环境变量 `TOOKU_SECRET_KEY_FILE` 指向独立挂载的密钥文件；不把密钥内容放环境变量、源码或命令行。新数据目录首次生成，权限为当前服务用户可读写（POSIX 0600/目录 0700；Windows 需由管理员限制目录 ACL）。安全库已有记录时若主密钥缺失或错误，拒绝打开，不重新生成并覆盖原数据。生产入口会区分密钥缺失、密钥与安全库不匹配、不支持的数据库版本和 SQLite 损坏，输出明确恢复提示后停止监听；不会自动重建、删除或迁移原文件，排障前应先保留整个数据目录。磁盘加密用于隔离数据库备份泄漏，不能防御同时取得主密钥或控制服务进程的攻击者。应独立备份主密钥、限制服务目录权限并使用 HTTPS。
 
 实现参考 [OWASP Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) 与 [Cryptographic Storage](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html)。未引入第三方认证或加密依赖，使用 Node 内置 crypto。
 
@@ -86,11 +86,11 @@ v1 文档新增可选 `lyrics`，保存网络开关、来源顺序与按歌来�
 
 实际二进制流位于 `/api/tooku-stream/{grant}`，不属于账号 JSON API；只接受 GET/HEAD，外层代理必须转发 Range 并避免记录完整路径。
 
-`server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要、稳定服务器记录和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复，`ServerSettings.tsx` 负责当前服务器地址。不会创建第二套播放器或 QueryClient。
+`server/api.ts` 负责认证、同源、请求上限与错误脱敏；`server/vault.ts` 管理会话摘要、稳定服务器记录和加密凭据；`src/features/session/restoreSession.ts` 管理首次恢复；`server/store.ts` 负责 SQLite 及原子版本检查；`src/domain/userData.ts` 是共享格式与校验；`src/api/client.ts` / `userData.ts` 负责客户端连接；`src/storage/userSync.ts` 连接旧 store / IndexedDB；`UserDataSettings.tsx` 负责预览和恢复。不会创建第二套播放器或 QueryClient。
 
 ## 受管多服务器的当前边界与后续工作
 
-登录页允许服务端可达、策略允许且验证成功的 Navidrome HTTP(S) 地址，并让它获得与固定上游相同的持久登录、账号数据、服务密钥、备份和临时播放授权。设置中的“服务器地址”可为当前记录增加同一 Navidrome 的新域名、端口或反向代理地址：先按原连接策略匿名探测，再用当前会话凭据验证规范账号，最后要求用户明确确认合并。首选地址只更新本设备下次登录回填；增加、设为首选和移除都不改变当前会话目标或播放。安全库仅在加密 payload 中保存完整地址，表索引使用 SHA-256；至少保留一个地址，当前会话使用的地址不能移除，已移除地址的其他会话会在下次请求时撤销。
+登录页允许服务端可达、策略允许且验证成功的 Navidrome HTTP(S) 地址，并让它获得与固定上游相同的持久登录、账号数据、服务密钥、备份和临时播放授权。服务器地址只在登录时选择，退出后可使用其他地址重新登录；设置页不提供服务器记录、别名或当前播放目标管理。安全库继续兼容既有稳定服务器记录和别名数据，完整地址只存在 AES-256-GCM payload，SQLite 地址索引使用 SHA-256；兼容接口暂时保留，避免升级时破坏旧会话或已有数据库。
 
 当前单个浏览器 origin 只保持一个活动 Cookie 会话，符合轻量播放器一次连接一台 Navidrome 的产品边界；新标签页切换服务器会使旧标签页安全失败，不会串到同用户名的另一服务器。同浏览器并行多服务器会话和整台服务器记录删除 UI 不列入近期计划，避免把 Tooku 扩展成服务器管理平台；地址变更、旧地址移除和退出会话已满足日常维护。若长期运行后确认孤立记录会形成实际容量问题，再增加保守的管理员维护命令，不让普通设置直接级联删除账号数据。地址合并只能以规范账号相同和用户明确确认为依据，Navidrome 没有可依赖的全局实例 ID。私网开关保持部署级布尔策略，只有出现明确网络隔离需求时再评估主机/CIDR 允许列表。`NAVIDROME_UPSTREAM` 继续作为默认服务器和旧 `/nd` 兼容入口。
 

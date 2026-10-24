@@ -36,11 +36,6 @@
 .settings-status-row strong, .settings-status { font-size:calc(14px * var(--ui-font-scale, 1)); font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
 .settings-status-row .settings-note { margin-top: 4px; }
 .settings-status-row > button { flex-shrink: 0; background: var(--bg); }
-.server-alias-control { display: flex; align-items: center; gap: 10px; min-width: min(100%, 430px); }
-.server-alias-control input { min-width: 0; width: 300px; }
-.server-alias-control button { flex-shrink: 0; }
-.server-alias-list .setting-row { padding-block: 14px; }
-.server-alias-list .button-row { flex-shrink: 0; }
 .settings-recovery { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .settings-section summary { cursor: pointer; color: var(--muted); font-size:calc(13px * var(--ui-font-scale, 1)); line-height: 1.7; }
 .settings-section summary:hover { color: var(--text); }
@@ -121,8 +116,6 @@
   .setting-row > .styled-select { min-width: 0; max-width: 100%; width: 100%; }
   .setting-row > .subtle-button { max-width: 100%; }
   .settings-status-row { flex-wrap: wrap; gap: 12px; }
-  .server-alias-control { width: 100%; flex-wrap: wrap; }
-  .server-alias-control input { width: 100%; }
   .recommendation-settings-grid { grid-template-columns: minmax(0, 1fr); }
   .recommendation-service-heading { flex-direction: column; }
   .recommendation-check { align-items: flex-start; max-width: 100%; }

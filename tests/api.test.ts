@@ -50,6 +50,13 @@ describe('Subsonic transport and contracts', () => {
   });
   it('reads a playlist after saving and rejects a mismatched order', async () => { const fetch = vi.fn().mockResolvedValueOnce(ok({ playlist: { id: 'p', name: 'same', changed: 'old', entry: [] } })).mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok({ playlist: { id: 'p', name: 'same', entry: [{ id: 'b' }, { id: 'a' }] } })); vi.stubGlobal('fetch', fetch); await expect(new MusicApi('https://example.test', 'u', 'p').savePlaylist('p', 'same', ['a', 'b'], 'old')).rejects.toThrow('草稿不同'); expect(fetch).toHaveBeenCalledTimes(3); });
   it('does not retry a timed-out write automatically', async () => { const fetch = vi.fn().mockRejectedValue(new Error('timeout')); vi.stubGlobal('fetch', fetch); await expect(new MusicApi('https://example.test', 'u', 'p').createPlaylist('name')).rejects.toThrow('结果暂时未知'); expect(fetch).toHaveBeenCalledTimes(1); });
+  it('distinguishes an unavailable Navidrome from an unknown write result', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 502 })); vi.stubGlobal('fetch', fetch);
+    const api = new MusicApi('https://example.test', 'u', 'p');
+    await expect(api.request('getAlbumList2')).rejects.toThrow('Navidrome 暂时不可用');
+    await expect(api.createPlaylist('name')).rejects.toThrow('保存结果暂时未知');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it('normalizes optional song fields and preserves multiple artists', () => { expect(track({ id: 'abc', title: '歌', artists: [{ name: '甲' }, { name: '乙' }], duration: Infinity })).toMatchObject({ id: 'abc', artist: '甲 / 乙', duration: undefined }); });
   it('converts a server positive lyric offset into an earlier display time', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok({ lyricsList: { structuredLyrics: [{ synced: true, offset: 500, lang: 'zho', line: [{ start: 1000, value: '测试' }] }] } })));

@@ -43,14 +43,18 @@ export class CredentialVault {
         this.#key = readFileSync(target);
         if (this.#key.length !== 32) throw new Error('Invalid Tooku encryption key file');
         // Detect a wrong key before accepting writes, never replace unreadable encrypted records.
-        for (const row of this.#db.prepare('SELECT owner, payload FROM credentials LIMIT 1').all()) {
-          this.#open(String(row.payload), `credentials:${String(row.owner)}`);
-        }
-        for (const row of this.#db.prepare('SELECT id, payload FROM sessions LIMIT 1').all()) {
-          this.#open(String(row.payload), `session:${String(row.id)}`);
-        }
-        for (const row of this.#db.prepare('SELECT id, payload FROM servers LIMIT 1').all()) {
-          this.#open(String(row.payload), `server:${String(row.id)}`);
+        try {
+          for (const row of this.#db.prepare('SELECT owner, payload FROM credentials LIMIT 1').all()) {
+            this.#open(String(row.payload), `credentials:${String(row.owner)}`);
+          }
+          for (const row of this.#db.prepare('SELECT id, payload FROM sessions LIMIT 1').all()) {
+            this.#open(String(row.payload), `session:${String(row.id)}`);
+          }
+          for (const row of this.#db.prepare('SELECT id, payload FROM servers LIMIT 1').all()) {
+            this.#open(String(row.payload), `server:${String(row.id)}`);
+          }
+        } catch (error) {
+          throw new Error('Tooku security database cannot be decrypted with this key.', { cause: error });
         }
       }
     } catch (error) { this.#db.close(); throw error; }
