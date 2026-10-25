@@ -27,6 +27,12 @@
 | 品牌与登录页 | 无文字的山湖 SVG 在湖面右侧使用音波；桌面登录页中同尺寸级别的 Navidrome 图标先藏在 Tooku 标志后方，悬停旋转滑出，并支持减少动态效果。登录页固定亮色中性色、黑色按钮、无边框输入；首次地址留空，成功后仅记住安全服务器地址，可匿名检测 API 延迟；登录成功后共享标志过渡并恢复用户主题 |
 | 当前范围 | fnOS Docker 运行、Navidrome 连接和播放已由用户确认，重建后功能恢复也已确认，HTTPS 入口登录与完整卷还原仍待专项验证；用户已确认长时播放正常、Chrome 内存未持续升高（人工观察）；加载优化和错误恢复基础防护已完成；播放有界恢复、本地逐词高亮与可调淡入淡出已接入，淡入淡出听感已确认，异常恢复和逐词实机仍待确认；PWA 安装和卸载已确认，离线重开与更新交接待验收。拼音搜索与单独睡眠定时已跳过；多服务器管理平台、实时跨设备、智能歌单、推荐扩张、高级音频、离线歌曲和自动网络歌手资料不在近期范围 |
 
+### 2026-10-25 Nginx include 内 location 的 Host 覆盖定位
+
+用户反馈 server 层已改为 `Host $http_host` 后仍失败，并提供站点及 include 的反代 location。实际 `location ^~ /` 仍使用 `proxy_set_header Host $host;` 且自行定义请求头，因此不继承 server 层已修正的 Host，公开端口仍会丢失。已明确告知修改 include 中实际 location 的 Host 为 `$http_host`，保留其中已有的 `X-Forwarded-Proto $scheme` 并重载；真实修改后登录效果待用户反馈。站点还重复声明 X-Forwarded-Proto，且 HTTP/497 跳转未带非默认公开 HTTPS 端口，属于另外的配置整理项，不能据此认为已修复实际 Host 转发。
+
+本轮仅补充部署说明及定位记录，核对 Nginx 官方继承规则、Tooku 来源校验和文档 diff；无业务代码修改，未重跑自动化、访问 NAS 或修改用户 Nginx，不沿用上轮测试数字作为本轮验证。
+
 ### 2026-10-25 Nginx 非默认端口同源拒绝与 403 误报修复
 
 代码提交 **`25829e1`**。用户补充确认 fnOS 容器重建后功能可恢复，同一容器 IP:端口直连 Navidrome 正常；Tooku 经 NAS HTTPS 443 映射到公网 22443 后，登录页可打开，但任意音乐服务器地址显示部署策略拒绝。提供的 Nginx 配置使用 `proxy_set_header Host $host;`，会丢失浏览器公开端口，导致 Origin 中的 `:22443` 与 Node 收到的 Host 不匹配。同源校验在目标地址解析之前返回 403；旧前端将全部登记 403 写成地址策略，掩盖了这一原因。`X-Forwarded-Host $server_name` 不参与 Tooku 来源校验。应在实际处理 Tooku 请求的 location 使用 `Host $http_host` 并转发正确的 `X-Forwarded-Proto`；公网端口映射时不拼接内部 `$server_port`。无需更改 Navidrome 或重建 Tooku 即可先修正并重载 Nginx，真实反代修改后的效果仍待用户反馈。

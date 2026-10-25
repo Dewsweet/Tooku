@@ -59,6 +59,8 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 `$http_host` 保留浏览器原始端口；`$host` 会丢失非默认公开端口，默认的 `$proxy_host` 则可能变成 fnOS 的内网地址，均可能导致 POST 的 Origin 与 Host 不匹配。公网端口经 NAT 转发时也不要拼接 `$host:$server_port` 代替原始 Host。参考 [Nginx proxy_set_header 文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)。Nginx 的 `proxy_set_header` 按配置层级继承；若某个 location 自己定义了其他请求头，应在该 location 同样检查 Host 和 HTTPS 转发，不假设一定继承 server 层设置。
 
+面板生成的站点可能在 server 中 `include .../proxy/*.conf`，实际 `location ^~ /` 定义于被包含文件。用户已遇到 server 层改为 `$http_host` 后仍失败，而 include 中的 location 仍是 `Host $host`。应修改实际 location 中的 Host 并重载，不只修改站点外层配置；保存后确认面板没有重新生成旧值。若 server 同时声明两次 X-Forwarded-Proto，只保留一个正确值。对外 HTTPS 为非默认端口时，HTTP 跳转及 `error_page 497` 的目标也需包含实际公开 HTTPS 端口；这是入口跳转问题，不代替修复 location 的 Host。
+
 若“直连同一个 Tooku 容器正常，HTTPS 反代后任何 Navidrome 地址都被拒绝”，先区分 `/api/tooku/connection` 的错误：`connectionError: origin` 表示 Tooku 请求来源校验失败，发生在地址解析之前；`private` / `policy` 才是目标地址策略；无原因码的 403 还可能来自外层代理。旧版前端曾将全部 403 误报为地址策略，旧服务返回的固定“仅允许同源访问。”也由新版前端识别为反代诊断。不要移除/改写 Origin、允许任意跨源或关闭地址校验；`TOOKU_TRUST_PROXY=true` 只用于已受控代理的 HTTPS 识别，不会绕过 Host 校验。无需提供账号、Cookie 或认证 URL即可排查这一步。
 
 只有 Node 端口不能被客户端绕过、代理会覆盖客户端传入的 `X-Forwarded-Proto`，且最终入口已全站 HTTPS 时，才启用下面三个开关：
