@@ -1,8 +1,19 @@
 import { tookuServiceProtocol } from '../src/domain/serviceProtocol';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MusicApi, prepareServerAlias, testServerConnection } from '../src/api/client';
+import { UserDataApi } from '../src/api/userData';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('preserves safe connection diagnostics during registration and persistent-session creation', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ connectionError: 'tls', error: 'synthetic secret upstream detail' }), { status: 502 })));
+  await expect(testServerConnection('https://fixture.example.test:22443')).rejects.toThrow('HTTPS 证书验证失败');
+  await expect(new UserDataApi().connect({ u: 'alice', t: 'synthetic', s: 'synthetic' })).rejects.toThrow('HTTPS 证书验证失败');
+});
+it('does not display arbitrary response errors as connection diagnostics', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ connectionError: 'unknown', error: 'synthetic secret upstream detail' }), { status: 502 })));
+  await expect(testServerConnection('https://fixture.example.test')).rejects.toThrow('Tooku 无法连接或验证');
+  await expect(new UserDataApi().connect({ u: 'alice', t: 'synthetic', s: 'synthetic' })).rejects.toThrow('本地数据仍保留');
+});
 function response(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify({ 'subsonic-response': body }), { status, headers: { 'Content-Type': 'application/json' } });
 }
@@ -143,9 +154,9 @@ it('propagates cancellation so a stale request cannot update the UI', async () =
   controller.abort(); await assertion;
 });
 
-it('reports an eight-second timeout separately from cancellation', async () => {
+it('reports the bounded connection-test timeout separately from cancellation', async () => {
   abortableFetch(); const controller = new AbortController();
   const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
   const assertion = expect(testServerConnection('https://fixture.example.test')).rejects.toThrow('连接超时');
-  controller.abort(); await assertion; expect(timeout).toHaveBeenCalledWith(8000);
+  controller.abort(); await assertion; expect(timeout).toHaveBeenCalledWith(20000);
 });

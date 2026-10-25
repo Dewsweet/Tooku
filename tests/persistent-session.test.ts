@@ -54,6 +54,15 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
 }
 
 describe('persistent browser sessions and encrypted credentials', () => {
+  it('returns safe API validation diagnostics instead of collapsing them into an unidentifiable failure', async () => {
+    const remote = await listen(createServer((_req, res) => { res.writeHead(403); res.end('synthetic secret proxy detail'); }));
+    const app = await fixture({ filename: ':memory:', upstream: 'http://127.0.0.1:1', allowPrivateServers: true }, true);
+    const response = await app.call('connection', 'POST', { server: remote.origin });
+    expect(response.status).toBe(502);
+    const result = await response.json();
+    expect(result).toMatchObject({ connectionError: 'http', upstreamStatus: 403 });
+    expect(JSON.stringify(result)).not.toContain('synthetic secret');
+  });
   it.each(['hostname', 'ip'] as const)('persists a nonconfigured %s and port through real upstream verification, data writes and restart', async (kind) => {
     const seen: { host?: string; path: string; auth: string | null }[] = [];
     const remote = await listen(createServer(async (req, res) => {

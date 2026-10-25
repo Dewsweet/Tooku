@@ -1,13 +1,19 @@
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import { request as httpRequest, type RequestOptions, type ClientRequest, type IncomingMessage } from 'node:http';
-import { request as httpsRequest } from 'node:https';
+import { Agent, request as httpsRequest } from 'node:https';
+import { getCACertificates } from 'node:tls';
 import { DataError } from './store.ts';
+import { NavidromeConnectionError } from './navidromeErrors.ts';
+
+export function navidromeCertificateAuthorities() { return [...new Set([...getCACertificates('default'), ...getCACertificates('system')])]; }
+const secureAgent = new Agent({ ca: navidromeCertificateAuthorities(), rejectUnauthorized: true, keepAlive: true, autoSelectFamily: true });
 
 export interface ResolvedNavidromeTarget {
   base: string;
   address: string;
   family: 4 | 6;
+  addresses?: { address: string; family: 4 | 6 }[];
 }
 
 export function normalizeNavidromeTarget(input: unknown) {
@@ -48,19 +54,24 @@ function blockedAddress(address: string, allowPrivate: boolean) {
   return privateAddress && !allowPrivate;
 }
 
-export async function resolveNavidromeTarget(input: unknown, allowPrivate = false): Promise<ResolvedNavidromeTarget> {
+export async function resolveNavidromeTarget(input: unknown, allowPrivate = false, resolve = lookup): Promise<ResolvedNavidromeTarget> {
   const base = normalizeNavidromeTarget(input); const url = new URL(base);
   if (url.hostname.toLowerCase() === 'localhost') {
     if (!allowPrivate) throw new DataError(403, '此部署未开放私网音乐服务器。');
     return { base, address: '127.0.0.1', family: 4 };
   }
   const literal = isIP(url.hostname.replace(/^\[|\]$/g, ''));
-  const addresses = literal
-    ? [{ address: url.hostname.replace(/^\[|\]$/g, ''), family: literal as 4 | 6 }]
-    : await lookup(url.hostname, { all: true, verbatim: true }).catch(() => { throw new DataError(502, '无法解析音乐服务器地址。'); });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const addresses = await (async () => {
+    if (literal) return [{ address: url.hostname.replace(/^\[|\]$/g, ''), family: literal as 4 | 6 }];
+    try {
+      return await Promise.race([resolve(url.hostname, { all: true, verbatim: true }), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new NavidromeConnectionError('dns')), 3000); })]);
+    } catch { throw new NavidromeConnectionError('dns'); }
+    finally { clearTimeout(timer); }
+  })();
   if (!addresses.length || addresses.some((entry) => blockedAddress(entry.address, allowPrivate))) throw new DataError(403, '音乐服务器地址不在允许范围内。');
   const selected = addresses[0];
-  return { base, address: selected.address, family: selected.family as 4 | 6 };
+  return { base, address: selected.address, family: selected.family as 4 | 6, addresses: addresses.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 })) };
 }
 
 export function requestResolvedTarget(target: ResolvedNavidromeTarget, url: URL, options: RequestOptions, reply: (response: IncomingMessage) => void): ClientRequest {
@@ -68,8 +79,9 @@ export function requestResolvedTarget(target: ResolvedNavidromeTarget, url: URL,
   const request = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return request(url, {
     ...options,
+    ...(url.protocol === 'https:' && options.agent === undefined ? { agent: secureAgent } : {}),
     lookup: (_hostname, options, callback) => options.all
-      ? callback(null, [{ address: target.address, family: target.family }])
+      ? callback(null, target.addresses ?? [{ address: target.address, family: target.family }])
       : callback(null, target.address, target.family),
   }, reply);
 }

@@ -38,7 +38,9 @@ React 页面 / 通用控件
 
 域名和非默认端口通过 `requestResolvedTarget` 保留原 Host/端口/子路径及 HTTPS 证书域名，并将 socket 固定到已校验地址。自定义 lookup 必须按 Node 的 `options.all` 返回地址数组或单地址，不能以本机 IP 字面量测试替代域名回归。`managedServer` 的登记网络错误、非 2xx、无效 JSON/票据均报错，不切换到直连；仅旧服务成功且显式 `managed:false` 保留兼容。`Login` 在账号同步连接后检查受管会话是否已建立，失败不接入播放器、不开始工作区过渡；账号数据暂时读不到但会话已建立时仍沿用既有离线提示与缓存保护。
 
-登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。8 秒超时，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
+`server/navidromeTarget.ts` 保留全部已校验 DNS 结果供 Node 多地址连接回退；若任一结果违反地址策略仍整体拒绝。DNS 等待最多 3 秒，HTTPS Agent 合并 Node 默认与系统信任 CA 并保持严格验证。匿名 GET ping、认证 POST getUser 的有界验证在 `server/navidromeProtocol.ts`，8 秒总时限、1 MiB 响应上限，处理截断与中断，不跟随重定向；401/403 中的有效协议认证要求可识别服务。客户端登记默认 12 秒、匿名测试全过程 20 秒。`server/navidromeErrors.ts` 将网络异常映射为固定原因；API 返回可选 `connectionError` / `upstreamStatus`，前端只用 `src/domain/navidromeConnection.ts` 白名单生成诊断，不展示原始上游错误或重定向地址。登记和持久会话创建均保留诊断；身份、数据库和协议版本不因可选字段改变。回归重点是多地址回退、混合私网答案拒绝、超时/半响应释放、HTTP 状态和凭据不进入 GET URL。
+
+登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。连接登记及 ping 全过程最多 20 秒，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
 
 `Login.tsx` 保持连接配置与凭据为两个独立 POST 表单，`username` / `password` 的 id/name 和标准 autocomplete 不随文案变更；服务器地址使用不含 login 字样的 `navidrome-server` 标识，关闭自动补全并加 `data-bwignore` 提示，继续支持旧 `/nd` 文本输入。提交以 FormData 和实际服务器输入值为准，兼容密码管理器未派发 React change 的填写，并在重绘前同步内存草稿；不新增凭据持久化。参考 [Bitwarden 字段识别说明](https://contributing.bitwarden.com/architecture/deep-dives/autofill/generating-fill-scripts/)，独立表单和明确的字段名是主要措施；[Bitwarden 当前源码](https://github.com/bitwarden/clients/blob/main/apps/browser/src/autofill/services/collect-autofill-content.service.ts) 中 `data-bwignore` 受用户选项控制，不应仅依赖它，也不使用隐藏诱饵或临时只读字段。真实扩展自动填写需人工验收。
 

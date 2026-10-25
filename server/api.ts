@@ -6,8 +6,10 @@ import { isUserData, maxUserDataBytes } from '../src/domain/userData.ts';
 import { emptyRecommendationCredentials, type RecommendationCredentials } from '../src/domain/recommendations.ts';
 import { CredentialVault, sessionLifetime } from './vault.ts';
 import { requestAllowsSecureCookie, sameOriginRequest } from './security.ts';
-import { normalizeNavidromeTarget, requestResolvedTarget, resolveNavidromeTarget, type ResolvedNavidromeTarget } from './navidromeTarget.ts';
+import { normalizeNavidromeTarget, resolveNavidromeTarget, type ResolvedNavidromeTarget } from './navidromeTarget.ts';
 import { tookuServiceProtocol } from '../src/domain/serviceProtocol.ts';
+import { requestNavidromeProtocol } from './navidromeProtocol.ts';
+import { NavidromeConnectionError } from './navidromeErrors.ts';
 
 const cookieName = 'tooku-session';
 export const playbackGrantLifetime = 4 * 60 * 60 * 1000;
@@ -109,20 +111,7 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
   const trustedTarget = (target: string) => sameConfiguredServer(target, upstream);
   async function resolved(target: string) { return resolveTarget(target, trustedTarget(target) || allowPrivateServers); }
   async function protocolRequest(target: string, method: 'ping' | 'getUser', auth?: { u: string; t: string; s: string }) {
-    const checked = await resolved(target); const url = new URL(`${checked.base}/rest/${method}.view`);
-    const parameters = new URLSearchParams({ ...(auth ?? {}), ...(auth ? { username: auth.u } : {}), v: '1.16.1', c: 'Tooku', f: 'json' });
-    return await new Promise<Record<string, unknown>>((resolveRequest, reject) => {
-      const request = requestResolvedTarget(checked, url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(parameters.toString()) } }, (response) => {
-        const chunks: Buffer[] = []; let size = 0;
-        response.on('data', (chunk: Buffer) => { size += chunk.length; if (size <= 1024 * 1024) chunks.push(chunk); else request.destroy(); });
-        response.on('end', () => {
-          if ((response.statusCode ?? 502) >= 400 || size > 1024 * 1024) { reject(new DataError(502, '无法验证音乐服务。')); return; }
-          try { resolveRequest(object(object(JSON.parse(Buffer.concat(chunks).toString('utf8')))['subsonic-response'])); }
-          catch { reject(new DataError(502, '未识别到 Navidrome 服务。')); }
-        });
-      });
-      request.setTimeout(10000, () => request.destroy()); request.on('error', () => reject(new DataError(502, '无法连接音乐服务。'))); request.end(parameters.toString());
-    });
+    return requestNavidromeProtocol(await resolved(target), method, auth);
   }
   async function verify(auth: { u: string; t: string; s: string }, target = upstream): Promise<string> {
     if (options.verify) return options.verify(auth, target);
@@ -292,7 +281,8 @@ export function createUserApi(options: { upstream?: string; filename?: string; s
       throw new DataError(404, '接口不存在。');
     } catch (error) {
       // Never echo upstream URLs, credentials, payloads or exception messages from dependencies.
-      send(error instanceof DataError ? error.status : 503, { error: error instanceof DataError ? error.message : '服务暂不可用；本地数据仍保留，请稍后重试。' });
+      send(error instanceof DataError ? error.status : 503, { error: error instanceof DataError ? error.message : '服务暂不可用；本地数据仍保留，请稍后重试。',
+        ...(error instanceof NavidromeConnectionError ? { connectionError: error.connectionError, upstreamStatus: error.upstreamStatus } : {}) });
     }
   }
   async function authorizePlayback(req: IncomingMessage, token: string) {

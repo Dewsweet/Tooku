@@ -2,6 +2,7 @@ import md5 from 'blueimp-md5';
 import { UserDataApi } from './userData';
 import type { Album, Artist, Lyrics, Playlist, Track, MusicLibrary } from '../domain/models';
 import { playlistPermissions } from '../domain/playlistPermissions';
+import { navidromeConnectionMessage } from '../domain/navidromeConnection';
 
 type DTO = Record<string, unknown>;
 export const object = (value: unknown): DTO => value && typeof value === 'object' && !Array.isArray(value) ? value as DTO : {};
@@ -58,17 +59,18 @@ async function managedServer(base: string, signal?: AbortSignal) {
     response = await fetch('/api/tooku/connection', {
       method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server: base }),
-      signal: signal ?? AbortSignal.timeout(8000),
+      signal: signal ?? AbortSignal.timeout(12000),
     });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new ApiError('无法连接 Tooku 持久化服务，请检查连接并重试。');
   }
   if (!response.ok) {
-    const message = response.status === 403 ? '此音乐服务器未通过部署的地址策略，无法建立持久登录。私网地址需部署者显式开启。'
+    const diagnostic = navidromeConnectionMessage(await response.json().catch(() => undefined));
+    const message = diagnostic ?? (response.status === 403 ? '此音乐服务器未通过部署的地址策略，无法建立持久登录。私网地址需部署者显式开启。'
       : response.status === 429 ? '连接请求过于频繁，请稍后再试。'
       : response.status === 404 || response.status === 405 ? 'Tooku 持久化接口不可用，请更新并重启 Tooku 服务。'
-      : 'Tooku 无法连接或验证该音乐服务器，尚未建立持久登录。请检查地址和 Tooku 服务端网络。';
+      : 'Tooku 无法连接或验证该音乐服务器，尚未建立持久登录。请检查地址和 Tooku 服务端网络。');
     throw new ApiError(message, undefined, response.status);
   }
   let result: unknown;
@@ -104,7 +106,7 @@ export async function prepareServerAlias(input: string, signal?: AbortSignal) {
 /** Anonymous protocol probe: no session, credentials, extension discovery or account writes. */
 export async function testServerConnection(input: string, signal?: AbortSignal): Promise<{ latencyMs: number }> {
   const base = normalizeServer(input);
-  const timeout = AbortSignal.timeout(8000);
+  const timeout = AbortSignal.timeout(20000);
   const requestSignal = AbortSignal.any([timeout, ...(signal ? [signal] : [])]);
   try {
     const connection = await managedServer(base, requestSignal);

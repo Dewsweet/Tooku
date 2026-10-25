@@ -1,6 +1,7 @@
 import { isBackup, isUserDocument, type UserData } from '../domain/userData';
 import { emptyRecommendationCredentials, type RecommendationCredentials } from '../domain/recommendations';
 import { tookuServiceProtocol } from '../domain/serviceProtocol';
+import { navidromeConnectionMessage } from '../domain/navidromeConnection';
 
 export type SavedCredentials = Record<keyof RecommendationCredentials, boolean>;
 export interface CredentialStatus { revision: number; saved: SavedCredentials }
@@ -39,10 +40,12 @@ export class UserDataApi {
     } catch { throw new UserDataError('服务器暂不可用，本地修改已保留。请重新读取同步状态。'); }
     if (!response.ok) {
       let serverError = '';
+      const result: unknown = await response.json().catch(() => undefined);
+      const diagnostic = navidromeConnectionMessage(result);
       if (useServerError) {
-        try { const result: unknown = await response.json(); const value = result && typeof result === 'object' ? Reflect.get(result, 'error') : undefined; if (typeof value === 'string' && value.length <= 200) serverError = value; } catch { /* Fall back to the stable client message. */ }
+        const value = result && typeof result === 'object' ? Reflect.get(result, 'error') : undefined; if (typeof value === 'string' && value.length <= 200) serverError = value;
       }
-      throw new UserDataError(serverError || (response.status === 426 ? 'Tooku 前后端版本不兼容，请刷新页面；如仍出现，请升级并重启 Tooku 服务。' : response.status === 409 ? '另一设备已修改数据，请选择保留的版本。' : response.status === 401 ? '同步会话已失效，请重新连接。' : response.status === 413 ? '账号数据超过 12 MB，请减少封面。' : '服务器暂不可用，本地数据仍保留。'), response.status);
+      throw new UserDataError(diagnostic || serverError || (response.status === 426 ? 'Tooku 前后端版本不兼容，请刷新页面；如仍出现，请升级并重启 Tooku 服务。' : response.status === 409 ? '另一设备已修改数据，请选择保留的版本。' : response.status === 401 ? '同步会话已失效，请重新连接。' : response.status === 413 ? '账号数据超过 12 MB，请减少封面。' : '服务器暂不可用，本地数据仍保留。'), response.status);
     }
     try { return await response.json(); } catch { throw new UserDataError('同步接口不可用，本地数据仍保留。'); }
   }
