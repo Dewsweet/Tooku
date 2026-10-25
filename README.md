@@ -99,13 +99,15 @@ npm.cmd run security:licenses
 
 ## 可选 Docker 部署
 
-已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据/歌词/推荐 API 和固定上游代理。基础镜像固定为 Node 24.22.1 Alpine 的官方多架构 digest；运行层删除 npm/corepack 并由 Node 直接启动，内置应用健康检查。Compose 使用明确的非 root UID/GID、只读根文件系统、受限 `/tmp`、无 Linux capabilities、no-new-privileges 及 PID/内存/CPU 限制，默认只映射到本机。账号数据库和安全库存入 `tooku-data`，主密钥单独存入 `tooku-security-key`。完整配置、同网络/远程 HTTPS 上游、备份、代理、升级与回滚步骤见 [容器部署](deploy/README.md)。2026-10-25 用户已确认 Windows 10 虚拟化 fnOS 中容器运行、Navidrome 连接和播放正常；重建持久化、完整卷恢复、HTTPS 入口和最终镜像扫描仍待专项验收。本开发电脑仍未安装 Docker。
+已准备 [Dockerfile](Dockerfile) 和 [Compose](compose.yaml)，使用 Node.js 同时提供静态页面、用户数据/歌词/推荐 API 和固定上游代理。基础镜像固定为 Node 24.22.1 Alpine 的官方多架构 digest；运行层删除 npm/corepack 并由 Node 直接启动，内置应用健康检查。Compose 使用明确的非 root UID/GID、只读根文件系统、受限 `/tmp`、无 Linux capabilities、no-new-privileges 及 PID/内存/CPU 限制，默认只映射到本机。账号数据库和安全库存入 `tooku-data`，主密钥单独存入 `tooku-security-key`。完整配置、同网络/远程 HTTPS 上游、备份、代理、升级与回滚步骤见 [容器部署](deploy/README.md)。2026-10-25 用户已确认 Windows 10 虚拟化 fnOS 中容器运行、Navidrome 连接和播放正常；同日确认重建后功能恢复；完整卷恢复、HTTPS 入口和最终镜像扫描仍待专项验收。本开发电脑仍未安装 Docker。
 
 ```powershell
 docker compose up --build -d
 ```
 
 配置通过 `http://127.0.0.1:8080/` 提供 Tooku，`NAVIDROME_UPSTREAM` 默认指向宿主机 44533；容器中的 localhost 是容器自身。若 Navidrome 位于其他容器/设备或子路径，通过环境变量或 [同网络叠加配置](deploy/compose.same-network.yaml) 指定上游（不要带尾斜杠）。Linux 上服务只绑定 127.0.0.1 时，host-gateway 并不保证能连接，应选择同一容器网络或宿主机实际可达地址。远程访问需配置 HTTPS 入口。
+
+HTTPS 反代需保留公开 Host 的端口，相关 Nginx location 使用 `proxy_set_header Host $http_host;`。例如公网 `:22443` 映射 NAS `:443` 时，`$host` 会丢失公开端口，导致请求来源校验失败；新版已将这种 403 与 Navidrome 地址策略分开提示。修改并重载代理即可修复 Host 转发，不需清理数据或为此开放私网策略；详见 [HTTPS 排查](deploy/README.md#https-入口)。
 
 ## 独立测试服务
 
@@ -134,7 +136,7 @@ node tests/fixtures/server.mjs
 
 ## 推荐路线
 
-当前为 React + TypeScript + Vite 网页应用及单进程 Node.js / SQLite 配套层，以 Subsonic / OpenSubsonic 为音乐数据协议，使用常驻 HTMLAudioElement 播放。账号持久化、歌词和推荐模块都在同一进程内按请求工作，不是独立常驻服务。迁移与备份恢复、歌单权限和保存核实已有实现；用户已确认淡入淡出、长时间播放正常，Chrome 内存未持续升高（人工观察，未提供量化记录）。fnOS Docker 基础运行、Navidrome 连接和播放已由用户确认；容器重建持久化、备份还原，以及权限并发、弱网、千首队列和 HTTPS 入口仍待发布前专项验证。轻量 PWA 的安装/卸载已确认，离线与更新交接待验收；本地逐词高亮已实现。拼音搜索和单独睡眠定时已跳过，高级音频不在近期计划。
+当前为 React + TypeScript + Vite 网页应用及单进程 Node.js / SQLite 配套层，以 Subsonic / OpenSubsonic 为音乐数据协议，使用常驻 HTMLAudioElement 播放。账号持久化、歌词和推荐模块都在同一进程内按请求工作，不是独立常驻服务。迁移与备份恢复、歌单权限和保存核实已有实现；用户已确认淡入淡出、长时间播放正常，Chrome 内存未持续升高（人工观察，未提供量化记录）。fnOS Docker 基础运行、Navidrome 连接和播放已由用户确认；重建后功能恢复也已确认；完整备份还原，以及权限并发、弱网、千首队列和 HTTPS 入口仍待发布前专项验证。轻量 PWA 的安装/卸载已确认，离线与更新交接待验收；本地逐词高亮已实现。拼音搜索和单独睡眠定时已跳过，高级音频不在近期计划。
 
 网络与双语歌词见 [独立歌词组件方案与实现](docs/15-lyrics-service-design.md)：组件随 Tooku 同端口启动，脱离 Navidrome 的网络查询与检测，支持网易云 / QQ 音乐；默认本地优先，明确缺失才联网。展开页顶部来源、歌词设置、全屏与收起图标同行，去掉胶囊外框并以竖线分组，QQ 使用企鹅图标；底栏最右按钮直接打开浏览器全屏播放器，退出全屏不改变音频。展开页右键复用当前歌曲更多选项；来源只有本地、网易云和 QQ，缺本地时自动采用网络相近版本；歌手匹配兼容多人合写、括号与平台别名，支持原文加括号译名的歌名，以及平台确认的中文/日文歌手名关联。网易云组合检索失败时受限回退为仅歌名检索，再按歌手/时长筛选；QQ 优先使用新版匿名明文接口显式请求译文，故障可回退旧接口，空译文时保留原文。“歌词设置”将显示、双语排版、同步偏移和版本搜索合并到一个面板；显示页使用“自动识别”双语格式，重置与刷新同行、保存独占一行，不放预览；内部滚动为输入框焦点边框留白，版本页先填歌曲标题和歌手，再选择平台并搜索，不放刷新按钮；纯音乐或最终无结果统一显示“该音乐没有歌词，请欣赏”。设置中的“网络歌词”可调整来源顺序、查看真实运行状态并检测。个人选择随账号备份，公开歌词放独立缓存，不写回标签。未知排版保留原文，可手动指定；不生成译文或时间戳。平台匿名接口可能变化，本次公开样本通过不代表全部歌曲可用。既有服务未加载新接口时，在停止播放后正常重启 Tooku 即可。
 

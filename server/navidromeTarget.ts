@@ -57,7 +57,7 @@ function blockedAddress(address: string, allowPrivate: boolean) {
 export async function resolveNavidromeTarget(input: unknown, allowPrivate = false, resolve = lookup): Promise<ResolvedNavidromeTarget> {
   const base = normalizeNavidromeTarget(input); const url = new URL(base);
   if (url.hostname.toLowerCase() === 'localhost') {
-    if (!allowPrivate) throw new DataError(403, '此部署未开放私网音乐服务器。');
+    if (!allowPrivate) throw new NavidromeConnectionError('private');
     return { base, address: '127.0.0.1', family: 4 };
   }
   const literal = isIP(url.hostname.replace(/^\[|\]$/g, ''));
@@ -69,7 +69,7 @@ export async function resolveNavidromeTarget(input: unknown, allowPrivate = fals
     } catch { throw new NavidromeConnectionError('dns'); }
     finally { clearTimeout(timer); }
   })();
-  if (!addresses.length || addresses.some((entry) => blockedAddress(entry.address, allowPrivate))) throw new DataError(403, '音乐服务器地址不在允许范围内。');
+  if (!addresses.length || addresses.some((entry) => blockedAddress(entry.address, allowPrivate))) throw new NavidromeConnectionError('policy');
   const selected = addresses[0];
   return { base, address: selected.address, family: selected.family as 4 | 6, addresses: addresses.map((entry) => ({ address: entry.address, family: entry.family as 4 | 6 })) };
 }

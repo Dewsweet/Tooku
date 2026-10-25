@@ -4,6 +4,24 @@ import { MusicApi, prepareServerAlias, testServerConnection } from '../src/api/c
 import { UserDataApi } from '../src/api/userData';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it.each([
+  [{ connectionError: 'origin' }, 'Host'],
+  [{ error: '仅允许同源访问。' }, 'Host'],
+  [{ connectionError: 'policy' }, '允许范围'],
+  [{ error: '音乐服务器地址不在允许范围内。' }, '允许范围'],
+  [{ connectionError: 'private' }, '私网'],
+  [{ error: '此部署未开放私网音乐服务器。' }, '私网'],
+] as const)('distinguishes reverse-proxy and address-policy denials, including old server responses: %j', async (body, message) => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 403 })));
+  const api = new MusicApi('https://music.example.test', 'alice', 'synthetic-password');
+  await expect(api.prepare()).rejects.toThrow(message);
+  await expect(new UserDataApi().connect({ u: 'alice', t: 'synthetic', s: 'synthetic' })).rejects.toThrow(message);
+  api.dispose();
+});
+it('does not label an unexplained reverse-proxy 403 as a music server address rejection', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>private gateway detail</html>', { status: 403 })));
+  await expect(testServerConnection('https://music.example.test')).rejects.toThrow('反向代理拒绝了连接登记');
+});
 it('preserves safe connection diagnostics during registration and persistent-session creation', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ connectionError: 'tls', error: 'synthetic secret upstream detail' }), { status: 502 })));
   await expect(testServerConnection('https://fixture.example.test:22443')).rejects.toThrow('HTTPS 证书验证失败');

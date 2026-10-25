@@ -5,7 +5,7 @@ export class NavidromeConnectionError extends DataError {
   connectionError: NavidromeConnectionReason;
   upstreamStatus?: number;
   constructor(reason: NavidromeConnectionReason, upstreamStatus?: number) {
-    super(502, navidromeConnectionMessage({ connectionError: reason, upstreamStatus })!);
+    super(['origin', 'private', 'policy'].includes(reason) ? 403 : 502, navidromeConnectionMessage({ connectionError: reason, upstreamStatus })!);
     this.connectionError = reason;
     this.upstreamStatus = upstreamStatus;
   }

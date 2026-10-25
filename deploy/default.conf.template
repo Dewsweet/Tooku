@@ -19,6 +19,7 @@ server {
         proxy_set_header If-Range $http_if_range;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
+        # Keep the browser's public Host including its port; $host loses a nondefault port.
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
@@ -32,6 +33,7 @@ server {
         proxy_set_header Connection "";
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
+        # Keep the browser's public Host including its port; $host loses a nondefault port.
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }

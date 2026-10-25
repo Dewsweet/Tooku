@@ -67,7 +67,7 @@ async function managedServer(base: string, signal?: AbortSignal) {
   }
   if (!response.ok) {
     const diagnostic = navidromeConnectionMessage(await response.json().catch(() => undefined));
-    const message = diagnostic ?? (response.status === 403 ? '此音乐服务器未通过部署的地址策略，无法建立持久登录。私网地址需部署者显式开启。'
+    const message = diagnostic ?? (response.status === 403 ? 'Tooku 或反向代理拒绝了连接登记（HTTP 403），请检查反代配置或部署策略。'
       : response.status === 429 ? '连接请求过于频繁，请稍后再试。'
       : response.status === 404 || response.status === 405 ? 'Tooku 持久化接口不可用，请更新并重启 Tooku 服务。'
       : 'Tooku 无法连接或验证该音乐服务器，尚未建立持久登录。请检查地址和 Tooku 服务端网络。');

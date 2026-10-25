@@ -50,6 +50,17 @@ docker compose cp tooku:/data/tooku-backup.sqlite ./tooku-backup.sqlite
 
 不要直接把容器的 8080 端口暴露到公网。让 HTTPS 反向代理转发整个站点到 `127.0.0.1:8080`，可参考 `default.conf.template`。模板关闭短期播放授权路径的访问日志，保留单段 Range / If-Range，允许最长 300 秒的上游响应，并将普通请求正文限制为 13 MiB。
 
+Node 服务收到的 `Host` 必须与浏览器访问的公开域名和端口一致。在实际处理 Tooku 请求的每个 `location`（含单独的 `/api`、播放路径）中保留：
+
+```nginx
+proxy_set_header Host $http_host;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+`$http_host` 保留浏览器原始端口；`$host` 会丢失非默认公开端口，默认的 `$proxy_host` 则可能变成 fnOS 的内网地址，均可能导致 POST 的 Origin 与 Host 不匹配。公网端口经 NAT 转发时也不要拼接 `$host:$server_port` 代替原始 Host。参考 [Nginx proxy_set_header 文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)。Nginx 的 `proxy_set_header` 按配置层级继承；若某个 location 自己定义了其他请求头，应在该 location 同样检查 Host 和 HTTPS 转发，不假设一定继承 server 层设置。
+
+若“直连同一个 Tooku 容器正常，HTTPS 反代后任何 Navidrome 地址都被拒绝”，先区分 `/api/tooku/connection` 的错误：`connectionError: origin` 表示 Tooku 请求来源校验失败，发生在地址解析之前；`private` / `policy` 才是目标地址策略；无原因码的 403 还可能来自外层代理。旧版前端曾将全部 403 误报为地址策略，旧服务返回的固定“仅允许同源访问。”也由新版前端识别为反代诊断。不要移除/改写 Origin、允许任意跨源或关闭地址校验；`TOOKU_TRUST_PROXY=true` 只用于已受控代理的 HTTPS 识别，不会绕过 Host 校验。无需提供账号、Cookie 或认证 URL即可排查这一步。
+
 只有 Node 端口不能被客户端绕过、代理会覆盖客户端传入的 `X-Forwarded-Proto`，且最终入口已全站 HTTPS 时，才启用下面三个开关：
 
 ```powershell

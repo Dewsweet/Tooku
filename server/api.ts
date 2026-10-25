@@ -25,7 +25,7 @@ interface PlaybackGrant {
   aborters: Set<() => void>;
 }
 export function assertSameOrigin(req: IncomingMessage) {
-  if (!sameOriginRequest(req)) throw new DataError(403, '仅允许同源访问。');
+  if (!sameOriginRequest(req)) throw new NavidromeConnectionError('origin');
 }
 export function sessionCookie(req: IncomingMessage) {
   return req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) ?? '';

@@ -54,6 +54,53 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
 }
 
 describe('persistent browser sessions and encrypted credentials', () => {
+  it('distinguishes lost public Host/port behind a reverse proxy from a Navidrome address rejection', async () => {
+    vi.stubEnv('TOOKU_TRUST_PROXY', 'true');
+    let upstreamRequests = 0;
+    const remote = await listen(createServer((req, res) => {
+      upstreamRequests++;
+      res.end(JSON.stringify({ 'subsonic-response': req.url?.includes('getUser')
+        ? { status: 'ok', user: { username: 'alice' } } : { status: 'ok' } }));
+    }));
+    const app = await fixture({ filename: ':memory:', upstream: remote.origin,
+      resolveTarget: async (base) => ({ base, address: '127.0.0.1', family: 4 }) }, true);
+    const publicHost = 'tooku.example.test:22443'; const publicOrigin = `https://${publicHost}`;
+    let forwardedHost = new URL(app.origin).host;
+    const proxy = await listen(createServer((req, res) => {
+      const request = httpRequest(new URL(req.url!, app.origin), {
+        method: req.method, headers: { ...req.headers, host: forwardedHost, 'x-forwarded-proto': 'https', 'x-forwarded-host': publicHost },
+      }, (reply) => { res.writeHead(reply.statusCode!, reply.headers); reply.pipe(res); });
+      request.on('error', () => { res.writeHead(502); res.end(); }); req.pipe(request);
+    }));
+    const call = (path: string, data?: unknown, cookie = '') => fetch(`${proxy.origin}/api/tooku/${path}`, {
+      method: data === undefined ? 'GET' : 'POST', headers: { Origin: publicOrigin, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: data === undefined ? undefined : JSON.stringify(data),
+    });
+    const candidates = [remote.origin, `http://music.example.test:${new URL(remote.origin).port}`, `${publicOrigin}/nd`];
+    for (const invalidHost of [new URL(app.origin).host, 'tooku.example.test']) {
+      forwardedHost = invalidHost;
+      for (const server of candidates) {
+        const rejected = await call('connection', { server });
+        expect(rejected.status).toBe(403);
+        expect(await rejected.json()).toMatchObject({ connectionError: 'origin', error: expect.stringContaining('Host') });
+      }
+    }
+    expect(upstreamRequests).toBe(0); // Denied before probing any music server.
+    forwardedHost = publicHost;
+    for (const server of candidates) expect((await call('connection', { server })).status).toBe(200);
+    const login = await call('session', { u: 'alice', t: 'a'.repeat(32), s: 'b'.repeat(32), persistent: true, clientBase: `${publicOrigin}/nd` });
+    expect(login.status).toBe(200); expect(login.headers.get('set-cookie')).toContain('; Secure');
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const restored = await call('session', undefined, cookie);
+    expect(restored.status).toBe(200); expect(await restored.json()).toMatchObject({ username: 'alice', persistent: true });
+  });
+  it('retains actual private-target denials as a separate reason', async () => {
+    const app = await fixture({ filename: ':memory:', upstream: 'http://127.0.0.1:1', allowPrivateServers: false });
+    const blocked = await app.call('connection', 'POST', { server: 'http://10.0.0.1:4533' });
+    expect(blocked.status).toBe(403); expect(await blocked.json()).toMatchObject({ connectionError: 'policy' });
+    const localhost = await app.call('connection', 'POST', { server: 'http://localhost:4533' });
+    expect(localhost.status).toBe(403); expect(await localhost.json()).toMatchObject({ connectionError: 'private' });
+  });
   it('returns safe API validation diagnostics instead of collapsing them into an unidentifiable failure', async () => {
     const remote = await listen(createServer((_req, res) => { res.writeHead(403); res.end('synthetic secret proxy detail'); }));
     const app = await fixture({ filename: ':memory:', upstream: 'http://127.0.0.1:1', allowPrivateServers: true }, true);
