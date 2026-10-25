@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Moon, Sun, RefreshCw, ExternalLink, UserRound, Palette, SlidersHorizontal, Captions, Sparkles, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Select } from '../components/Select';
@@ -37,6 +37,8 @@ export function Settings({ logout }: { logout: () => void }) {
   const baseFontSize = useDisplayPreferences((s) => s.baseFontSize);
   const fontFamily = useDisplayPreferences((s) => s.fontFamily);
   const mode = usePlayer((s) => s.mode);
+  const fadeControlId = useId();
+  const fadeDurationText = prefs.fadeDurationMs === 0 ? '关闭' : `${(prefs.fadeDurationMs / 1000).toFixed(1)} 秒`;
   const library = useMusicLibrary();
   const navigate = useNavigate();
   const [category, setCategory] = useState<Category>('account');
@@ -102,7 +104,7 @@ export function Settings({ logout }: { logout: () => void }) {
         <div id="settings-panel-playback" role="group" aria-labelledby="settings-nav-playback" hidden={category !== 'playback'}>
           <SettingsSection title="播放与操作">
             <div className="setting-row"><div><strong>音频策略</strong><p>遇到格式兼容问题时，可切换为 MP3。</p></div><Select aria-label="音频策略" value={mode} onChange={(value) => player.mode(value as 'original' | 'compatible')}><option value="original">原始音频</option><option value="compatible">兼容 MP3</option></Select></div>
-            <div className="setting-row"><div><strong>淡入淡出</strong><p>切歌、暂停和继续播放时平滑调整音量。</p></div><Select aria-label="淡入淡出" value={prefs.fadeDurationMs} onChange={(value) => prefs.update({ fadeDurationMs: Number(value) })}><option value="0">关闭</option><option value="200">0.2 秒</option><option value="500">0.5 秒</option><option value="1000">1 秒</option><option value="2000">2 秒</option></Select></div>
+            <div className="setting-row"><div><strong>淡入淡出</strong><p>切歌、暂停和继续播放时平滑调整音量。</p></div><div className="setting-range-control"><input id={fadeControlId} type="range" aria-label="淡入淡出" aria-valuetext={fadeDurationText} min={0} max={2000} step={100} value={prefs.fadeDurationMs} onChange={(event) => prefs.update({ fadeDurationMs: Number(event.target.value) })} /><output htmlFor={fadeControlId}>{fadeDurationText}</output></div></div>
             <label className="setting-row"><span className="setting-copy"><strong>键盘快捷键</strong><span className="setting-description">空格播放 / 暂停，左右键跳转，Ctrl / ⌘ K 搜索。</span></span><input aria-label="键盘快捷键" className="settings-switch" type="checkbox" role="switch" checked={prefs.shortcuts} onChange={(e) => prefs.update({ shortcuts: e.target.checked })} /></label>
           </SettingsSection>
           <SettingsSection title="播放侧栏">

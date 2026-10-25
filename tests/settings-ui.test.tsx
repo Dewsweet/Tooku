@@ -64,12 +64,13 @@ it('supports keyboard category navigation and keeps hidden settings out of the f
 it('adjusts fade duration without attaching audio or changing playback position', () => {
   const attach = vi.spyOn(player, 'attach'); const nav = surface();
   fireEvent.click(nav.getByRole('button', { name: '播放与操作' }));
-  fireEvent.click(screen.getByRole('combobox', { name: '淡入淡出' }));
-  fireEvent.click(screen.getByRole('option', { name: '0.5 秒' }));
-  expect(usePreferences.getState().fadeDurationMs).toBe(500);
+  const slider = screen.getByRole('slider', { name: '淡入淡出' });
+  expect(slider).toHaveAttribute('aria-valuetext', '关闭');
+  fireEvent.change(slider, { target: { value: '700' } });
+  expect(usePreferences.getState().fadeDurationMs).toBe(700);
+  expect(slider).toHaveAttribute('aria-valuetext', '0.7 秒');
   expect(usePlayer.getState().position).toBe(23); expect(attach).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('combobox', { name: '淡入淡出' }));
-  fireEvent.click(screen.getByRole('option', { name: /^关闭$/ }));
+  fireEvent.change(slider, { target: { value: '0' } });
   expect(usePreferences.getState().fadeDurationMs).toBe(0);
 });
 

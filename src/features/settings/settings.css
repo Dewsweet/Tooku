@@ -64,6 +64,9 @@
 .accent-inputs:has(input[aria-invalid=true]) { border-color: var(--status-error); }
 .accent-control p { color: var(--status-error); }
 .setting-value { color: var(--muted); font-size:calc(14px * var(--ui-font-scale, 1)); }
+.setting-range-control { display: flex; align-items: center; gap: 14px; flex-shrink: 0; width: 220px; max-width: 52%; }
+.setting-range-control input[type=range] { flex: 1; width: 0; height: 32px; margin: 0; }
+.setting-range-control output { min-width: 4.5em; text-align: right; color: var(--text); font-size:calc(14px * var(--ui-font-scale, 1)); font-variant-numeric: tabular-nums; }
 .avatar-setting { display: flex; align-items: center; gap: 22px; padding: 16px 0 24px; border-bottom: 1px solid var(--line); }
 .avatar-setting > div { min-width: 0; }
 .avatar-setting > div > strong { display: block; margin-bottom: 12px; font-size:calc(18px * var(--ui-font-scale, 1)); overflow-wrap: anywhere; }
@@ -115,6 +118,7 @@
   .setting-row { gap: 14px; flex-wrap: wrap; }
   .setting-row > .styled-select { min-width: 0; max-width: 100%; width: 100%; }
   .setting-row > .subtle-button { max-width: 100%; }
+  .setting-range-control { width: 100%; max-width: 100%; }
   .settings-status-row { flex-wrap: wrap; gap: 12px; }
   .recommendation-settings-grid { grid-template-columns: minmax(0, 1fr); }
   .recommendation-service-heading { flex-direction: column; }
