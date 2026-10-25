@@ -43,7 +43,7 @@ npm.cmd run build
 - `/api/navidrome/rest` 是开发与生产共用的受管代理，默认连接 Navidrome `http://127.0.0.1:44533`；其他地址需先取得短时连接票据或已验证会话，不能逐请求指定目标；旧 `/nd` 仅为已有地址、身份和会话兼容。不要修改现有 Navidrome 配置或系统保留端口来解决前端问题。
 - 先检查已有 Tooku 健康端点 `/__tooku/health`，避免重复启动或终止用户正在使用的服务；任务结束保留需要交付的服务。
 - 不使用 `npm install` 生成第二份锁文件。变更依赖时同步维护现有 pnpm 锁文件与第三方许可记录。
-- 生产使用 `npm.cmd run build` 后 `npm.cmd start`；`vite preview` 或单独静态托管不提供用户数据、歌词、推荐 API。外层代理需将整个站点转到同一 Node 服务；用户于 2026-10-25 确认 fnOS Docker 中 Tooku 运行、连接 Navidrome 和播放正常，同日用户确认重建后功能恢复；完整备份还原及 HTTPS 入口仍待专项确认，Nginx 需保留公开 Host 与端口。
+- 生产使用 `npm.cmd run build` 后 `npm.cmd start`；`vite preview` 或单独静态托管不提供用户数据、歌词、推荐 API。外层代理需将整个站点转到同一 Node 服务；用户于 2026-10-25 确认 fnOS Docker 中 Tooku 运行、连接 Navidrome 和播放正常，同日用户确认重建后功能恢复；Nginx HTTPS 反代也已由用户确认通过，实际 location 需保留公开 Host 与端口；完整备份还原、升级/回滚及发布专项仍待收尾。
 
 ## 4. 必须延续的产品与视觉约定
 
