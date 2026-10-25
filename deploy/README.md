@@ -65,10 +65,13 @@ docker compose up -d
 
 ```powershell
 docker build --pull -t tooku:2026-10-23 .
+docker tag tooku:2026-10-23 tooku:local
 docker compose up -d --no-build
 docker compose ps
 docker compose logs --tail 100 tooku
 ```
+
+Compose 使用 `tooku:local`，因此构建版本镜像后必须将该镜像标记为 `tooku:local` 再重建服务；否则 `--no-build` 可能继续使用旧本地镜像。保留原版本标签用于回滚，回滚时将目标版本重新标记为 `tooku:local`，并先确认它可读取当前数据结构；涉及数据降级时使用配套的数据库和密钥卷快照。
 
 发布验收至少包含：健康状态变为 healthy；登录后重建容器仍能恢复账号数据和会话；原始流、兼容 MP3、seek/206 Range、歌手图上传与账号备份可用；停止期间生成的两个卷快照能在隔离环境恢复；回滚到上一镜像仍可读取未发生结构降级的数据。基础镜像提供 amd64/arm64 清单，但 Tooku 只有在目标架构实际完成构建和播放验证后才应宣称支持该架构。
 
