@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <title>Tooku</title>
+  <desc>落日、远山与湖面右侧的音波，寓意音乐陪伴我们走向远方。</desc>
+  <defs>
+    <linearGradient id="sky" x1="48" y1="4" x2="48" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#345d89"/>
+      <stop offset=".66" stop-color="#93a5bf"/>
+      <stop offset="1" stop-color="#ead2c8"/>
+    </linearGradient>
+    <linearGradient id="lake" x1="48" y1="61" x2="48" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#829fba"/>
+      <stop offset="1" stop-color="#294b73"/>
+    </linearGradient>
+    <clipPath id="landscape"><circle cx="48" cy="48" r="44"/></clipPath>
+  </defs>
+  <g clip-path="url(#landscape)">
+    <circle cx="48" cy="48" r="44" fill="url(#sky)"/>
+    <circle cx="66" cy="40" r="12" fill="#fff0d8"/>
+    <path d="M0 58c10-3 16-14 23-14s16 11 23 11 9-6 16-6 15 11 22 7l12-8v48H0Z" fill="#708eac"/>
+    <path d="M0 60c11-7 17-7 26-2s18 10 29 8 25-14 41-14v44H0Z" fill="#365f89"/>
+    <path d="M0 68c26-5 47 2 68-2l28-6v36H0Z" fill="url(#lake)"/>
+    <path d="M0 62c11-4 17-2 26 3s17 5 25 8c-11 4-32 5-51 3Z" fill="#203e63"/>
+    <path d="M76 65h8M70 70h20M64 75h32M69 80h22M75 85h10" stroke="#f4dcc4" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

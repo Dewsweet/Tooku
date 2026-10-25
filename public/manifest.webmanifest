@@ -1,0 +1,16 @@
+{
+  "name": "Tooku 音乐播放器",
+  "short_name": "Tooku",
+  "description": "面向中文用户的 Navidrome 第三方网页播放器",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "zh-CN",
+  "categories": ["music", "entertainment"],
+  "icons": [
+    { "src": "/tooku.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

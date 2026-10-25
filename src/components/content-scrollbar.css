@@ -1,0 +1,15 @@
+.workspace-shell .content.with-overlay-scrollbar { scrollbar-width: none; }
+.workspace-shell .content.with-overlay-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.overlay-scroll-frame { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.overlay-scroll-viewport { flex: 1; min-height: 0; overflow: auto; scrollbar-width: none; }
+.overlay-scroll-viewport::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.content-scrollbar { position: absolute; top: 0; bottom: 0; right: 0; width: 14px; z-index: 5; opacity: 0; transition: opacity .18s ease; }
+.content-scrollbar[data-overflow=false] { display: none; }
+.app-main:hover > .content-scrollbar, .overlay-scroll-frame:hover > .content-scrollbar, .content-scrollbar:focus-within, .content-scrollbar.is-active { opacity: 1; }
+.content-scrollbar-thumb { position: absolute; top: 0; width: 14px; min-height: 0; border-radius: 8px; touch-action: none; cursor: default; }
+.content-scrollbar-thumb::before { content: ''; position: absolute; inset: 0 0 0 6px; border-radius: 8px; background: color-mix(in srgb, var(--muted) 48%, transparent); transition: background .15s ease; }
+.content-scrollbar-thumb:hover::before, .content-scrollbar-thumb:focus-visible::before, .content-scrollbar-thumb:active::before { background: color-mix(in srgb, var(--text) 76%, transparent); }
+.content-scrollbar-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .content-scrollbar, .content-scrollbar-thumb::before { transition: none; } }
+:root[data-motion=reduced] .content-scrollbar, :root[data-motion=reduced] .content-scrollbar-thumb::before { transition: none; }
+@media (forced-colors: active) { .content-scrollbar-thumb::before { background: CanvasText; } }

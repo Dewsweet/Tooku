@@ -1,0 +1,11 @@
+services:
+  tooku:
+    environment:
+      NAVIDROME_UPSTREAM: "${NAVIDROME_UPSTREAM:-http://navidrome:4533}"
+    networks:
+      - navidrome-network
+
+networks:
+  navidrome-network:
+    external: true
+    name: "${NAVIDROME_NETWORK:-media}"

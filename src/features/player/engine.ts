@@ -1,0 +1,406 @@
+import { create } from 'zustand';
+import { ApiError, type MusicApi } from '../../api/client';
+import type { HistoryEntry, PlaybackSource, PlayerSnapshot, QueueEntry, Track } from '../../domain/models';
+import { entriesFor, moveEntry, nextEntry, samePlaybackSource, shouldScrobble, shuffled } from '../../domain/queue';
+import { isPlaybackSource, isSourceIndex } from '../../domain/userData';
+import { readProfile, saveProfile } from '../../storage/local';
+import { useSession } from '../../state/session';
+import { createId } from '../../domain/ids';
+import { usePreferences } from '../../state/preferences';
+import { AudioFade } from './audioFade';
+
+type Status = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'blocked' | 'error';
+type QueueSnapshot = Pick<PlayerSnapshot, 'entries' | 'currentId' | 'position' | 'shuffle' | 'originalOrder'>;
+interface PlayerState {
+  entries: QueueEntry[]; currentId: string | null; status: Status; position: number; duration: number;
+  repeat: 'off' | 'all' | 'one'; shuffle: boolean; volume: number; error: string;
+  mode: 'original' | 'compatible'; history: HistoryEntry[]; volumeSupported: boolean;
+  undo: QueueSnapshot | null;
+}
+const initial: PlayerState = { entries: [], currentId: null, status: 'idle', position: 0, duration: 0, repeat: 'off', shuffle: false, volume: 0.7, error: '', mode: 'original', history: [], volumeSupported: true, undo: null };
+export const usePlayer = create<PlayerState>(() => ({ ...initial }));
+const update = (patch: Partial<PlayerState>) => usePlayer.setState(patch);
+export const PLAYBACK_RETRY_DELAYS = [1000, 3000] as const;
+export const PLAYBACK_BUFFER_TIMEOUT = 15000;
+export const currentEntry = () => { const s = usePlayer.getState(); return s.entries.find((e) => e.entryId === s.currentId); };
+
+class PlayerEngine {
+  #audio: HTMLAudioElement | null = null;
+  #api: MusicApi | null = null;
+  #generation = 0;
+  #source = '';
+  #sourceExpires = 0;
+  #intent = false;
+  #resume = 0;
+  #previousTime = 0;
+  #listened = 0;
+  #occurrenceId = '';
+  #startedAt = 0;
+  #submission: 'none' | 'pending' | 'done' | 'unknown' = 'none';
+  #announced = false;
+  #lastSave = 0;
+  #back: string[] = [];
+  #originalOrder: string[] = [];
+  #insertCursor: string | null = null;
+  #mediaEnabled = false;
+  #lastReport = 0;
+  #channel: BroadcastChannel | null = null;
+  #tabId = createId();
+  #fade: AudioFade | null = null;
+  #endingFade = false;
+  #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  #bufferTimer: ReturnType<typeof setTimeout> | undefined;
+  #retryAttempts = 0;
+  #occurrenceEntryId: string | null = null;
+  #fadeDuration() {
+    const value = usePreferences.getState().fadeDurationMs;
+    return usePlayer.getState().volumeSupported && Number.isFinite(value) ? Math.max(0, Math.min(2000, value)) : 0;
+  }
+  #cancelRecovery() { clearTimeout(this.#retryTimer); clearTimeout(this.#bufferTimer); this.#retryTimer = undefined; this.#bufferTimer = undefined; }
+  #watchBuffer() {
+    if (!this.#intent || this.#bufferTimer || this.#retryTimer) return;
+    const generation = this.#generation;
+    this.#bufferTimer = setTimeout(() => {
+      this.#bufferTimer = undefined;
+      if (generation === this.#generation && this.#intent) this.#failed('连接长时间没有响应。', true);
+    }, PLAYBACK_BUFFER_TIMEOUT);
+  }
+  #failed(message: string, retryable: boolean) {
+    if (this.#retryTimer) return;
+    clearTimeout(this.#bufferTimer); this.#bufferTimer = undefined;
+    this.#fade?.cancel();
+    const delay = PLAYBACK_RETRY_DELAYS[this.#retryAttempts];
+    if (retryable && this.#intent && delay !== undefined) {
+      const generation = this.#generation; this.#retryAttempts++;
+      update({ status: 'buffering', error: `连接中断，正在重试（${this.#retryAttempts}/${PLAYBACK_RETRY_DELAYS.length}）…` });
+      this.#retryTimer = setTimeout(() => {
+        this.#retryTimer = undefined;
+        if (generation === this.#generation && this.#intent) void this.load(true, usePlayer.getState().position, true);
+      }, delay);
+      this.#audio?.pause();
+    } else {
+      this.#intent = false;
+      update({ status: 'error', error: `${message}${retryable ? '自动重试已停止，请检查连接后点击播放重试。' : ''}` });
+      this.#audio?.pause(); this.#fade?.reset(); this.#media(); this.persist();
+    }
+  }
+  connectedTo(api: MusicApi) { return this.#api === api; }
+  currentTime() { return this.#source && this.#audio ? this.#audio.currentTime : usePlayer.getState().position; }
+  preview(direction: 'next' | 'previous') {
+    const state = usePlayer.getState(); let id: string | null | undefined;
+    if (direction === 'next') id = nextEntry(state.entries, state.currentId, state.repeat);
+    else if (state.position > 3) id = state.currentId;
+    else {
+      id = [...this.#back].reverse().find((entryId) => state.entries.some((entry) => entry.entryId === entryId));
+      id ??= state.entries[Math.max(0, state.entries.findIndex((entry) => entry.entryId === state.currentId) - 1)]?.entryId;
+    }
+    return state.entries.find((entry) => entry.entryId === id);
+  }
+
+  #init() {
+    if (this.#audio) return;
+    const audio = new Audio(); this.#audio = audio; audio.preload = 'metadata';
+    this.#fade = new AudioFade(audio, () => usePlayer.getState().volume, () => update({ volumeSupported: false }));
+    const active = () => Boolean(this.#source && audio.getAttribute('src') === this.#source && (!audio.currentSrc || audio.currentSrc === this.#source) && this.#api);
+    audio.addEventListener('loadedmetadata', () => {
+      if (!active()) return;
+      update({ duration: Number.isFinite(audio.duration) ? audio.duration : currentEntry()?.track.duration ?? 0 });
+      if (this.#resume > 0) { const resume = this.#seekTarget(this.#resume); try { audio.currentTime = resume; this.#previousTime = resume; update({ position: resume }); } catch { useSession.getState().notify('此音频无法恢复到上次位置，请手动定位。'); } this.#resume = 0; }
+      if (!this.#intent) update({ status: 'paused' });
+    });
+    audio.addEventListener('playing', () => {
+      if (!active()) return;
+      if (!this.#intent) { audio.pause(); return; }
+      this.#cancelRecovery();
+      update({ status: 'playing', error: '' }); this.#media();
+      if (this.#fade && this.#fade.gain < 1 && !this.#endingFade) void this.#fade.ramp(1, this.#fadeDuration());
+      this.#stateReport(true);
+      if (!this.#announced) { this.#announced = true; this.#report(false); }
+    });
+    audio.addEventListener('pause', () => {
+      if (!active() || !audio.paused || audio.ended || this.#retryTimer !== undefined || usePlayer.getState().status === 'error') return;
+      this.#intent = false; this.#cancelRecovery(); this.#fade?.reset();
+      update({ status: 'paused' }); this.#media(); this.persist(); this.#stateReport(true);
+    });
+    for (const event of ['waiting', 'stalled']) audio.addEventListener(event, () => { if (active() && this.#intent) { update({ status: 'buffering' }); this.#watchBuffer(); this.#stateReport(true, 'paused'); } });
+    audio.addEventListener('seeking', () => { this.#previousTime = audio.currentTime; });
+    audio.addEventListener('seeked', () => { this.#previousTime = audio.currentTime; if (active()) update({ position: audio.currentTime }); });
+    audio.addEventListener('timeupdate', () => {
+      if (!active()) return;
+      const delta = audio.currentTime - this.#previousTime;
+      if (!audio.paused && delta > 0 && !audio.seeking && !this.#retryTimer) { clearTimeout(this.#bufferTimer); this.#bufferTimer = undefined; }
+      if (!audio.paused && !audio.seeking && delta > 0 && delta < 2) this.#listened += delta;
+      this.#previousTime = audio.currentTime;
+      update({ position: audio.currentTime });
+      const remaining = usePlayer.getState().duration - audio.currentTime;
+      if (this.#intent && !this.#endingFade && !audio.seeking && remaining > 0 && remaining <= this.#fadeDuration() / 1000) {
+        this.#endingFade = true; void this.#fade?.ramp(0, remaining * 1000);
+      }
+      if (shouldScrobble(this.#listened, usePlayer.getState().duration)) this.#submit();
+      if (Date.now() - this.#lastSave > 5000) { this.#lastSave = Date.now(); this.persist(); this.#media(); }
+      this.#stateReport(false);
+    });
+    audio.addEventListener('ended', () => { if (active()) { if (shouldScrobble(this.#listened, usePlayer.getState().duration, true)) this.#submit(); this.#stateReport(true, 'stopped'); this.next(true); } });
+    audio.addEventListener('error', () => { if (active()) {
+      const code = audio.error?.code;
+      const expired = this.#sourceExpires > 0 && this.#sourceExpires <= Date.now();
+      this.#failed(expired ? '播放授权已过期。' : code === 2 ? '音频连接中断。' : code === 3 ? '音频解码失败，请切换兼容 MP3 模式后重试。' : code === 4 ? '音频格式或地址不可用，请检查权限或切换兼容 MP3 模式。' : '音频未能播放，请检查网络、权限或服务器转码配置。', code === 2 || expired);
+    } });
+    audio.addEventListener('volumechange', () => {
+      if (this.#fade && Math.abs(audio.volume - this.#fade.expectedVolume) < .001) return;
+      this.#fade?.cancel(); if (this.#fade) this.#fade.gain = 1;
+      update({ volume: audio.volume });
+    });
+    update({ volumeSupported: this.#fade.apply() });
+    if (!this.#mediaEnabled && 'mediaSession' in navigator) {
+      const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
+        play: () => this.play(), pause: () => this.pause(), nexttrack: () => this.next(), previoustrack: () => this.previous(),
+        seekto: (details) => this.seek(details.seekTime ?? 0),
+        seekbackward: (details) => this.seek(usePlayer.getState().position - (details.seekOffset ?? 10)),
+        seekforward: (details) => this.seek(usePlayer.getState().position + (details.seekOffset ?? 10)),
+      };
+      for (const [action, handler] of Object.entries(handlers)) { try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, handler!); } catch { /* unsupported action */ } }
+      this.#mediaEnabled = true;
+    }
+  }
+  async attach(api: MusicApi) {
+    this.logout(); this.#api = api; this.#init();
+    if (typeof BroadcastChannel !== 'undefined') {
+      this.#channel = new BroadcastChannel('tooku-playback');
+      this.#channel.onmessage = (event: MessageEvent) => {
+        if (event.data?.identity === api.identity && event.data?.tabId !== this.#tabId && event.data?.action === 'play') this.pause(true);
+      };
+    }
+    const generation = this.#generation;
+    const [saved, history] = await Promise.all([readProfile<PlayerSnapshot>(api.identity, 'queue'), readProfile<HistoryEntry[]>(api.identity, 'history')]);
+    if (this.#api !== api || generation !== this.#generation) return;
+    if (saved?.version === 1 && Array.isArray(saved.entries) && saved.entries.every((e) => typeof e.entryId === 'string' && typeof e.track?.id === 'string')) {
+      const entries = saved.entries.slice(0, 5000).map((e) => ({ entryId: e.entryId, track: e.track, ...(isPlaybackSource(e.source) ? { source: e.source, ...(isSourceIndex(e.sourceIndex) ? { sourceIndex: e.sourceIndex } : {}) } : {}) })); const currentId = entries.some((e) => e.entryId === saved.currentId) ? saved.currentId : entries[0]?.entryId ?? null;
+      this.#originalOrder = this.#restoreOrder(entries, saved.originalOrder);
+      const position = Number.isFinite(saved.position) ? Math.max(0, saved.position) : 0;
+      update({ entries, currentId, shuffle: saved.shuffle === true, position, duration: entries.find((e) => e.entryId === currentId)?.track.duration ?? 0, status: currentId ? 'paused' : 'idle', volume: Number.isFinite(saved.volume) ? Math.min(1, Math.max(0, saved.volume)) : 0.7, repeat: ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off' });
+      this.#resume = position;
+      this.#fade?.reset();
+    }
+    if (Array.isArray(history)) update({ history: history.filter((h) => typeof h.track?.id === 'string' && Number.isFinite(h.listenedAt)).slice(0, 200) });
+  }
+  logout() {
+    this.#cancelRecovery(); this.#fade?.cancel();
+    this.#stateReport(true, 'stopped');
+    this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#api = null;
+    this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#audio?.load();
+    this.#channel?.close(); this.#channel = null;
+    this.#back = []; this.#originalOrder = []; this.#insertCursor = null;
+    update({ ...initial, entries: [], history: [] });
+    this.#fade?.reset(); this.#retryAttempts = 0; this.#occurrenceEntryId = null;
+    if ('mediaSession' in navigator) { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; }
+  }
+  #restoreOrder(entries: QueueEntry[], order?: string[]) {
+    const ids = new Set(entries.map((e) => e.entryId));
+    return Array.isArray(order) && order.length === ids.size && new Set(order).size === ids.size && order.every((id) => ids.has(id)) ? [...order] : entries.map((e) => e.entryId);
+  }
+  #orderedEntries(entries: QueueEntry[]) {
+    const order = new Map(this.#originalOrder.map((id, i) => [id, i]));
+    return [...entries].sort((a, b) => (order.get(a.entryId) ?? Infinity) - (order.get(b.entryId) ?? Infinity));
+  }
+  #snapshot(): QueueSnapshot {
+    const s = usePlayer.getState();
+    return { entries: s.entries, currentId: s.currentId, position: s.position, ...(s.shuffle ? { shuffle: true, originalOrder: this.#orderedEntries(s.entries).map((e) => e.entryId) } : {}) };
+  }
+  replace(tracks: Track[], index = 0, options: { source?: PlaybackSource; shuffle?: boolean } = {}) {
+    if (!tracks.length) return;
+    const s = usePlayer.getState(); const snapshot = this.#snapshot();
+    const ordered = s.shuffle ? this.#orderedEntries(s.entries) : s.entries;
+    const sameTracks = tracks.length === ordered.length && tracks.every((track, i) => track.id === ordered[i].track.id);
+    const sameSource = options.source ? samePlaybackSource(options.source, currentEntry()?.source) : !currentEntry()?.source && sameTracks;
+    const shuffle = options.shuffle ?? (sameSource && s.shuffle);
+    if (sameSource && sameTracks && options.shuffle === undefined) {
+      // Reuse each occurrence, including duplicates, and retain the shuffled order.
+      const entry = ordered[index] ?? ordered[0];
+      this.select(entry.entryId);
+      return snapshot;
+    }
+    const entries = entriesFor(tracks, options.source); const currentId = entries[index]?.entryId ?? entries[0].entryId;
+    this.#originalOrder = shuffle ? entries.map((e) => e.entryId) : [];
+    update({ entries: shuffle ? shuffled(entries, currentId) : entries, currentId, shuffle, undo: snapshot });
+    this.#back = []; this.load(true);
+    return snapshot;
+  }
+  restoreQueue(snapshot: QueueSnapshot) {
+    this.#originalOrder = this.#restoreOrder(snapshot.entries, snapshot.originalOrder);
+    update({ entries: snapshot.entries, currentId: snapshot.currentId, position: snapshot.position, shuffle: snapshot.shuffle === true, undo: null }); this.#resume = snapshot.position; this.#back = [];
+    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#cancelRecovery(); this.#fade?.cancel(); this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#fade?.reset(); update({ status: 'idle' }); this.#media(); }
+    this.persist();
+  }
+  append(tracks: Track[], next = false, source?: PlaybackSource, sourceIndices?: readonly number[]) {
+    const s = usePlayer.getState(); const additions = entriesFor(tracks, source, sourceIndices ?? []);
+    if (!additions.length) return;
+    const after = next ? s.entries.findIndex((e) => e.entryId === (this.#insertCursor ?? s.currentId)) : -1;
+    const entries = [...s.entries]; entries.splice(next ? Math.max(0, after + 1) : entries.length, 0, ...additions);
+    if (next) this.#insertCursor = additions.at(-1)!.entryId;
+    update({ entries, currentId: s.currentId ?? entries[0].entryId, status: s.currentId ? s.status : 'paused' }); this.persist();
+  }
+  select(entryId: string) {
+    if (!usePlayer.getState().entries.some((e) => e.entryId === entryId)) return;
+    if (usePlayer.getState().currentId) this.#back.push(usePlayer.getState().currentId!);
+    update({ currentId: entryId }); this.load(true);
+  }
+  move(from: number, to: number) { update({ entries: moveEntry(usePlayer.getState().entries, from, to) }); this.persist(); }
+  remove(entryId: string) {
+    const s = usePlayer.getState(); const index = s.entries.findIndex((e) => e.entryId === entryId);
+    const entries = s.entries.filter((e) => e.entryId !== entryId); update({ entries });
+    if (entryId === s.currentId) {
+      const next = entries[index] ?? (s.repeat === 'all' ? entries[0] : undefined);
+      const intent = this.#intent; update({ currentId: next?.entryId ?? null });
+      if (next) this.load(intent); else { this.#cancelRecovery(); this.#fade?.cancel(); this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#fade?.reset(); update({ status: 'idle', position: 0, duration: 0 }); this.#media(); }
+    }
+    this.persist();
+  }
+  async load(play: boolean, resume = 0, recovering = false) {
+    const entry = currentEntry(); if (!entry || !this.#api) return;
+    this.#init(); const audio = this.#audio!; const generation = ++this.#generation;
+    this.#cancelRecovery(); this.#fade?.cancel();
+    this.#intent = play; this.#source = ''; this.#sourceExpires = 0; this.#endingFade = false;
+    if (!recovering || this.#occurrenceEntryId !== entry.entryId) { this.#retryAttempts = 0; this.#listened = 0; this.#occurrenceId = createId(); this.#occurrenceEntryId = entry.entryId; this.#startedAt = Date.now(); this.#submission = 'none'; this.#announced = false; }
+    this.#resume = resume; this.#previousTime = resume; this.#insertCursor = null;
+    update({ status: 'loading', error: '', position: resume, duration: entry.track.duration ?? 0 });
+    if (!recovering && !audio.paused && this.#fadeDuration() > 0) {
+      const completed = await this.#fade!.ramp(0, this.#fadeDuration());
+      if (!completed || generation !== this.#generation || !this.#api) return;
+    }
+    audio.pause();
+    if (this.#fade) { this.#fade.gain = this.#fadeDuration() > 0 ? 0 : 1; this.#fade.apply(); }
+    let location: { url: string; expiresAt?: number };
+    try {
+      const requested = this.#api.playbackUrl(entry.track.id, usePlayer.getState().mode);
+      location = requested instanceof Promise ? await requested : requested;
+    } catch (error) {
+      if (generation !== this.#generation) return;
+      this.#failed(error instanceof Error ? error.message : '无法取得播放授权，请稍后重试。', error instanceof ApiError && error.retryable);
+      return;
+    }
+    if (generation !== this.#generation || !this.#api) return;
+    this.#source = location.url; this.#sourceExpires = location.expiresAt ?? 0;
+    audio.src = this.#source; audio.load(); this.#media(); this.#stateReport(true, 'starting');
+    this.#watchBuffer();
+    if (play && this.#intent) await this.#start(generation); this.persist();
+  }
+  async #start(generation: number) {
+    this.#channel?.postMessage({ action: 'play', identity: this.#api?.identity, tabId: this.#tabId });
+    try { await this.#audio!.play(); } catch (error) {
+      if (generation !== this.#generation || !this.#intent) return;
+      const blocked = error instanceof DOMException && error.name === 'NotAllowedError';
+      if (blocked) { this.#cancelRecovery(); this.#intent = false; update({ status: 'blocked', error: '浏览器需要你点击播放以继续。' }); }
+      else this.#failed('播放未成功，请检查连接或切换兼容模式。', this.#audio?.error?.code === 2);
+    }
+  }
+  play() {
+    if (!currentEntry()) return;
+    const failed = usePlayer.getState().status === 'error';
+    if (failed) this.#retryAttempts = 0;
+    if (!this.#source || failed || this.#retryTimer || this.#sourceExpires > 0 && this.#sourceExpires - Date.now() < 5 * 60000) { this.load(true, usePlayer.getState().position, true); return; }
+    this.#cancelRecovery(); this.#fade?.cancel();
+    if (this.#audio?.paused && this.#fade && this.#fadeDuration() > 0) { this.#fade.gain = 0; this.#fade.apply(); }
+    this.#endingFade = false; this.#intent = true;
+    // Cancelling a pause fade may leave the element playing: play() then emits no new playing event.
+    if (this.#audio && !this.#audio.paused) {
+      update({ status: 'playing', error: '' }); this.#media();
+      if (this.#fade && this.#fade.gain < 1) void this.#fade.ramp(1, this.#fadeDuration());
+    } else this.#watchBuffer();
+    this.#start(this.#generation);
+  }
+  pause(immediate = false) {
+    this.#intent = false; this.#cancelRecovery(); this.#fade?.cancel();
+    const finish = () => { this.#audio?.pause(); this.#fade?.reset(); update({ status: currentEntry() ? 'paused' : 'idle', error: '' }); this.#media(); this.persist(); };
+    update({ status: currentEntry() ? 'paused' : 'idle', error: '' });
+    if (!immediate && this.#audio && !this.#audio.paused && this.#source && this.#fadeDuration() > 0) {
+      const generation = this.#generation;
+      void this.#fade!.ramp(0, this.#fadeDuration()).then((completed) => { if (completed && generation === this.#generation && !this.#intent) finish(); });
+    } else finish();
+  }
+  toggle() { if (this.#intent) this.pause(); else this.play(); }
+  next(natural = false) {
+    const s = usePlayer.getState(); const id = nextEntry(s.entries, s.currentId, s.repeat, natural);
+    if (!id) { this.pause(); return; }
+    if (s.currentId && id !== s.currentId) this.#back.push(s.currentId);
+    update({ currentId: id }); this.load(true);
+  }
+  previous() {
+    if (usePlayer.getState().position > 3) { this.seek(0); return; }
+    const s = usePlayer.getState(); let id = this.#back.pop();
+    while (id && !s.entries.some((e) => e.entryId === id)) id = this.#back.pop();
+    id ??= s.entries[Math.max(0, s.entries.findIndex((e) => e.entryId === s.currentId) - 1)]?.entryId;
+    if (id) { update({ currentId: id }); this.load(true); }
+  }
+  seek(value: number) {
+    const audio = this.#audio; const duration = usePlayer.getState().duration;
+    if (!audio || !duration || !Number.isFinite(value)) return;
+    const target = this.#seekTarget(value);
+    this.#endingFade = false; if (this.#intent) { this.#fade?.cancel(); this.#fade?.reset(); }
+    try { audio.currentTime = target; this.#previousTime = target; update({ position: target }); this.persist(); } catch { useSession.getState().notify('此音频暂时无法定位到该位置。'); }
+  }
+  #seekTarget(value: number) {
+    const target = Math.max(0, Math.min(value, usePlayer.getState().duration || value));
+    const ranges = this.#audio?.seekable;
+    if (!ranges?.length) return target;
+    let nearest = ranges.start(0); let distance = Infinity;
+    for (let i = 0; i < ranges.length; i++) {
+      if (target >= ranges.start(i) && target <= ranges.end(i)) return target;
+      for (const edge of [ranges.start(i), ranges.end(i)]) if (Math.abs(edge - target) < distance) { nearest = edge; distance = Math.abs(edge - target); }
+    }
+    return nearest;
+  }
+  volume(value: number) { if (this.#audio && Number.isFinite(value)) { update({ volume: Math.max(0, Math.min(1, value)) }); this.#fade?.apply(); this.persist(); } }
+  repeat() { const modes = ['off', 'all', 'one'] as const; update({ repeat: modes[(modes.indexOf(usePlayer.getState().repeat) + 1) % 3] }); this.persist(); }
+  shuffle() {
+    const s = usePlayer.getState();
+    if (!s.shuffle) { this.#originalOrder = s.entries.map((e) => e.entryId); update({ entries: shuffled(s.entries, s.currentId), shuffle: true }); }
+    else { update({ entries: this.#orderedEntries(s.entries), shuffle: false }); this.#originalOrder = []; }
+    this.persist();
+  }
+  mode(mode: 'original' | 'compatible') { update({ mode }); if (currentEntry() && this.#source) { this.#retryAttempts = 0; this.load(this.#intent, usePlayer.getState().position, true); } }
+  persist() {
+    if (!this.#api) return;
+    const s = usePlayer.getState();
+    saveProfile(this.#api.identity, 'queue', { version: 1, ...this.#snapshot(), repeat: s.repeat, volume: s.volume }).then((ok) => { if (!ok) useSession.getState().notify('浏览器存储不可用，本次队列无法保存在此设备。'); });
+  }
+  #report(submission: boolean) {
+    const api = this.#api; const entry = currentEntry(); if (!api || !entry) return;
+    if (!submission && api.supports('playbackReport')) return;
+    api.scrobble(entry.track.id, this.#startedAt, submission).catch(() => { if (this.#api === api) useSession.getState().notify(submission ? '收听提交结果未知；已保留此设备记录，不会自动重复提交。' : '当前播放状态未能提交，音乐可继续播放。'); });
+  }
+  #stateReport(force: boolean, reportedState?: 'starting' | 'playing' | 'paused' | 'stopped') {
+    const api = this.#api; const entry = currentEntry(); if (!api?.supports('playbackReport') || !entry || !this.#source) return;
+    if (!force && Date.now() - this.#lastReport < 30000) return;
+    this.#lastReport = Date.now();
+    api.request('reportPlayback', { mediaId: entry.track.id, mediaType: 'song', positionMs: Math.round(usePlayer.getState().position * 1000), state: reportedState ?? (usePlayer.getState().status === 'playing' ? 'playing' : 'paused'), playbackRate: 1, ignoreScrobble: true }, undefined, true).catch(() => { /* optional status report must never retry count submission */ });
+  }
+  #submit() {
+    if (this.#submission !== 'none' || !this.#api || !currentEntry()) return;
+    this.#submission = 'pending';
+    const api = this.#api; const generation = this.#generation; const occurrenceId = this.#occurrenceId;
+    const record: HistoryEntry = { occurrenceId, track: currentEntry()!.track, listenedAt: this.#startedAt, submitted: false };
+    const history = [record, ...usePlayer.getState().history].slice(0, 200); update({ history }); saveProfile(api.identity, 'history', history);
+    api.scrobble(record.track.id, record.listenedAt, true).then(() => {
+      if (this.#api !== api) return;
+      if (generation === this.#generation) this.#submission = 'done';
+      const next = usePlayer.getState().history.map((h) => h.occurrenceId === occurrenceId ? { ...h, submitted: true } : h); update({ history: next }); saveProfile(api.identity, 'history', next);
+    }).catch(() => { if (this.#api === api) { if (generation === this.#generation) this.#submission = 'unknown'; useSession.getState().notify('收听提交结果未知，已保留此设备记录。'); } });
+  }
+  #media() {
+    if (!('mediaSession' in navigator)) return;
+    const entry = currentEntry(); const state = usePlayer.getState();
+    const session = navigator.mediaSession;
+    const cover = this.#api?.coverUrl(entry?.track.coverArt, 512);
+    const metadata = session.metadata;
+    if (!entry) session.metadata = null;
+    else if (typeof MediaMetadata !== 'undefined' && (!metadata || metadata.title !== entry.track.title || metadata.artist !== entry.track.artist || metadata.album !== (entry.track.album ?? '') || metadata.artwork[0]?.src !== cover)) {
+      // Generate authenticated artwork only for the live session; never add its URL to a snapshot.
+      session.metadata = new MediaMetadata({ title: entry.track.title, artist: entry.track.artist, album: entry.track.album, artwork: cover ? [{ src: cover }] : [] });
+    }
+    navigator.mediaSession.playbackState = state.status === 'playing' ? 'playing' : entry ? 'paused' : 'none';
+    if (state.duration > 0 && Number.isFinite(state.duration)) { try { navigator.mediaSession.setPositionState({ duration: state.duration, position: Math.min(state.position, state.duration), playbackRate: 1 }); } catch { /* capability dependent */ } }
+  }
+}
+export const player = new PlayerEngine();
+if (import.meta.hot) import.meta.hot.dispose(() => { player.persist(); player.logout(); });

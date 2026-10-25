@@ -1,0 +1,23 @@
+.modal.mobile-queue-sheet { position: fixed; inset: auto 0 0; margin: 0; width: 100%; max-width: none; height: var(--queue-sheet-height, 75dvh); max-height: calc(100dvh - env(safe-area-inset-top, 0px)); padding: 0; border: 1px solid var(--line); border-bottom: 0; border-radius: 20px 20px 0 0; background: var(--bg); color: var(--text); overflow: hidden; transition: height .24s cubic-bezier(.2,.75,.3,1); }
+.modal.mobile-queue-sheet[open] { display: flex; flex-direction: column; animation: mobile-queue-enter .24s cubic-bezier(.2,.75,.3,1) both; }
+.modal.mobile-queue-sheet.is-expanded { height: var(--queue-sheet-height, 100dvh); }
+.modal.mobile-queue-sheet[data-dragging=true] { transition: none; }
+.modal.mobile-queue-sheet[open].is-closing { animation: mobile-queue-exit .19s ease-in both; }
+.modal.mobile-queue-sheet > .modal-heading { position: relative; flex-shrink: 0; min-height: 78px; margin: 0; padding: 28px 16px 12px 20px; }
+.modal.mobile-queue-sheet .modal-heading h2 { font-size: calc(21px * var(--ui-font-scale, 1)); }
+.modal.mobile-queue-sheet .modal-heading > .icon-button { width: 40px; height: 40px; }
+.queue-sheet-handle { position: absolute; top: 0; left: 16px; right: 16px; height: 26px; display: grid; place-items: center; padding: 0; background: transparent; touch-action: none; cursor: ns-resize; }
+.queue-sheet-handle > span { width: 38px; height: 4px; border-radius: 4px; background: var(--muted); opacity: .55; }
+.mobile-queue-scroll { padding: 0 16px max(18px, env(safe-area-inset-bottom, 0px)); overscroll-behavior: contain; }
+.mobile-queue-sheet .integrated-queue { padding-top: 4px; }
+.mobile-queue-sheet .integrated-queue-row { display: flex; align-items: center; gap: 4px; }
+.mobile-queue-sheet .integrated-queue-select { flex: 1; min-width: 0; padding: 10px 0; }
+.mobile-queue-sheet .integrated-queue-select .cover { width: 48px; }
+.mobile-queue-sheet .integrated-queue-time { display: none; }
+.mobile-queue-sheet .integrated-queue-actions { position: static; flex-shrink: 0; margin: 0; padding: 0; opacity: 1; pointer-events: auto; background: transparent; border: 0; box-shadow: none; }
+.mobile-queue-sheet .integrated-queue-actions .icon-button { width: 40px; height: 40px; }
+.mobile-queue-sheet .play-button { color: var(--text); background: transparent; border-radius: 7px; }
+@keyframes mobile-queue-enter { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes mobile-queue-exit { to { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .modal.mobile-queue-sheet { transition: none; } }
+:root[data-motion=reduced] .modal.mobile-queue-sheet { transition: none; }
