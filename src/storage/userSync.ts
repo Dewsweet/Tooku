@@ -25,8 +25,8 @@ let current: Connection | null = null;
 const update = (patch: Partial<SyncState>) => useUserSync.setState(patch);
 export const sameData = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 function preferences(source: UserPreferences = usePreferences.getState()): UserPreferences {
-  const { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts } = source;
-  return { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts };
+  const { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts, fadeDurationMs } = source;
+  return { theme, accent, sidePanel, panelWidth, trackColumns, panelSections, lyricSize, lyricDelay, reducedMotion, shortcuts, ...(fadeDurationMs ? { fadeDurationMs } : {}) };
 }
 function hasAccountData(data: UserData, device: UserPreferences): boolean {
   const organization = data.organization;
@@ -55,7 +55,7 @@ async function apply(c: Connection, data: UserData, preservePlayback = false) {
   c.applying = true;
   if (preservePlayback && (!sameData(data.queue, c.queue) || !sameData(data.history, c.history))) holdPlaybackSnapshots(c.api.identity, true);
   try {
-    usePreferences.getState().update(data.preferences);
+    usePreferences.getState().update({ ...data.preferences, fadeDurationMs: data.preferences.fadeDurationMs ?? 0 });
     useProfiles.setState((s) => { const avatars = { ...s.avatars }; if (data.profile.avatar) avatars[c.api.identity] = data.profile.avatar; else delete avatars[c.api.identity]; return { avatars, playlistCovers: { ...s.playlistCovers, [c.api.identity]: data.profile.playlistCovers }, artistCovers: { ...s.artistCovers, [c.api.identity]: data.profile.artistCovers ?? {} } }; });
     useLibrary.getState().change(c.api.identity, () => data.organization);
     useLyricsProfiles.getState().apply(c.api.identity, data.lyrics);
@@ -120,14 +120,14 @@ export async function connectUserSync(api: MusicApi) {
   // Preserve legacy device preferences once, so a different account does not inherit the previous account's appearance.
   const stored = await readProfile<UserPreferences>('device', 'preferences'); const device = stored ?? preferences();
   if (!stored) await writeLocalData('device', 'preferences', device);
-  usePreferences.getState().update(device);
+  usePreferences.getState().update({ ...device, fadeDurationMs: device.fadeDurationMs ?? 0 });
   const c: Connection = { api, client: null, base: { revision: 0, updatedAt: 0, data: null }, queue: null, history: [], stops: [], applying: false, busy: false, device, accepted: false, owner: '', requiresReview: false };
   current = c; update({ status: 'local', message: '仅保存在此设备', remote: null, identity: api.identity });
   const [queue, history, saved] = await Promise.all([readProfile<PlayerSnapshot>(api.identity, 'queue'), readProfile<HistoryEntry[]>(api.identity, 'history'), readProfile<Cache>(api.identity, 'sync')]);
   if (current !== c) return;
   c.queue = queue ?? null; c.history = history ?? [];
   if (saved?.version === 1 && isUserData(saved.local)) {
-    usePreferences.getState().update(saved.local.preferences);
+    usePreferences.getState().update({ ...saved.local.preferences, fadeDurationMs: saved.local.preferences.fadeDurationMs ?? 0 });
     if (isUserDocument(saved.base)) { c.base = saved.base; c.owner = saved.owner; c.accepted = saved.accepted; c.requiresReview = saved.requiresReview === true; }
   }
   try {
@@ -171,7 +171,7 @@ export function disconnectUserSync() {
   // Capture unsent edits before restoring device preferences. Never discard the legacy storage.
   void cache(c); c.client?.dispose(); current = null;
   holdPlaybackSnapshots(c.api.identity, false);
-  usePreferences.getState().update(c.device);
+  usePreferences.getState().update({ ...c.device, fadeDurationMs: c.device.fadeDurationMs ?? 0 });
   update({ status: 'local', message: '仅保存在此设备', remote: null, identity: '' });
 }
 export function localUserData() { return current ? capture(current) : null; }

@@ -1,11 +1,13 @@
 import { create } from 'zustand';
-import type { MusicApi } from '../../api/client';
+import { ApiError, type MusicApi } from '../../api/client';
 import type { HistoryEntry, PlaybackSource, PlayerSnapshot, QueueEntry, Track } from '../../domain/models';
 import { entriesFor, moveEntry, nextEntry, samePlaybackSource, shouldScrobble, shuffled } from '../../domain/queue';
 import { isPlaybackSource, isSourceIndex } from '../../domain/userData';
 import { readProfile, saveProfile } from '../../storage/local';
 import { useSession } from '../../state/session';
 import { createId } from '../../domain/ids';
+import { usePreferences } from '../../state/preferences';
+import { AudioFade } from './audioFade';
 
 type Status = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'blocked' | 'error';
 type QueueSnapshot = Pick<PlayerSnapshot, 'entries' | 'currentId' | 'position' | 'shuffle' | 'originalOrder'>;
@@ -18,6 +20,8 @@ interface PlayerState {
 const initial: PlayerState = { entries: [], currentId: null, status: 'idle', position: 0, duration: 0, repeat: 'off', shuffle: false, volume: 0.7, error: '', mode: 'original', history: [], volumeSupported: true, undo: null };
 export const usePlayer = create<PlayerState>(() => ({ ...initial }));
 const update = (patch: Partial<PlayerState>) => usePlayer.setState(patch);
+export const PLAYBACK_RETRY_DELAYS = [1000, 3000] as const;
+export const PLAYBACK_BUFFER_TIMEOUT = 15000;
 export const currentEntry = () => { const s = usePlayer.getState(); return s.entries.find((e) => e.entryId === s.currentId); };
 
 class PlayerEngine {
@@ -42,6 +46,44 @@ class PlayerEngine {
   #lastReport = 0;
   #channel: BroadcastChannel | null = null;
   #tabId = createId();
+  #fade: AudioFade | null = null;
+  #endingFade = false;
+  #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  #bufferTimer: ReturnType<typeof setTimeout> | undefined;
+  #retryAttempts = 0;
+  #occurrenceEntryId: string | null = null;
+  #fadeDuration() {
+    const value = usePreferences.getState().fadeDurationMs;
+    return usePlayer.getState().volumeSupported && Number.isFinite(value) ? Math.max(0, Math.min(2000, value)) : 0;
+  }
+  #cancelRecovery() { clearTimeout(this.#retryTimer); clearTimeout(this.#bufferTimer); this.#retryTimer = undefined; this.#bufferTimer = undefined; }
+  #watchBuffer() {
+    if (!this.#intent || this.#bufferTimer || this.#retryTimer) return;
+    const generation = this.#generation;
+    this.#bufferTimer = setTimeout(() => {
+      this.#bufferTimer = undefined;
+      if (generation === this.#generation && this.#intent) this.#failed('连接长时间没有响应。', true);
+    }, PLAYBACK_BUFFER_TIMEOUT);
+  }
+  #failed(message: string, retryable: boolean) {
+    if (this.#retryTimer) return;
+    clearTimeout(this.#bufferTimer); this.#bufferTimer = undefined;
+    this.#fade?.cancel();
+    const delay = PLAYBACK_RETRY_DELAYS[this.#retryAttempts];
+    if (retryable && this.#intent && delay !== undefined) {
+      const generation = this.#generation; this.#retryAttempts++;
+      update({ status: 'buffering', error: `连接中断，正在重试（${this.#retryAttempts}/${PLAYBACK_RETRY_DELAYS.length}）…` });
+      this.#retryTimer = setTimeout(() => {
+        this.#retryTimer = undefined;
+        if (generation === this.#generation && this.#intent) void this.load(true, usePlayer.getState().position, true);
+      }, delay);
+      this.#audio?.pause();
+    } else {
+      this.#intent = false;
+      update({ status: 'error', error: `${message}${retryable ? '自动重试已停止，请检查连接后点击播放重试。' : ''}` });
+      this.#audio?.pause(); this.#fade?.reset(); this.#media(); this.persist();
+    }
+  }
   connectedTo(api: MusicApi) { return this.#api === api; }
   currentTime() { return this.#source && this.#audio ? this.#audio.currentTime : usePlayer.getState().position; }
   preview(direction: 'next' | 'previous') {
@@ -58,45 +100,58 @@ class PlayerEngine {
   #init() {
     if (this.#audio) return;
     const audio = new Audio(); this.#audio = audio; audio.preload = 'metadata';
+    this.#fade = new AudioFade(audio, () => usePlayer.getState().volume, () => update({ volumeSupported: false }));
     const active = () => Boolean(this.#source && audio.getAttribute('src') === this.#source && (!audio.currentSrc || audio.currentSrc === this.#source) && this.#api);
     audio.addEventListener('loadedmetadata', () => {
       if (!active()) return;
       update({ duration: Number.isFinite(audio.duration) ? audio.duration : currentEntry()?.track.duration ?? 0 });
-      if (this.#resume > 0) { const resume = Math.min(this.#resume, usePlayer.getState().duration || this.#resume); try { audio.currentTime = resume; this.#previousTime = resume; } catch { useSession.getState().notify('此音频无法恢复到上次位置，请手动定位。'); } this.#resume = 0; }
+      if (this.#resume > 0) { const resume = this.#seekTarget(this.#resume); try { audio.currentTime = resume; this.#previousTime = resume; update({ position: resume }); } catch { useSession.getState().notify('此音频无法恢复到上次位置，请手动定位。'); } this.#resume = 0; }
       if (!this.#intent) update({ status: 'paused' });
     });
     audio.addEventListener('playing', () => {
       if (!active()) return;
       if (!this.#intent) { audio.pause(); return; }
+      this.#cancelRecovery();
       update({ status: 'playing', error: '' }); this.#media();
+      if (this.#fade && this.#fade.gain < 1 && !this.#endingFade) void this.#fade.ramp(1, this.#fadeDuration());
       this.#stateReport(true);
       if (!this.#announced) { this.#announced = true; this.#report(false); }
     });
     audio.addEventListener('pause', () => {
-      if (!active() || audio.ended || usePlayer.getState().status === 'error') return;
+      if (!active() || !audio.paused || audio.ended || this.#retryTimer !== undefined || usePlayer.getState().status === 'error') return;
+      this.#intent = false; this.#cancelRecovery(); this.#fade?.reset();
       update({ status: 'paused' }); this.#media(); this.persist(); this.#stateReport(true);
     });
-    for (const event of ['waiting', 'stalled']) audio.addEventListener(event, () => { if (active() && this.#intent) { update({ status: 'buffering' }); this.#stateReport(true, 'paused'); } });
+    for (const event of ['waiting', 'stalled']) audio.addEventListener(event, () => { if (active() && this.#intent) { update({ status: 'buffering' }); this.#watchBuffer(); this.#stateReport(true, 'paused'); } });
     audio.addEventListener('seeking', () => { this.#previousTime = audio.currentTime; });
     audio.addEventListener('seeked', () => { this.#previousTime = audio.currentTime; if (active()) update({ position: audio.currentTime }); });
     audio.addEventListener('timeupdate', () => {
       if (!active()) return;
       const delta = audio.currentTime - this.#previousTime;
+      if (!audio.paused && delta > 0 && !audio.seeking && !this.#retryTimer) { clearTimeout(this.#bufferTimer); this.#bufferTimer = undefined; }
       if (!audio.paused && !audio.seeking && delta > 0 && delta < 2) this.#listened += delta;
       this.#previousTime = audio.currentTime;
       update({ position: audio.currentTime });
+      const remaining = usePlayer.getState().duration - audio.currentTime;
+      if (this.#intent && !this.#endingFade && !audio.seeking && remaining > 0 && remaining <= this.#fadeDuration() / 1000) {
+        this.#endingFade = true; void this.#fade?.ramp(0, remaining * 1000);
+      }
       if (shouldScrobble(this.#listened, usePlayer.getState().duration)) this.#submit();
       if (Date.now() - this.#lastSave > 5000) { this.#lastSave = Date.now(); this.persist(); this.#media(); }
       this.#stateReport(false);
     });
     audio.addEventListener('ended', () => { if (active()) { if (shouldScrobble(this.#listened, usePlayer.getState().duration, true)) this.#submit(); this.#stateReport(true, 'stopped'); this.next(true); } });
     audio.addEventListener('error', () => { if (active()) {
-      this.#intent = false;
-      update({ status: 'error', error: '音频未能播放。可切换兼容 MP3 模式后重试，或检查网络、权限与服务器转码配置。' }); this.#media();
+      const code = audio.error?.code;
+      const expired = this.#sourceExpires > 0 && this.#sourceExpires <= Date.now();
+      this.#failed(expired ? '播放授权已过期。' : code === 2 ? '音频连接中断。' : code === 3 ? '音频解码失败，请切换兼容 MP3 模式后重试。' : code === 4 ? '音频格式或地址不可用，请检查权限或切换兼容 MP3 模式。' : '音频未能播放，请检查网络、权限或服务器转码配置。', code === 2 || expired);
     } });
-    audio.addEventListener('volumechange', () => update({ volume: audio.volume }));
-    const desired = usePlayer.getState().volume; audio.volume = desired;
-    update({ volumeSupported: Math.abs(audio.volume - desired) < 0.01 });
+    audio.addEventListener('volumechange', () => {
+      if (this.#fade && Math.abs(audio.volume - this.#fade.expectedVolume) < .001) return;
+      this.#fade?.cancel(); if (this.#fade) this.#fade.gain = 1;
+      update({ volume: audio.volume });
+    });
+    update({ volumeSupported: this.#fade.apply() });
     if (!this.#mediaEnabled && 'mediaSession' in navigator) {
       const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
         play: () => this.play(), pause: () => this.pause(), nexttrack: () => this.next(), previoustrack: () => this.previous(),
@@ -113,7 +168,7 @@ class PlayerEngine {
     if (typeof BroadcastChannel !== 'undefined') {
       this.#channel = new BroadcastChannel('tooku-playback');
       this.#channel.onmessage = (event: MessageEvent) => {
-        if (event.data?.identity === api.identity && event.data?.tabId !== this.#tabId && event.data?.action === 'play') this.pause();
+        if (event.data?.identity === api.identity && event.data?.tabId !== this.#tabId && event.data?.action === 'play') this.pause(true);
       };
     }
     const generation = this.#generation;
@@ -125,17 +180,19 @@ class PlayerEngine {
       const position = Number.isFinite(saved.position) ? Math.max(0, saved.position) : 0;
       update({ entries, currentId, shuffle: saved.shuffle === true, position, duration: entries.find((e) => e.entryId === currentId)?.track.duration ?? 0, status: currentId ? 'paused' : 'idle', volume: Number.isFinite(saved.volume) ? Math.min(1, Math.max(0, saved.volume)) : 0.7, repeat: ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off' });
       this.#resume = position;
-      if (this.#audio) this.#audio.volume = usePlayer.getState().volume;
+      this.#fade?.reset();
     }
     if (Array.isArray(history)) update({ history: history.filter((h) => typeof h.track?.id === 'string' && Number.isFinite(h.listenedAt)).slice(0, 200) });
   }
   logout() {
+    this.#cancelRecovery(); this.#fade?.cancel();
     this.#stateReport(true, 'stopped');
     this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#api = null;
     this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#audio?.load();
     this.#channel?.close(); this.#channel = null;
     this.#back = []; this.#originalOrder = []; this.#insertCursor = null;
     update({ ...initial, entries: [], history: [] });
+    this.#fade?.reset(); this.#retryAttempts = 0; this.#occurrenceEntryId = null;
     if ('mediaSession' in navigator) { navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; }
   }
   #restoreOrder(entries: QueueEntry[], order?: string[]) {
@@ -172,7 +229,7 @@ class PlayerEngine {
   restoreQueue(snapshot: QueueSnapshot) {
     this.#originalOrder = this.#restoreOrder(snapshot.entries, snapshot.originalOrder);
     update({ entries: snapshot.entries, currentId: snapshot.currentId, position: snapshot.position, shuffle: snapshot.shuffle === true, undo: null }); this.#resume = snapshot.position; this.#back = [];
-    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle' }); this.#media(); }
+    if (snapshot.currentId) this.load(false, snapshot.position); else { this.#cancelRecovery(); this.#fade?.cancel(); this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#fade?.reset(); update({ status: 'idle' }); this.#media(); }
     this.persist();
   }
   append(tracks: Track[], next = false, source?: PlaybackSource, sourceIndices?: readonly number[]) {
@@ -195,30 +252,37 @@ class PlayerEngine {
     if (entryId === s.currentId) {
       const next = entries[index] ?? (s.repeat === 'all' ? entries[0] : undefined);
       const intent = this.#intent; update({ currentId: next?.entryId ?? null });
-      if (next) this.load(intent); else { this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); update({ status: 'idle', position: 0, duration: 0 }); this.#media(); }
+      if (next) this.load(intent); else { this.#cancelRecovery(); this.#fade?.cancel(); this.#generation++; this.#intent = false; this.#source = ''; this.#sourceExpires = 0; this.#audio?.pause(); this.#audio?.removeAttribute('src'); this.#fade?.reset(); update({ status: 'idle', position: 0, duration: 0 }); this.#media(); }
     }
     this.persist();
   }
-  async load(play: boolean, resume = 0) {
+  async load(play: boolean, resume = 0, recovering = false) {
     const entry = currentEntry(); if (!entry || !this.#api) return;
     this.#init(); const audio = this.#audio!; const generation = ++this.#generation;
-    this.#intent = false; this.#source = ''; this.#sourceExpires = 0; audio.pause();
-    this.#intent = play; this.#resume = resume; this.#previousTime = resume; this.#listened = 0;
-    this.#occurrenceId = createId(); this.#startedAt = Date.now(); this.#submission = 'none'; this.#announced = false; this.#insertCursor = null;
+    this.#cancelRecovery(); this.#fade?.cancel();
+    this.#intent = play; this.#source = ''; this.#sourceExpires = 0; this.#endingFade = false;
+    if (!recovering || this.#occurrenceEntryId !== entry.entryId) { this.#retryAttempts = 0; this.#listened = 0; this.#occurrenceId = createId(); this.#occurrenceEntryId = entry.entryId; this.#startedAt = Date.now(); this.#submission = 'none'; this.#announced = false; }
+    this.#resume = resume; this.#previousTime = resume; this.#insertCursor = null;
     update({ status: 'loading', error: '', position: resume, duration: entry.track.duration ?? 0 });
+    if (!recovering && !audio.paused && this.#fadeDuration() > 0) {
+      const completed = await this.#fade!.ramp(0, this.#fadeDuration());
+      if (!completed || generation !== this.#generation || !this.#api) return;
+    }
+    audio.pause();
+    if (this.#fade) { this.#fade.gain = this.#fadeDuration() > 0 ? 0 : 1; this.#fade.apply(); }
     let location: { url: string; expiresAt?: number };
     try {
       const requested = this.#api.playbackUrl(entry.track.id, usePlayer.getState().mode);
       location = requested instanceof Promise ? await requested : requested;
     } catch (error) {
       if (generation !== this.#generation) return;
-      this.#intent = false;
-      update({ status: 'error', error: error instanceof Error ? error.message : '无法取得播放授权，请稍后重试。' });
+      this.#failed(error instanceof Error ? error.message : '无法取得播放授权，请稍后重试。', error instanceof ApiError && error.retryable);
       return;
     }
     if (generation !== this.#generation || !this.#api) return;
     this.#source = location.url; this.#sourceExpires = location.expiresAt ?? 0;
     audio.src = this.#source; audio.load(); this.#media(); this.#stateReport(true, 'starting');
+    this.#watchBuffer();
     if (play && this.#intent) await this.#start(generation); this.persist();
   }
   async #start(generation: number) {
@@ -226,15 +290,34 @@ class PlayerEngine {
     try { await this.#audio!.play(); } catch (error) {
       if (generation !== this.#generation || !this.#intent) return;
       const blocked = error instanceof DOMException && error.name === 'NotAllowedError';
-      update({ status: blocked ? 'blocked' : 'error', error: blocked ? '浏览器需要你点击播放以继续。' : '播放未成功，请检查连接或切换兼容模式。' });
+      if (blocked) { this.#cancelRecovery(); this.#intent = false; update({ status: 'blocked', error: '浏览器需要你点击播放以继续。' }); }
+      else this.#failed('播放未成功，请检查连接或切换兼容模式。', this.#audio?.error?.code === 2);
     }
   }
   play() {
     if (!currentEntry()) return;
-    if (!this.#source || usePlayer.getState().status === 'error' || this.#sourceExpires > 0 && this.#sourceExpires - Date.now() < 5 * 60000) { this.load(true, usePlayer.getState().position); return; }
-    this.#intent = true; this.#start(this.#generation);
+    const failed = usePlayer.getState().status === 'error';
+    if (failed) this.#retryAttempts = 0;
+    if (!this.#source || failed || this.#retryTimer || this.#sourceExpires > 0 && this.#sourceExpires - Date.now() < 5 * 60000) { this.load(true, usePlayer.getState().position, true); return; }
+    this.#cancelRecovery(); this.#fade?.cancel();
+    if (this.#audio?.paused && this.#fade && this.#fadeDuration() > 0) { this.#fade.gain = 0; this.#fade.apply(); }
+    this.#endingFade = false; this.#intent = true;
+    // Cancelling a pause fade may leave the element playing: play() then emits no new playing event.
+    if (this.#audio && !this.#audio.paused) {
+      update({ status: 'playing', error: '' }); this.#media();
+      if (this.#fade && this.#fade.gain < 1) void this.#fade.ramp(1, this.#fadeDuration());
+    } else this.#watchBuffer();
+    this.#start(this.#generation);
   }
-  pause() { this.#intent = false; this.#audio?.pause(); update({ status: currentEntry() ? 'paused' : 'idle' }); this.persist(); }
+  pause(immediate = false) {
+    this.#intent = false; this.#cancelRecovery(); this.#fade?.cancel();
+    const finish = () => { this.#audio?.pause(); this.#fade?.reset(); update({ status: currentEntry() ? 'paused' : 'idle', error: '' }); this.#media(); this.persist(); };
+    update({ status: currentEntry() ? 'paused' : 'idle', error: '' });
+    if (!immediate && this.#audio && !this.#audio.paused && this.#source && this.#fadeDuration() > 0) {
+      const generation = this.#generation;
+      void this.#fade!.ramp(0, this.#fadeDuration()).then((completed) => { if (completed && generation === this.#generation && !this.#intent) finish(); });
+    } else finish();
+  }
   toggle() { if (this.#intent) this.pause(); else this.play(); }
   next(natural = false) {
     const s = usePlayer.getState(); const id = nextEntry(s.entries, s.currentId, s.repeat, natural);
@@ -252,10 +335,22 @@ class PlayerEngine {
   seek(value: number) {
     const audio = this.#audio; const duration = usePlayer.getState().duration;
     if (!audio || !duration || !Number.isFinite(value)) return;
-    const target = Math.max(0, Math.min(value, duration));
+    const target = this.#seekTarget(value);
+    this.#endingFade = false; if (this.#intent) { this.#fade?.cancel(); this.#fade?.reset(); }
     try { audio.currentTime = target; this.#previousTime = target; update({ position: target }); this.persist(); } catch { useSession.getState().notify('此音频暂时无法定位到该位置。'); }
   }
-  volume(value: number) { if (this.#audio) { this.#audio.volume = value; update({ volumeSupported: Math.abs(this.#audio.volume - value) < 0.01, volume: this.#audio.volume }); this.persist(); } }
+  #seekTarget(value: number) {
+    const target = Math.max(0, Math.min(value, usePlayer.getState().duration || value));
+    const ranges = this.#audio?.seekable;
+    if (!ranges?.length) return target;
+    let nearest = ranges.start(0); let distance = Infinity;
+    for (let i = 0; i < ranges.length; i++) {
+      if (target >= ranges.start(i) && target <= ranges.end(i)) return target;
+      for (const edge of [ranges.start(i), ranges.end(i)]) if (Math.abs(edge - target) < distance) { nearest = edge; distance = Math.abs(edge - target); }
+    }
+    return nearest;
+  }
+  volume(value: number) { if (this.#audio && Number.isFinite(value)) { update({ volume: Math.max(0, Math.min(1, value)) }); this.#fade?.apply(); this.persist(); } }
   repeat() { const modes = ['off', 'all', 'one'] as const; update({ repeat: modes[(modes.indexOf(usePlayer.getState().repeat) + 1) % 3] }); this.persist(); }
   shuffle() {
     const s = usePlayer.getState();
@@ -263,7 +358,7 @@ class PlayerEngine {
     else { update({ entries: this.#orderedEntries(s.entries), shuffle: false }); this.#originalOrder = []; }
     this.persist();
   }
-  mode(mode: 'original' | 'compatible') { update({ mode }); if (currentEntry() && this.#source) this.load(this.#intent, usePlayer.getState().position); }
+  mode(mode: 'original' | 'compatible') { update({ mode }); if (currentEntry() && this.#source) { this.#retryAttempts = 0; this.load(this.#intent, usePlayer.getState().position, true); } }
   persist() {
     if (!this.#api) return;
     const s = usePlayer.getState();

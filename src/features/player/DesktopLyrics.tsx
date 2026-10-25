@@ -10,6 +10,8 @@ import { useLyrics } from '../lyrics/useLyrics';
 import { usePlayer } from './engine';
 import desktopLyricsCss from './desktop-lyrics.css?raw';
 import fontCss from '../../fonts.css?inline';
+import { LyricText } from './LyricText';
+import wordCss from './lyric-words.css?raw';
 
 interface DocumentPictureInPicture {
   requestWindow(options: { width: number; height: number }): Promise<Window>;
@@ -21,7 +23,7 @@ function DesktopLyricsContent({ track, target }: { track?: Track; target: Window
   const data = useLyrics(track);
   const position = usePlayer((state) => state.position);
   const globalDelay = usePreferences((state) => state.lyricDelay);
-  const { index } = lyricTiming(data.lyrics, position, globalDelay, data.edit);
+  const { index, delayMs } = lyricTiming(data.lyrics, position, globalDelay, data.edit);
   const lines = currentLyricLines(data.lyrics, index);
   const scroll = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [index, data.lyrics]);
@@ -30,7 +32,7 @@ function DesktopLyricsContent({ track, target }: { track?: Track; target: Window
   return <main className="desktop-lyrics" aria-label="桌面歌词" onContextMenu={(event) => event.stopPropagation()}>
     <div key={track?.id} ref={scroll} className="desktop-lyrics-scroll" tabIndex={0} aria-label={data.lyrics?.synced === false ? '歌词内容，可滚动查看' : '当前歌词'}>
       {lines.length ? lines.map((line, i) => <div className="desktop-lyric" key={i}>
-        <p className="desktop-original">{line.text || '♪'}</p>
+        <p className="desktop-original"><LyricText line={line} active={Boolean(data.lyrics?.synced)} delayMs={delayMs} nextLineMs={data.lyrics?.lines.slice(index + 1).find((next) => next.startMs !== undefined && next.startMs > (line.startMs ?? -Infinity))?.startMs} /></p>
         {data.edit?.showRomanization && line.romanization?.map((text, j) => <p className="desktop-romanization" key={j}>{text}</p>)}
         {data.edit?.showTranslation !== false && line.translation?.map((text, j) => <p className="desktop-translation" key={j}>{text}</p>)}
       </div>) : <p className="desktop-message" role="status">{message}</p>}
@@ -86,7 +88,7 @@ function DesktopLyricsControl({ track }: { track?: Track }) {
       const base = pip.document.createElement('base');
       base.href = `${window.location.origin}/`;
       const style = pip.document.createElement('style');
-      style.textContent = `${fontCss}\n${desktopLyricsCss}`;
+      style.textContent = `${fontCss}\n${desktopLyricsCss}\n${wordCss}`;
       pip.document.head.append(base, style);
       const syncTheme = () => {
         const theme = getComputedStyle(document.documentElement);

@@ -19,6 +19,11 @@ export function sampleData(): UserData {
     history: [{ occurrenceId: 'first', track, listenedAt: 1000, submitted: true }, { occurrenceId: 'second', track, listenedAt: 2000, submitted: false }] };
 }
 const cleanups: (() => void | Promise<void>)[] = [];
+it('accepts legacy preference documents and validates the optional fade duration', () => {
+  const legacy = sampleData(); expect(isUserData(legacy)).toBe(true);
+  for (const duration of [0, 200, 500, 1000, 2000]) expect(isUserData({ ...legacy, preferences: { ...legacy.preferences, fadeDurationMs: duration } })).toBe(true);
+  for (const duration of [-1, 2001, NaN, '500']) expect(isUserData({ ...legacy, preferences: { ...legacy.preferences, fadeDurationMs: duration } })).toBe(false);
+});
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllGlobals(); });
 async function listening(server: Server) {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));

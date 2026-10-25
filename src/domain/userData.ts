@@ -6,6 +6,7 @@ export interface UserPreferences {
   theme: 'light' | 'dark'; accent: string; sidePanel: boolean; panelWidth: number; trackColumns: number[];
   panelSections: { id: 'cover' | 'lyrics' | 'details' | 'queue'; enabled: boolean }[];
   lyricSize: number; lyricDelay: number; reducedMotion: boolean; shortcuts: boolean;
+  fadeDurationMs?: number;
 }
 export interface UserOrganization {
   activeId?: string; defaultId?: string;
@@ -50,10 +51,11 @@ function validTrack(v: unknown): v is Track {
 export function isUserData(v: unknown): v is UserData {
   if (!record(v) || !keys(v, ['version', 'preferences', 'profile', 'organization', 'queue', 'history', 'lyrics', 'recommendations']) || v.version !== 1 || v.lyrics !== undefined && !isLyricsSettings(v.lyrics) || v.recommendations !== undefined && !isRecommendationProfile(v.recommendations)) return false;
   const p = v.preferences; const art = v.profile; const o = v.organization; const q = v.queue;
-  if (!record(p) || !keys(p, ['theme', 'accent', 'sidePanel', 'panelWidth', 'trackColumns', 'panelSections', 'lyricSize', 'lyricDelay', 'reducedMotion', 'shortcuts'])
+  if (!record(p) || !keys(p, ['theme', 'accent', 'sidePanel', 'panelWidth', 'trackColumns', 'panelSections', 'lyricSize', 'lyricDelay', 'reducedMotion', 'shortcuts', 'fadeDurationMs'])
     || !['light', 'dark'].includes(String(p.theme)) || typeof p.accent !== 'string' || !/^#[0-9a-f]{6}$/i.test(p.accent)
     || !['sidePanel', 'reducedMotion', 'shortcuts'].every((k) => typeof p[k] === 'boolean') || !finite(p.panelWidth, 280, 560)
     || !finite(p.lyricSize, 12, 100) || !finite(p.lyricDelay, -600000, 600000)
+    || p.fadeDurationMs !== undefined && !finite(p.fadeDurationMs, 0, 2000)
     || !Array.isArray(p.trackColumns) || p.trackColumns.length !== 4 || !p.trackColumns.every((x) => finite(x, .25, 10))
     || !Array.isArray(p.panelSections) || p.panelSections.length !== 4 || new Set(p.panelSections.map((s) => record(s) ? s.id : null)).size !== 4
     || !p.panelSections.every((s) => record(s) && keys(s, ['id', 'enabled']) && ['cover', 'lyrics', 'details', 'queue'].includes(String(s.id)) && typeof s.enabled === 'boolean')) return false;

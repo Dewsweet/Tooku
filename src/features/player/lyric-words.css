@@ -1,0 +1,10 @@
+.lyric-word { white-space: pre-wrap; }
+.lyric-words[data-active=true] .lyric-word {
+  color: transparent;
+  background: linear-gradient(to right, var(--text) var(--word-progress, 0%), color-mix(in srgb, var(--text) 35%, transparent) var(--word-progress, 0%));
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+@media (forced-colors: active) {
+  .lyric-words[data-active=true] .lyric-word { color: CanvasText; background: none; }
+}

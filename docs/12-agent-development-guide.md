@@ -1,6 +1,6 @@
 # Tooku 开发接入指南
 
-更新日期：2026-10-23。面向首次接入本仓库的 Agent 和开发者，描述当前实现与查找入口。
+更新日期：2026-10-25。面向首次接入本仓库的 Agent 和开发者，描述当前实现与查找入口。
 
 根目录 [AGENTS.md](../AGENTS.md) 是开发约定入口；本指南提供模块地图、数据说明和常见改动路径。[开发记录](09-development-status.md) 汇总当前状态和带日期的验证证据；01–08、10–11 号文档保留调研、设计演进或发布矩阵，其中的示意目录、旧交互和排期不等于当前实现。持久化、歌词与推荐的当前细节分别见 13、15、16 号文档。
 
@@ -71,12 +71,14 @@ React 页面 / 通用控件
 | 左栏文件夹拖放 | `src/features/library/useOrganizationDrag.ts`、`src/state/library.ts` | 横线排序、变色移入文件夹、末尾横线移到根目录；主体管理页不参与拖放 |
 | API 与统一模型 | `src/api/client.ts`、`src/domain/models.ts` | HTTP/业务错误分开，DTO 转换集中；不要照抄旧文档示意字段名 |
 | 播放引擎与算法 | `src/features/player/engine.ts`、`src/domain/queue.ts` | 单实例媒体、异步竞争、队列条目身份与有效收听 |
+| 故障恢复与音量过渡 | `engine.ts`、`audioFade.ts`、`state/preferences.ts` | 网络/15 秒缓冲最多重试两次，保留进度和收听；单元素增益独立于保存音量，设置选择关闭或 0.2/0.5/1/2 秒 |
 | 底栏与完整播放器 | `src/features/player/PlayerUI.tsx`、`ExpandedPlayer.tsx`、`PlayerPages.tsx`、`player-pages.css` | 常驻底栏留在主包，完整播放器按首次打开加载；UI 发命令，不创建音频；桌面左右布局，手机控制/歌词横向整屏切换，三点菜单集中歌曲操作 |
 | 浏览器全屏 | `src/features/player/FullscreenButton.tsx` | 顶部/底栏复用；Fullscreen API 进入根节点、同步退出状态、重新提升原生弹窗，保持 DOM、查询与音频；不支持时禁用 |
 | 桌面歌词 | `src/features/player/DesktopLyrics.tsx`、`desktop-lyrics.css` | 底栏按钮打开 Document Picture-in-Picture；Portal 共用歌词查询与状态，当前句原文/译文同步显示，静态歌词手动滚动；窗口位置由浏览器控制，保留用户拖动位置；关闭、切账号与迟到请求清理，不接管音频 |
 | 播放侧栏 | `NowPlayingPanel.tsx`、`QueuePanel.tsx`、`MobileQueueSheet.tsx`、`PanelResizeHandle.tsx` | 完整队列覆盖在原侧栏内，关闭恢复；分栏拖动条由 App 放在面板间隙 |
 | 歌词 | `src/features/player/Lyrics.tsx` | 独立滚动视口、按锚点对齐与首尾留白、空闲恢复和偏移换算 |
 | 歌词来源与双语整理 | `src/features/lyrics/`、`src/domain/lyrics/`、`src/api/lyrics.ts` | 本地优先；来源/绑定/按歌修正共用，滚动状态独立；本地错误不触发自动补齐 |
+| 逐词时间与高亮 | `src/domain/lyrics/words.ts`、`src/features/player/LyricText.tsx`、`lyric-words.css` | 本地 Enhanced LRC 标签解析、同一偏移和音频时钟；仅当前行运行，画中画注入同一份样式，减少动态效果离散高亮 |
 | 网络歌词服务 | `server/lyrics/`、`NetworkLyricsSettings.tsx` | 同端口独立查询/检测、固定平台协议、受限缓存和真实观测；不依赖 Navidrome 会话 |
 | 音乐推荐 | `src/features/recommendations/`、`RecommendationSettings.tsx`、`server/recommendations/`（含 `cache.ts` 受限内存缓存） | 左栏为你推荐与主页文字入口；Last.fm / AI 扩展及补量、多样性筛选、整批四平台外链核实；服务端按账号加密保存密钥，详见 [音乐推荐](16-music-recommendations.md) |
 | 本机快照 | `src/storage/local.ts` | IndexedDB `tooku` / `profiles`；按身份分区的队列与历史 |
@@ -200,6 +202,10 @@ Navidrome 的 `getPlaylists` 返回账号可见的歌单。每库归属是 Tooku
 ### 播放
 
 UI 只调用 `player.replace/append/select/move/remove/play/pause/seek` 等命令；状态从 `usePlayer` 读取。不要给页面加第二个 `<audio>`、以 React key 重建播放器，或在切库时 `attach/logout` 现有引擎。
+
+网络媒体错误、已知播放授权过期、可恢复的播放授权连接/502/503/504/408 错误及持续 15 秒的缓冲采用 1/3 秒延迟，当前出现项最多自动恢复两次，不因短暂 `playing` 事件重置预算，也不自动切歌。恢复沿用 `occurrenceId`、开始时间、累计收听和提交状态；只有新出现项/新次播放重置。暂停、清空、切歌与退出取消定时器，迟到授权继续通过 generation 隔离。已知 seekable 区间限制跳转；无已知区间时沿用浏览器定位与错误提示。
+
+`audioFade.ts` 只给现有音频元素施加临时 gain，保存的 `volume` 始终是用户目标音量，内部 `volumechange` 不触发偏好漂移；不支持调音量时直接完成操作。切歌按所选时长先淡出再请求新流、播放后淡入，自然结尾提前淡出；暂停/继续可中断并接续。退出/跨标签接管立即停止，关闭完整播放器不改变音乐。`fadeDurationMs` 为账号偏好的可选毫秒字段，默认 0（关闭），合法范围 0–2000，旧备份/其他账号缺省重置为 0；为防旧前端拒绝新偏好字段，`serviceProtocol` 升为 2，SQLite 和备份版本仍为 1，不清原数据。
 
 队列出现项可带 `source: { kind, id, libraryId? }`，实体来源为 album/playlist/artist，收藏、最近收听和搜索使用 collection；记录实体 ID，不保存路由或认证 URL。各页面、主页/搜索卡片、表格的按钮/标题/双击/键盘/右键与加入队列入口统一传递来源。`replace(tracks, index, { source, shuffle? })` 由引擎判断模式：同一来源普通点歌保留随机，相同原始歌曲序列按索引映射到原有 entryId（含重复项），不重洗既有队列；内容已变更则按现有模式重建。不同来源默认顺序播放，显式 `shuffle: true` 始终启用随机，手动关闭后同一来源不自行恢复。无来源旧入口仅以完整原始歌曲序列回退判断，不猜测歌单。追加项独立携带来源，撤销及暂停恢复保留来源与随机原序；同步/导入仍不接管当前音频。
 

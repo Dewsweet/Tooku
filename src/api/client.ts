@@ -35,7 +35,7 @@ const errors: Record<number, string> = {
   60: '此服务器的许可状态不可用。', 70: '内容不存在，或已从音乐库移除。',
 };
 export class ApiError extends Error {
-  constructor(message: string, public code?: number) { super(message); this.name = 'ApiError'; }
+  constructor(message: string, public code?: number, public httpStatus?: number, public retryable = false) { super(message); this.name = 'ApiError'; }
 }
 export function normalizeServer(input: string, origin = window.location.origin) {
   const trimmed = input.trim();
@@ -200,8 +200,8 @@ export class MusicApi {
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, mode }),
         signal: AbortSignal.any([this.#abort.signal, AbortSignal.timeout(12000)]),
       });
-    } catch { throw new ApiError('无法取得播放授权，请检查 Tooku 服务连接。'); }
-    if (!response.ok) throw new ApiError(response.status === 401 ? '登录已失效，请重新连接。' : response.status === 429 ? '播放请求过于频繁，请稍后重试。' : `无法取得播放授权（HTTP ${response.status}）。`);
+    } catch { throw new ApiError('无法取得播放授权，请检查 Tooku 服务连接。', undefined, undefined, !this.#abort.signal.aborted); }
+    if (!response.ok) throw new ApiError(response.status === 401 ? '登录已失效，请重新连接。' : response.status === 429 ? '播放请求过于频繁，请稍后重试。' : `无法取得播放授权（HTTP ${response.status}）。`, undefined, response.status, [408, 502, 503, 504].includes(response.status));
     let result: unknown; try { result = await response.json(); } catch { throw new ApiError('播放授权响应无效。'); }
     const value = object(result); const url = str(value.url); const expiresAt = num(value.expiresAt);
     if (!url || !/^\/api\/tooku-stream\/[a-zA-Z0-9_-]{43}$/.test(url) || !expiresAt || expiresAt <= Date.now()) throw new ApiError('播放授权响应无效。');

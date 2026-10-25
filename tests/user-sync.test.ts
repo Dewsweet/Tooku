@@ -41,6 +41,18 @@ beforeEach(() => {
 });
 afterEach(() => { disconnectUserSync(); api.dispose(); useDisplayPreferences.setState(useDisplayPreferences.getInitialState()); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('user data migration and sync', () => {
+  it('backs up fade preferences, restores old defaults and isolates other accounts without attaching audio', async () => {
+    const attach = vi.spyOn(player, 'attach');
+    await connectUserSync(api);
+    usePreferences.getState().update({ fadeDurationMs: 500 }); await vi.advanceTimersByTimeAsync(900);
+    const backup = await exportUserBackup(); expect(backup.data.preferences.fadeDurationMs).toBe(500);
+    const legacy = structuredClone(backup.data); delete legacy.preferences.fadeDurationMs;
+    await chooseUserData('local', legacy); expect(usePreferences.getState().fadeDurationMs).toBe(0);
+    disconnectUserSync();
+    const other = new MusicApi(`${window.location.origin}/nd`, 'other-user', 'synthetic'); vi.spyOn(other, 'userData').mockResolvedValue(null);
+    await connectUserSync(other); expect(usePreferences.getState().fadeDurationMs).toBe(0);
+    expect(attach).not.toHaveBeenCalled(); other.dispose();
+  });
   it('keeps browser text size outside account sync, imports and backups', async () => {
     useDisplayPreferences.getState().setBaseFontSize(18);
     useDisplayPreferences.getState().setFontFamily('source-serif');

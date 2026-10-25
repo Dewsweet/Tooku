@@ -1,5 +1,6 @@
-import type { Lyrics, LyricLine } from '../models.ts';
+import type { Lyrics, LyricLine, LyricWord } from '../models.ts';
 import type { LyricDocument, LyricEdit, RawLyricTrack } from './types.ts';
+import { parseLyricWords } from './words.ts';
 
 export function lyricHash(input: unknown) {
   let hash = 2166136261;
@@ -13,15 +14,24 @@ const decode = (text: string) => text.replace(/&(?:amp|lt|gt|quot|apos|#39|#(\d+
 });
 export function parseLyricTrack(track: RawLyricTrack): LyricLine[] {
   const offset = track.offsetMs ?? 0;
-  if (track.lines) return track.lines.flatMap((line) => decode(line.text).replace(/\r\n?/g, '\n').split('\n').map((text) => ({ text: text.trim(), ...(line.startMs === undefined ? {} : { startMs: line.startMs + offset }) })));
+  if (track.lines) return track.lines.flatMap((line) => decode(line.text).replace(/\r\n?/g, '\n').split('\n').map((text) => {
+    const parsed = parseLyricWords(text, offset);
+    return { ...parsed, ...(line.startMs === undefined ? parsed.words?.length ? { startMs: parsed.words[0].startMs } : {} : { startMs: line.startMs + offset }) };
+  }));
   const text = decode(track.text ?? '').replace(/^\ufeff/, '').replace(/\r\n?/g, '\n');
   const embedded = Number(text.match(/\[offset:([+-]?\d+)\]/i)?.[1] ?? 0);
   return text.split('\n').flatMap((raw) => {
     if (/^\s*\[(?:ar|ti|al|by|re|ve|length|offset|tool):/i.test(raw)) return [];
     const times = [...raw.matchAll(/\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
     const value = raw.replace(/\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g, '').trim();
-    if (!times.length) return value ? [{ text: value }] : [];
-    return times.map((m) => ({ text: value, startMs: Number(m[1]) * 60000 + Number(m[2]) * 1000 + Number((m[3] ?? '').padEnd(3, '0')) - embedded + offset }));
+    const parsed = parseLyricWords(value, offset - embedded);
+    if (!times.length) return parsed.text ? [{ ...parsed, ...(parsed.words?.length ? { startMs: parsed.words[0].startMs } : {}) }] : [];
+    const firstTime = Number(times[0][1]) * 60000 + Number(times[0][2]) * 1000 + Number((times[0][3] ?? '').padEnd(3, '0'));
+    return times.map((m) => {
+      const time = Number(m[1]) * 60000 + Number(m[2]) * 1000 + Number((m[3] ?? '').padEnd(3, '0'));
+      const shift = time - firstTime;
+      return { ...parsed, ...(parsed.words ? { words: parsed.words.map((word) => ({ ...word, startMs: word.startMs + shift, ...(word.endMs === undefined ? {} : { endMs: word.endMs + shift }) })) } : {}), startMs: time - embedded + offset };
+    });
   });
 }
 // Han alone cannot distinguish Japanese from Chinese. All other letter scripts,
@@ -34,6 +44,16 @@ const marker = (text: string) => text.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, 
 const instrumental = (text: string) => /^(?:纯音乐(?:请欣赏)?|此歌曲为没有填词的纯音乐(?:请您欣赏)?|instrumental(?:only)?|instrumentaltrack)$/.test(marker(text));
 const noLyrics = (text: string) => /^(?:暂无歌词|无歌词|没有歌词|此歌曲暂无歌词|该音乐没有歌词(?:请欣赏)?|nolyrics(?:available|found)?)$/.test(marker(text));
 const content = (line: LyricLine) => Boolean(line.text.trim()) && !credit(line.text);
+
+function originalWords(words: LyricWord[] | undefined, text: string) {
+  if (!words || !words.map((word) => word.text).join('').startsWith(text)) return undefined;
+  let remaining = text.length;
+  return words.flatMap((word) => {
+    if (remaining <= 0) return [];
+    const value = word.text.slice(0, remaining); remaining -= value.length;
+    return [{ ...word, text: value }];
+  });
+}
 
 function inlineParts(text: string, separator?: string, manual = false, allowHan = false) {
   if (separator) {
@@ -104,7 +124,11 @@ function bilingual(lines: LyricLine[], edit?: LyricEdit) {
   const allowHan = strong >= 2 && strong >= delimited * .6;
   for (const line of lines) {
     const parts = inlineParts(line.text, edit?.separator, layout === 'inline', allowHan);
-    if (parts) { line.text = parts[0]; line.translation = [parts[1]]; }
+    if (parts) {
+      line.text = parts[0]; line.translation = [parts[1]];
+      // Inline translations do not share the original word clock.
+      if (line.words) { const words = originalWords(line.words, line.text); if (words?.length) line.words = words; else delete line.words; }
+    }
   }
   if (layout === 'inline') return;
   if (!lines.some((line) => line.translation) && halves(lines)) return;

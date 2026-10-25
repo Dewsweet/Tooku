@@ -2,9 +2,44 @@ import { describe, expect, it } from 'vitest';
 import { normalizeLyrics, parseLyricTrack } from '../src/domain/lyrics/normalize';
 import { isCandidate, isLyricsSettings, defaultLyricsSettings, type LyricDocument, type LyricLayout } from '../src/domain/lyrics/types';
 import { rankCandidates } from '../server/lyrics/matching';
+import { lyricWordProgress } from '../src/domain/lyrics/words';
 
 const document = (text: string): LyricDocument => ({ version: 1, source: 'local', recordId: 'song', tracks: [{ role: 'original', text }] });
 const edit = (layout: LyricLayout) => ({ layout, hash: 'test' });
+
+describe('local enhanced LRC words', () => {
+  it('preserves real word timing, an explicit ending marker, offsets and repeated lines', () => {
+    const lyrics = normalizeLyrics(document('[offset:100]\n[00:01][00:05]<00:01.00>你<00:01.50>好 <00:02.00>世界<00:03.00>'));
+    expect(lyrics.lines[0]).toEqual({ text: '你好 世界', startMs: 900, words: [
+      { text: '你', startMs: 900, endMs: 1400 }, { text: '好 ', startMs: 1400, endMs: 1900 }, { text: '世界', startMs: 1900, endMs: 2900 },
+    ] });
+    expect(lyrics.lines[1].words?.[0].startMs).toBe(4900);
+    expect(lyricWordProgress(lyrics.lines[0].words![0], 1150)).toBe(.5);
+    expect(lyricWordProgress(lyrics.lines[0].words![0], 800)).toBe(0);
+    expect(lyricWordProgress(lyrics.lines[0].words![0], 2000)).toBe(1);
+  });
+  it('parses word tags in structured local lines and keeps translations separate', () => {
+    const doc: LyricDocument = { version: 1, source: 'local', recordId: 'song', tracks: [
+      { role: 'original', offsetMs: -200, lines: [{ startMs: 1000, text: '<00:01>Hello <00:02>world<00:03>\n你好世界' }] },
+    ] };
+    const line = normalizeLyrics(doc).lines[0];
+    expect(line.text).toBe('Hello world'); expect(line.translation).toEqual(['你好世界']);
+    expect(line.words).toEqual([{ text: 'Hello ', startMs: 800, endMs: 1800 }, { text: 'world', startMs: 1800, endMs: 2800 }]);
+  });
+  it('keeps invalid word timelines readable and never invents timestamps for plain lyrics', () => {
+    for (const text of ['[00:01]<00:02>hello<00:01>world', '[00:01]prefix <00:02>hello']) {
+      const line = normalizeLyrics(document(text)).lines[0]; expect(line.words).toBeUndefined(); expect(line.text).not.toContain('<00:');
+    }
+    expect(normalizeLyrics(document('[00:01]普通逐行歌词')).lines[0]).toEqual({ text: '普通逐行歌词', startMs: 1000 });
+    expect(lyricWordProgress({ text: '尾词', startMs: 1000 }, 1500, 2000)).toBe(.5);
+    expect(normalizeLyrics(document('<00:01>只有<00:02>逐词')).lines[0].startMs).toBe(1000);
+  });
+  it('retains original word timing when a bilingual translation shares its text field', () => {
+    const line = normalizeLyrics(document('[00:01]<00:01>Hello <00:02>world / 你好世界')).lines[0];
+    expect(line.text).toBe('Hello world'); expect(line.translation).toEqual(['你好世界']);
+    expect(line.words?.map((word) => word.text).join('')).toBe(line.text); expect(line.words?.[1].startMs).toBe(2000);
+  });
+});
 describe('bilingual lyric normalization', () => {
   it.each([
     ['English', 'I', 'Hello world'], ['French', 'À bientôt', 'Écoute-moi'], ['Russian', 'Привет', 'Добрый вечер'],

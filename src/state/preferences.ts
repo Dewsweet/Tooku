@@ -24,9 +24,11 @@ export function normalizePanelSections(value: unknown): PanelSection[] {
 
 interface Preferences {
   theme: 'light' | 'dark'; accent: string; sidePanel: boolean; panelWidth: number; trackColumns: number[]; panelSections: PanelSection[]; lyricSize: number; lyricDelay: number; reducedMotion: boolean; shortcuts: boolean;
+  fadeDurationMs: number;
   update: (patch: Partial<Omit<Preferences, 'update'>>) => void;
 }
 export const usePreferences = create<Preferences>()(persist((set) => ({
   theme: 'light', accent: '#c83e55', sidePanel: true, panelWidth: 328, trackColumns: [2.8, 1.5, 1.8, .6], panelSections: defaultPanelSections, lyricSize: 30, lyricDelay: 0, reducedMotion: false, shortcuts: true,
-  update: (patch) => set(patch),
+  fadeDurationMs: 0,
+  update: (patch) => set({ ...patch, ...(patch.fadeDurationMs === undefined ? {} : { fadeDurationMs: Math.max(0, Math.min(2000, Number.isFinite(patch.fadeDurationMs) ? patch.fadeDurationMs : 0)) }) }),
 }), { name: 'tooku-preferences', version: 1, storage: browserJsonStorage<Preferences>() }));
