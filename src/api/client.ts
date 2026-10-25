@@ -53,21 +53,33 @@ export function authToken(password: string, salt: string) { return md5(password 
 
 const managedTransport = () => `${window.location.origin}/api/navidrome`;
 async function managedServer(base: string, signal?: AbortSignal) {
+  let response: Response;
   try {
-    const response = await fetch('/api/tooku/connection', {
+    response = await fetch('/api/tooku/connection', {
       method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server: base }),
       signal: signal ?? AbortSignal.timeout(8000),
     });
-    if (!response.ok) return { managed: false, connectionId: '' };
-    const result: unknown = await response.json();
-    if (!result || typeof result !== 'object' || !('managed' in result) || result.managed !== true) return { managed: false, connectionId: '' };
-    const connectionId = 'connectionId' in result && typeof result.connectionId === 'string' && /^[\w-]{43}$/.test(result.connectionId) ? result.connectionId : '';
-    return { managed: true, connectionId };
   } catch (error) {
     if (signal?.aborted) throw error;
-    return { managed: false, connectionId: '' };
+    throw new ApiError('无法连接 Tooku 持久化服务，请检查连接并重试。');
   }
+  if (!response.ok) {
+    const message = response.status === 403 ? '此音乐服务器未通过部署的地址策略，无法建立持久登录。私网地址需部署者显式开启。'
+      : response.status === 429 ? '连接请求过于频繁，请稍后再试。'
+      : response.status === 404 || response.status === 405 ? 'Tooku 持久化接口不可用，请更新并重启 Tooku 服务。'
+      : 'Tooku 无法连接或验证该音乐服务器，尚未建立持久登录。请检查地址和 Tooku 服务端网络。';
+    throw new ApiError(message, undefined, response.status);
+  }
+  let result: unknown;
+  try { result = await response.json(); } catch { throw new ApiError('Tooku 连接登记响应无效，请更新并重启服务。'); }
+  if (!result || typeof result !== 'object' || !('managed' in result) || typeof result.managed !== 'boolean') throw new ApiError('Tooku 连接登记响应无效，请更新并重启服务。');
+  // Only an explicit successful legacy response may select direct mode. A failed
+  // registration must not look like a normal login that silently loses persistence.
+  if (!result.managed) return { managed: false, connectionId: '' };
+  const connectionId = 'connectionId' in result ? result.connectionId : '';
+  if (typeof connectionId !== 'string' || connectionId && !/^[\w-]{43}$/.test(connectionId)) throw new ApiError('Tooku 连接票据无效，请重新检测服务器。');
+  return { managed: true, connectionId };
 }
 
 export async function prepareServerAlias(input: string, signal?: AbortSignal) {

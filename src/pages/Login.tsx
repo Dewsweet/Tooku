@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ArrowRight, LoaderCircle } from 'lucide-react';
-import { MusicApi, normalizeServer, testServerConnection } from '../api/client';
+import { ApiError, MusicApi, normalizeServer, testServerConnection } from '../api/client';
 import { useSession, errorMessage } from '../state/session';
 import { player } from '../features/player/engine';
 import { connectUserSync, disconnectUserSync, useUserSync } from '../storage/userSync';
@@ -67,7 +67,9 @@ export function Login() {
       const connected = new MusicApi(base, enteredUsername.trim(), enteredPassword);
       api = connected;
       await connected.prepare();
-      const version = await connected.connect(enteredPassword); setPassword(''); await connectUserSync(connected); await player.attach(connected);
+      const version = await connected.connect(enteredPassword); setPassword(''); await connectUserSync(connected);
+      if (connected.managed && !connected.persistent) throw new ApiError(`未能建立持久登录。${useUserSync.getState().message}`);
+      await player.attach(connected);
       await enterWorkspace(() => {
         rememberLoginServer(address);
         useSession.getState().setSession(connected, version);

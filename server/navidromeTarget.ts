@@ -68,6 +68,8 @@ export function requestResolvedTarget(target: ResolvedNavidromeTarget, url: URL,
   const request = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return request(url, {
     ...options,
-    lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
+    lookup: (_hostname, options, callback) => options.all
+      ? callback(null, [{ address: target.address, family: target.family }])
+      : callback(null, target.address, target.family),
   }, reply);
 }

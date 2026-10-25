@@ -12,6 +12,7 @@ vi.mock('../src/features/session/enterWorkspace', () => ({ enterWorkspace: vi.fn
 beforeEach(() => {
   localStorage.clear();
   useSession.setState({ api: null, version: '', notice: '' });
+  sync.useUserSync.setState(sync.useUserSync.getInitialState());
   vi.spyOn(MusicApi.prototype, 'prepare').mockResolvedValue();
   vi.spyOn(MusicApi.prototype, 'connect').mockResolvedValue('fixture-version');
   vi.spyOn(sync, 'connectUserSync').mockResolvedValue();
@@ -60,6 +61,16 @@ it('reads credentials autofilled without React events without changing the saved
   expect(MusicApi.prototype.connect).toHaveBeenCalledWith('synthetic-autofilled-password');
   expect(useSession.getState().api?.base).toBe(`${window.location.origin}/nd`);
   expect(localStorage.getItem('tooku-login-server')).toBe(window.location.origin);
+});
+
+it('does not enter the workspace or attach audio when a managed login cannot create its persistent session', async () => {
+  vi.spyOn(MusicApi.prototype, 'managed', 'get').mockReturnValue(true);
+  vi.spyOn(MusicApi.prototype, 'persistent', 'get').mockReturnValue(false);
+  sync.useUserSync.setState({ status: 'offline', message: '同步会话验证失败。' });
+  fireEvent.submit(form());
+  expect(await screen.findByRole('alert')).toHaveTextContent('未能建立持久登录。同步会话验证失败。');
+  expect(player.attach).not.toHaveBeenCalled(); expect(enterWorkspace).not.toHaveBeenCalled();
+  expect(useSession.getState().api).toBeNull(); expect(localStorage.getItem('tooku-login-server')).toBeNull();
 });
 
 it('preserves autofilled credentials and focuses an invalid server address before connecting', async () => {

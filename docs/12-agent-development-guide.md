@@ -36,6 +36,8 @@ React 页面 / 通用控件
 
 生产浏览器安全头及 Origin/HTTPS 判断集中在 `server/security.ts`；API handler 复用 `sameOriginRequest`，不能各自重新解析不可信 Origin。受管上游转发的头清理、原生登录/图片正文边界和路径白名单集中在 `server/navidromeProxy.ts`，地址解析、私网策略与 DNS 固定集中在 `server/navidromeTarget.ts`。只有受控 HTTPS 反向代理可启用 `TOOKU_TRUST_PROXY=true`，HSTS 另需 `TOOKU_HSTS=true`；部署调整后回归 Secure Cookie、单值 X-Forwarded-Proto、CSP 对直连 Navidrome 音频/封面/API 和画中画歌词的影响。
 
+域名和非默认端口通过 `requestResolvedTarget` 保留原 Host/端口/子路径及 HTTPS 证书域名，并将 socket 固定到已校验地址。自定义 lookup 必须按 Node 的 `options.all` 返回地址数组或单地址，不能以本机 IP 字面量测试替代域名回归。`managedServer` 的登记网络错误、非 2xx、无效 JSON/票据均报错，不切换到直连；仅旧服务成功且显式 `managed:false` 保留兼容。`Login` 在账号同步连接后检查受管会话是否已建立，失败不接入播放器、不开始工作区过渡；账号数据暂时读不到但会话已建立时仍沿用既有离线提示与缓存保护。
+
 登录页的 `testServerConnection` 集中在 `src/api/client.ts`：无账号参数和 Cookie 的 ping，校验音乐服务响应，认证要求也视为可达；使用单次无缓存 API 往返时间，不表示音频延迟或账号正确。8 秒超时，网络/HTTP/非音乐服务分别提示；修改地址与卸载取消请求并忽略迟到结果，不建立会话、同步数据或接入播放器。
 
 `Login.tsx` 保持连接配置与凭据为两个独立 POST 表单，`username` / `password` 的 id/name 和标准 autocomplete 不随文案变更；服务器地址使用不含 login 字样的 `navidrome-server` 标识，关闭自动补全并加 `data-bwignore` 提示，继续支持旧 `/nd` 文本输入。提交以 FormData 和实际服务器输入值为准，兼容密码管理器未派发 React change 的填写，并在重绘前同步内存草稿；不新增凭据持久化。参考 [Bitwarden 字段识别说明](https://contributing.bitwarden.com/architecture/deep-dives/autofill/generating-fill-scripts/)，独立表单和明确的字段名是主要措施；[Bitwarden 当前源码](https://github.com/bitwarden/clients/blob/main/apps/browser/src/autofill/services/collect-autofill-content.service.ts) 中 `data-bwignore` 受用户选项控制，不应仅依赖它，也不使用隐藏诱饵或临时只读字段。真实扩展自动填写需人工验收。

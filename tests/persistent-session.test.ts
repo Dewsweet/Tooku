@@ -13,6 +13,7 @@ import { CredentialVault, sessionLifetime } from '../server/vault';
 import { createRecommendationsApi } from '../server/recommendations/http';
 import { createRecommendationService } from '../server/recommendations/service';
 import { defaultRecommendationSettings, emptyRecommendationCredentials } from '../src/domain/recommendations';
+import type { UserData } from '../src/domain/userData';
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => { for (const done of cleanups.splice(0).reverse()) await done(); vi.unstubAllEnvs(); });
@@ -29,8 +30,8 @@ async function listen(server: Server) {
   const close = async () => { if (closed) return; closed = true; await new Promise<void>((done) => { server.close(() => done()); server.closeAllConnections(); }); };
   cleanups.push(close); return { origin: `http://127.0.0.1:${address.port}`, close };
 }
-async function fixture(options: Parameters<typeof createUserApi>[0] = { filename: ':memory:' }) {
-  const verify = options.verify ?? vi.fn(async ({ u }: { u: string }) => u.toLowerCase());
+async function fixture(options: Parameters<typeof createUserApi>[0] = { filename: ':memory:' }, verifyUpstream = false) {
+  const verify = verifyUpstream ? options.verify : options.verify ?? vi.fn(async ({ u }: { u: string }) => u.toLowerCase());
   const users = createUserApi({ ...options, verify }); let closed = false;
   const proxy = createNavidromeProxy(options.upstream ?? 'http://127.0.0.1:1', users);
   const playback = createPlaybackProxy(options.upstream ?? 'http://127.0.0.1:1', users);
@@ -53,6 +54,50 @@ async function fixture(options: Parameters<typeof createUserApi>[0] = { filename
 }
 
 describe('persistent browser sessions and encrypted credentials', () => {
+  it.each(['hostname', 'ip'] as const)('persists a nonconfigured %s and port through real upstream verification, data writes and restart', async (kind) => {
+    const seen: { host?: string; path: string; auth: string | null }[] = [];
+    const remote = await listen(createServer(async (req, res) => {
+      const url = new URL(req.url!, 'http://fixture');
+      let body = ''; for await (const chunk of req) body += chunk;
+      const args = req.method === 'POST' ? new URLSearchParams(body) : url.searchParams;
+      seen.push({ host: req.headers.host, path: url.pathname, auth: args.get('t') });
+      const method = url.pathname.split('/').at(-1);
+      const result = method === 'ping.view' ? { status: 'failed', error: { code: 10 } }
+        : method === 'getUser.view' && args.get('t') === 'a'.repeat(32) ? { status: 'ok', user: { username: args.get('username')?.toLowerCase() } }
+        : method === 'getSong.view' ? { status: 'ok', song: { id: 'remote-song' } }
+        : { status: 'failed', error: { code: 40 } };
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ 'subsonic-response': result }));
+    }));
+    const port = new URL(remote.origin).port;
+    const base = `${kind === 'hostname' ? `http://music.example.test:${port}` : remote.origin}/navidrome`;
+    const filename = join(directory(), 'tooku.sqlite');
+    const options = { filename, upstream: 'http://127.0.0.1:1', resolveTarget: async (target: string) => ({ base: target, address: '127.0.0.1', family: 4 as const }) };
+    const app = await fixture(options, true);
+    const registration = await app.call('connection', 'POST', { server: base });
+    expect(registration.status).toBe(200);
+    const { connectionId } = await registration.json() as { connectionId: string };
+    const auth = { u: 'Alice', t: 'a'.repeat(32), s: 'b'.repeat(32) };
+    const login = await app.call('session', 'POST', { ...auth, persistent: true, clientBase: base, connectionId });
+    expect(login.status).toBe(200); const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const info = await login.json() as { owner: string };
+    const data: UserData = { version: 1,
+      preferences: { theme: 'dark', accent: '#123456', sidePanel: true, panelWidth: 328, trackColumns: [2.8, 1.5, 1.8, .6], panelSections: ['cover', 'lyrics', 'details', 'queue'].map((id) => ({ id: id as 'cover' | 'lyrics' | 'details' | 'queue', enabled: true })), lyricSize: 30, lyricDelay: 0, reducedMotion: false, shortcuts: true, fadeDurationMs: 700 },
+      profile: { playlistCovers: {} }, organization: { folders: [], placements: {}, views: {} }, queue: null, history: [] };
+    expect((await app.call('data', 'PUT', { revision: 0, data }, cookie)).status).toBe(200);
+    await app.close();
+    const restored = await fixture(options, true);
+    expect(await (await restored.call('session', 'GET', undefined, cookie)).json()).toMatchObject({ clientBase: base, username: 'Alice', owner: info.owner, persistent: true });
+    expect(await (await restored.call('data', 'GET', undefined, cookie)).json()).toMatchObject({ revision: 1, data });
+    const song = await fetch(`${restored.origin}/api/navidrome/rest/getSong.view?id=remote-song&tookuSession=1&tookuUser=Alice`, { headers: { Cookie: cookie } });
+    expect(await song.text()).toContain('remote-song');
+    expect(seen.every((entry) => entry.host === new URL(base).host && entry.path.startsWith('/navidrome/rest/'))).toBe(true);
+    expect(seen.filter((entry) => entry.path.endsWith('getUser.view')).every((entry) => entry.auth === auth.t)).toBe(true);
+    const registrationBob = await (await restored.call('connection', 'POST', { server: base })).json() as { connectionId: string };
+    const bob = await restored.call('session', 'POST', { ...auth, u: 'Bob', persistent: true, clientBase: base, connectionId: registrationBob.connectionId });
+    expect(bob.status).toBe(200); const bobCookie = bob.headers.get('set-cookie')!.split(';')[0];
+    expect(await (await restored.call('data', 'GET', undefined, bobCookie)).json()).toMatchObject({ revision: 0, data: null });
+    expect((await restored.call('data', 'GET', undefined, cookie, { 'X-Tooku-Owner': (await bob.json() as { owner: string }).owner })).status).toBe(401);
+  });
   it('recognizes only the configured upstream and restores its original browser identity', async () => {
     const upstream = 'http://127.0.0.1:44533'; const app = await fixture({ filename: ':memory:', upstream });
     const resolve = (server: string) => app.call('connection', 'POST', { server });

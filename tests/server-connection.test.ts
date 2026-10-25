@@ -90,6 +90,24 @@ it('carries the verified target ticket through login into the persistent session
   api.dispose();
 });
 
+it.each([403, 404, 429, 502])('does not fall back to credential-bearing direct requests when registration fails with HTTP %s', async (status) => {
+  const fetch = vi.fn().mockResolvedValue(new Response('private upstream detail', { status })); vi.stubGlobal('fetch', fetch);
+  const api = new MusicApi('https://music.example.test:4533/navidrome', 'Alice', 'synthetic-password');
+  await expect(api.prepare()).rejects.toMatchObject({ name: 'ApiError', httpStatus: status });
+  expect(fetch).toHaveBeenCalledTimes(1); expect(fetch.mock.calls[0][0]).toBe('/api/tooku/connection');
+  expect(String(fetch.mock.calls[0][1].body)).not.toContain('synthetic-password'); api.dispose();
+});
+
+it('does not hide a registration network error or a malformed successful response as direct mode', async () => {
+  const fetch = vi.fn().mockRejectedValueOnce(new TypeError('private network detail')).mockResolvedValueOnce(new Response('<html>old deployment</html>')).mockResolvedValueOnce(new Response(JSON.stringify({ managed: true, connectionId: 'invalid' })));
+  vi.stubGlobal('fetch', fetch);
+  const api = new MusicApi('https://music.example.test:4533', 'Alice', 'synthetic-password');
+  await expect(api.prepare()).rejects.toThrow('持久化服务');
+  await expect(api.prepare()).rejects.toThrow('登记响应无效');
+  await expect(api.prepare()).rejects.toThrow('票据无效');
+  expect(fetch).toHaveBeenCalledTimes(3); api.dispose();
+});
+
 it.each(['', 'not-a-url', 'ftp://fixture.example.test', 'https://user:synthetic@fixture.example.test', 'https://fixture.example.test?token=synthetic'])('rejects invalid input before sending a request: %s', async (input) => {
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
   await expect(testServerConnection(input)).rejects.toThrow('服务地址');
