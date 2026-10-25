@@ -800,6 +800,13 @@ Apache License
 
 ---
 
-## Lyrics protocol research
+## Protocol references
 
-Tooku's minimal lyric adapters are independently implemented with Node built-ins; no code or packages from the following projects are included. Protocol research references (2026-10-20): NeteaseCloudMusicApiEnhanced/api-enhanced (MIT), jsososo/QQMusicApi (GPL-3.0), L-1124/QQMusicApi (GPL-3.0), chenmozhijin/LDDC (GPL-3.0). See docs/15-lyrics-service-design.md for source links and implementation boundaries. Future code reuse requires separate license review and attribution; module separation does not remove license obligations.
+Tooku's lyric adapters are independently implemented with Node built-ins. No source code or packages from the following protocol research references are distributed with Tooku:
+
+- https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced (MIT)
+- https://github.com/jsososo/QQMusicApi (GPL-3.0)
+- https://github.com/L-1124/QQMusicApi (GPL-3.0)
+- https://github.com/chenmozhijin/LDDC (GPL-3.0)
+
+Future code reuse requires separate license review and attribution; module separation does not remove license obligations.

@@ -6,3 +6,16 @@ dist
 .env.*
 coverage
 *.log
+AGENTS.md
+docs
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.key
+*.pem
+*.p12
+*.pfx
+*.tar
+*.tar.gz
+*.zip

@@ -9,3 +9,20 @@ test-results/
 *.tsbuildinfo
 *.log
 .local/
+
+# Local development and conversation records are not part of public exports.
+AGENTS.md
+docs/
+
+# Runtime databases, credentials and local backup archives.
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.key
+*.pem
+*.p12
+*.pfx
+*.tar
+*.tar.gz
+*.zip

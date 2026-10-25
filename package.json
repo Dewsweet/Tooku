@@ -1,6 +1,11 @@
 {
   "name": "tooku",
   "version": "0.1.0",
+  "description": "A self-hosted Navidrome web player / 自托管 Navidrome 第三方网页播放器",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/Dewsweet/Tooku.git" },
+  "homepage": "https://github.com/Dewsweet/Tooku",
+  "bugs": { "url": "https://github.com/Dewsweet/Tooku/issues" },
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",

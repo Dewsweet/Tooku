@@ -1,103 +1,65 @@
-# Tooku 容器部署
+# Deployment notes / 部署补充
 
-根目录 `compose.yaml` 是生产基线：Tooku 以 UID/GID 1000 运行，根文件系统只读，仅 `/tmp`、账号数据卷和独立密钥卷可写；容器不保留 Linux capabilities，并限制 PID、内存与 CPU。默认只监听宿主机 `127.0.0.1:8080`。
+[简体中文](../README.md) · [English](../README.en.md)
 
-## 上游 Navidrome
+The root Compose file builds Tooku from source and publishes it on loopback by default. The runtime uses UID/GID 1000, a read-only root filesystem, a temporary `/tmp`, dropped capabilities and resource limits. Node serves both the built interface and APIs.
 
-Navidrome 在宿主机 44533 时可直接启动：
+## Upstream and networking
 
-```powershell
-docker compose up --build -d
-docker compose ps
-docker compose exec tooku node scripts/container-healthcheck.mjs
+Set `NAVIDROME_UPSTREAM` to a Navidrome base URL reachable from the container. A port and subpath are supported; do not include credentials, query parameters or fragments. A loopback URL inside Docker points to that container, not another computer.
+
+To join an existing Docker network, set the following in your Compose `.env` and adapt the example service/network names:
+
+```dotenv
+NAVIDROME_UPSTREAM=http://navidrome:4533
+NAVIDROME_NETWORK=media
 ```
 
-Navidrome 与 Tooku 位于同一个已有 Docker 网络时，使用叠加文件。下面示例假定网络名为 `media`、服务名为 `navidrome`、容器端口为 4533：
-
-```powershell
-$env:NAVIDROME_NETWORK = 'media'
-$env:NAVIDROME_UPSTREAM = 'http://navidrome:4533'
-$env:TOOKU_ALLOW_PRIVATE_NAVIDROME = 'true'
+```bash
 docker compose -f compose.yaml -f deploy/compose.same-network.yaml up --build -d
 ```
 
-远程 HTTPS 上游不需要额外代理容器：
+The configured default upstream supports private addresses. Registering additional private servers at login requires `TOOKU_ALLOW_PRIVATE_NAVIDROME=true`; metadata/link-local and other disallowed destinations remain blocked.
 
-```powershell
-$env:NAVIDROME_UPSTREAM = 'https://music.example.com'
-docker compose up --build -d
-```
+## Reverse proxy
 
-地址可包含 Navidrome 子路径，但不能包含用户名、密码、query、hash 或尾斜杠。`NAVIDROME_UPSTREAM` 始终作为默认和兼容上游。登录页登记其他公网 HTTP(S) Navidrome 无需额外开关；若还要登记局域网、Docker 内网或回环地址，显式设置 `TOOKU_ALLOW_PRIVATE_NAVIDROME=true`。该开关允许 Tooku 服务进程访问私网地址，应只在可信用户可访问的部署中启用；链路本地、云元数据地址、未识别服务和重定向仍会被拒绝。
+Adapt `default.conf.template` to your HTTPS gateway. Replace `${TOOKU_UPSTREAM}` with the Tooku Node address, such as `http://127.0.0.1:8080`, or substitute it with your template tooling. The template is not automatically loaded by the Tooku image. Keep the actual TLS listen/certificate configuration supplied by your gateway.
 
-## 数据、密钥与备份
-
-- `tooku-data` 保存账号数据库、凭据安全库及歌词缓存。
-- `tooku-security-key` 只保存 AES-256-GCM 主密钥，和数据库分卷挂载。
-- 两个卷都由 UID/GID 1000 使用；镜像中的挂载点权限为 `0700`，新生成的密钥权限为 `0600`。
-- 不要执行 `docker compose down -v`，也不要把密钥内容放入 Compose、环境变量、镜像层或日志。
-
-当前账号数据库可在线备份：
-
-```powershell
-docker compose exec tooku node server/backup.ts /data/tooku-backup.sqlite
-docker compose cp tooku:/data/tooku-backup.sqlite ./tooku-backup.sqlite
-```
-
-完整迁移或回滚前先执行 `docker compose stop tooku`，再分别快照 `tooku-data` 和 `tooku-security-key`。安全库与原密钥必须成对保留；恢复旧数据库时不要生成新密钥，也不要让旧 `-wal` / `-shm` 留在恢复目标旁。卷快照和恢复命令取决于所用的 Docker 存储驱动或备份系统，应在副本上验证后再用于正式数据。
-
-## HTTPS 入口
-
-不要直接把容器的 8080 端口暴露到公网。让 HTTPS 反向代理转发整个站点到 `127.0.0.1:8080`，可参考 `default.conf.template`。模板关闭短期播放授权路径的访问日志，保留单段 Range / If-Range，允许最长 300 秒的上游响应，并将普通请求正文限制为 13 MiB。
-
-Node 服务收到的 `Host` 必须与浏览器访问的公开域名和端口一致。在实际处理 Tooku 请求的每个 `location`（含单独的 `/api`、播放路径）中保留：
+Proxy the entire site. Preserve the public Host **including its port** in every active proxy location:
 
 ```nginx
 proxy_set_header Host $http_host;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-`$http_host` 保留浏览器原始端口；`$host` 会丢失非默认公开端口，默认的 `$proxy_host` 则可能变成 fnOS 的内网地址，均可能导致 POST 的 Origin 与 Host 不匹配。公网端口经 NAT 转发时也不要拼接 `$host:$server_port` 代替原始 Host。参考 [Nginx proxy_set_header 文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)。Nginx 的 `proxy_set_header` 按配置层级继承；若某个 location 自己定义了其他请求头，应在该 location 同样检查 Host 和 HTTPS 转发，不假设一定继承 server 层设置。
+A location that defines its own `proxy_set_header` directives does not inherit that directive set from the server block. Check included proxy files as well. If public port 22443 maps to internal 443, do not substitute `$host` or `$host:$server_port` for the original public Host.
 
-面板生成的站点可能在 server 中 `include .../proxy/*.conf`，实际 `location ^~ /` 定义于被包含文件。用户已遇到 server 层改为 `$http_host` 后仍失败，而 include 中的 location 仍是 `Host $host`。应修改实际 location 中的 Host 并重载，不只修改站点外层配置；保存后确认面板没有重新生成旧值。若 server 同时声明两次 X-Forwarded-Proto，只保留一个正确值。对外 HTTPS 为非默认端口时，HTTP 跳转及 `error_page 497` 的目标也需包含实际公开 HTTPS 端口；这是入口跳转问题，不代替修复 location 的 Host。
+Only enable `TOOKU_TRUST_PROXY=true` behind a controlled proxy that clients cannot bypass. The TLS-terminating gateway must overwrite the protocol header; with multiple proxy hops, pass the correct HTTPS scheme through the controlled chain. Keep only one effective X-Forwarded-Proto value. Enable forced Secure cookies and HSTS once the HTTPS entry is working. HTTP redirects must target the actual public HTTPS port.
 
-若“直连同一个 Tooku 容器正常，HTTPS 反代后任何 Navidrome 地址都被拒绝”，先区分 `/api/tooku/connection` 的错误：`connectionError: origin` 表示 Tooku 请求来源校验失败，发生在地址解析之前；`private` / `policy` 才是目标地址策略；无原因码的 403 还可能来自外层代理。旧版前端曾将全部 403 误报为地址策略，旧服务返回的固定“仅允许同源访问。”也由新版前端识别为反代诊断。不要移除/改写 Origin、允许任意跨源或关闭地址校验；`TOOKU_TRUST_PROXY=true` 只用于已受控代理的 HTTPS 识别，不会绕过 Host 校验。无需提供账号、Cookie 或认证 URL即可排查这一步。
+Preserve Range and If-Range for seeking. The template permits 13 MiB request bodies and 300-second upstream timeouts. Playback grant paths and upstream authenticated query strings must not enter access/error logs; retain the template's logging settings when adapting it.
 
-只有 Node 端口不能被客户端绕过、代理会覆盖客户端传入的 `X-Forwarded-Proto`，且最终入口已全站 HTTPS 时，才启用下面三个开关：
+## Persistent data
 
-```powershell
-$env:TOOKU_TRUST_PROXY = 'true'
-$env:TOOKU_COOKIE_SECURE = 'true'
-$env:TOOKU_HSTS = 'true'
-docker compose up -d
-```
+| Volume | Mount | Contents |
+| --- | --- | --- |
+| `tooku-data` | `/data` | Account SQLite database, encrypted security database and lyric cache |
+| `tooku-security-key` | `/run/tooku-secret` | Original encryption key |
 
-## 升级、回滚与检查
+Back up both volumes together while Tooku is stopped for a consistent full snapshot. Restore into fresh volumes and keep the original key paired with its database. Account JSON exports do not include login or external service credentials. Do not use `docker compose down -v` when retaining data.
 
-升级前保存两个卷的快照，然后构建带明确版本标签的镜像。不要只复用不可追溯的 `latest`：
+A native deployment uses `.local/data` by default; set `TOOKU_DATA_DIR` and `TOOKU_SECRET_KEY_FILE` to choose other storage locations. Keep these files outside the web root and repository.
 
-```powershell
-docker build --pull -t tooku:2026-10-23 .
-docker tag tooku:2026-10-23 tooku:local
+## Updates and health
+
+Keep a copy of the current image and paired data/key snapshot before changing versions. Build from the new source and reuse your existing Compose project and volumes:
+
+```bash
+docker compose build tooku
 docker compose up -d --no-build
 docker compose ps
-docker compose logs --tail 100 tooku
+docker compose exec tooku node scripts/container-healthcheck.mjs
 ```
 
-Compose 使用 `tooku:local`，因此构建版本镜像后必须将该镜像标记为 `tooku:local` 再重建服务；否则 `--no-build` 可能继续使用旧本地镜像。保留原版本标签用于回滚，回滚时将目标版本重新标记为 `tooku:local`，并先确认它可读取当前数据结构；涉及数据降级时使用配套的数据库和密钥卷快照。
+If you build a separately tagged image with `docker build -t tooku:VERSION .`, either tag it as `tooku:local` or override the Compose `image` field before running `up --no-build`. Preserve the old image for rollback; an older application may require its matching pre-upgrade data/key snapshot.
 
-发布验收至少包含：健康状态变为 healthy；登录后重建容器仍能恢复账号数据和会话；原始流、兼容 MP3、seek/206 Range、歌手图上传与账号备份可用；停止期间生成的两个卷快照能在隔离环境恢复；回滚到上一镜像仍可读取未发生结构降级的数据。基础镜像提供 amd64/arm64 清单，但 Tooku 只有在目标架构实际完成构建和播放验证后才应宣称支持该架构。
-
-仓库内的静态检查可在没有 Docker 的环境执行；安装 Docker 后同一命令还会执行 `docker compose config --quiet`：
-
-```powershell
-npm.cmd run container:check
-```
-
-最终镜像应在每次发布时扫描。示例：
-
-```powershell
-trivy image --severity LOW,MEDIUM,HIGH,CRITICAL --ignore-unfixed=false tooku:2026-10-23
-```
-
-运行层会删除构建所需的 npm/corepack，并用 `node server/index.ts` 直接启动，以免把未使用的包管理器漏洞带入最终镜像。构建层仍需 pnpm，但不会复制到运行层。
+A successful healthcheck confirms the Tooku process and API identity, not every upstream operation. Browser/audio support, full restore, architecture compatibility and image vulnerability results depend on the actual deployment; do not infer them solely from a healthy container.
