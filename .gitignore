@@ -13,6 +13,7 @@ test-results/
 # Local development and conversation records are not part of public exports.
 AGENTS.md
 docs/
+/scripts/probe-lyrics.ts
 
 # Runtime databases, credentials and local backup archives.
 *.sqlite
