@@ -6,7 +6,7 @@ const precacheUrls = __TOOKU_PRECACHE__; // eslint-disable-line no-undef
 
 // Only immutable build assets and public brand images may enter the app-shell cache.
 // API, music, artwork, lyrics, sessions and account data are deliberately excluded.
-const cacheableStaticPath = (pathname) => pathname.startsWith('/assets/') || pathname === '/tooku.svg' || pathname === '/navidrome.svg';
+const cacheableStaticPath = (pathname) => pathname.startsWith('/assets/') && /\.(?:js|css)$/.test(pathname) || pathname === '/tooku.svg' || pathname === '/navidrome.svg';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll([new Request(shellUrl, { cache: 'reload' }), ...precacheUrls])));
@@ -26,9 +26,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Navigating directly to an API or backup must never replace the offline shell.
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/') || url.pathname === '/nd' || url.pathname.startsWith('/nd/')) return;
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).then(async (response) => {
-      if (response.ok) { const cache = await caches.open(cacheName); await cache.put(shellUrl, response.clone()); }
+      if (response.ok && /^text\/html\b/i.test(response.headers.get('Content-Type') ?? '')) { const cache = await caches.open(cacheName); await cache.put(shellUrl, response.clone()); }
       return response;
     }).catch(async () => (await caches.open(cacheName)).match(shellUrl).then((response) => response ?? Response.error())));
     return;
