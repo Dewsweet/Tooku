@@ -25,7 +25,7 @@ Tooku does not cache music for offline listening, manage downloads, provide real
 
 You need Docker Compose and a Navidrome server reachable from the container. Build the image from this repository; a prebuilt image is not required.
 
-The GitHub Actions / Docker Hub publishing process is not configured yet. These instructions continue to build from source; image addresses and configuration will be documented when available.
+The Docker publishing workflow runs when a GitHub Release is published. It verifies the version, builds a Linux AMD64 image, checks container health and pushes the corresponding version tag to Docker Hub. These instructions continue to build from source; image deployment details will be documented after the first image is verified.
 
 ```bash
 git clone https://github.com/Dewsweet/Tooku.git

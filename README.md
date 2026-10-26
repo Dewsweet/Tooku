@@ -53,6 +53,7 @@ Tooku 采用 React 单页应用与 Node.js 后端，同一个 Node 服务提供�
 
 ```text
 Tooku/
+├── .github/workflows/         # GitHub Release 触发的镜像发布工作流
 ├── src/                       # 前端与共享业务规则
 │   ├── api/                   # API 请求与数据转换
 │   ├── assets/                # 字体等构建资源
