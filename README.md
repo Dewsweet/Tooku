@@ -43,9 +43,10 @@ Tooku 采用 React 单页应用与 Node.js 后端，同一个 Node 服务提供�
 
 | 环境 | 要求 |
 | --- | --- |
-| Node.js | 24.22.1 或更新版本 |
-| pnpm | 使用项目锁定的 11.25.0，可通过 `npx` 运行，无需全局安装 |
-| Git | 用于克隆源码 |
+| Docker | 镜像部署需要 Docker Engine 与 Docker Compose，当前镜像仅支持 Linux AMD64 |
+| Node.js | 源码运行需要 24.22.1 或更新版本；Docker 部署无需在主机安装 |
+| pnpm | 源码安装使用项目锁定的 11.25.0，可通过 `npx` 运行，无需全局安装 |
+| Git | 克隆源码时使用；镜像部署可只下载 Compose 配置 |
 | Navidrome | 已运行，且 Tooku 服务能够访问 |
 | 浏览器 | 现代桌面或手机浏览器；远程部署使用 HTTPS |
 
@@ -69,7 +70,7 @@ Tooku/
 ├── scripts/                   # 启动、环境检查与维护工具
 ├── docs/                      # 英文说明、界面截图与第三方许可
 ├── .env.example               # 环境配置示例
-├── compose.yaml               # Docker Compose 配置
+├── compose.yaml               # 已发布镜像的 Docker Compose 配置
 ├── Dockerfile                 # Docker 镜像构建配置
 ├── package.json               # 项目信息、依赖与运行命令
 └── pnpm-lock.yaml             # 依赖锁文件
@@ -92,7 +93,7 @@ Tooku/
    npx --yes pnpm@11.25.0 install --frozen-lockfile
    ```
 
-3. 在项目根目录创建 `.env`，填写实际的 Navidrome 地址，可参考 [.env.example](.env.example)：
+3. 将 [.env.example](.env.example) 复制为 `.env`，填写实际的 Navidrome 地址，示例使用 `4533` 端口：
 
    ```dotenv
    NAVIDROME_UPSTREAM=http://127.0.0.1:4533
@@ -122,10 +123,44 @@ npm start
 本机数据默认保存在 `.local/data`。迁移时保留数据与对应的加密密钥。
 
 ### Docker 启动
+将以下内容保存为 `compose.yaml`，把 `NAVIDROME_UPSTREAM` 改为你的 Navidrome 地址，无需创建 `.env`：
+
+```yaml
+services:
+  tooku:
+    image: dewsweet/tooku:v0.1.0
+    container_name: tooku
+    restart: unless-stopped
+    ports:
+      - "18733:8080"
+    environment:
+      NAVIDROME_UPSTREAM: http://192.168.1.10:4533
+      TOOKU_SECRET_KEY_FILE: /run/tooku-secret/tooku-secret.key
+    volumes:
+      - ./data:/data
+      - ./secret:/run/tooku-secret
+```
+
+首次安装需先创建 `data` 和 `secret` 目录，并允许容器用户 `1000:1000` 写入。Linux 主机可在配置所在目录执行：
+
+```bash
+mkdir -p data secret
+sudo chown 1000:1000 data secret
+docker compose up -d
+```
+
+更新时修改 `image` 的版本标签，再执行：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+`data` 和 `secret` 分别保存数据和加密密钥，迁移时一起保留。已有部署继续使用原挂载；命名卷中的数据不会自动迁入这两个目录。
 
 ## 反馈
-
-欢迎通过 [GitHub Issues](https://github.com/Dewsweet/Tooku/issues) 反馈问题，说明浏览器、部署方式、复现步骤和错误提示。请勿附带密码、Cookie、认证 URL 或完整账号备份。
+欢迎通过 [GitHub Issues](https://github.com/Dewsweet/Tooku/issues) 反馈问题，说明浏览器、部署方式、复现步骤和错误提示。
+请勿附带密码、Cookie、认证 URL 或完整账号备份。
 
 本项目以个人使用为主，后续根据实际使用情况维护。
 

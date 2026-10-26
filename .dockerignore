@@ -2,6 +2,8 @@ node_modules
 dist
 .git
 .local
+data/
+secret/
 .env
 .env.*
 coverage

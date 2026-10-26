@@ -9,6 +9,8 @@ test-results/
 *.tsbuildinfo
 *.log
 .local/
+/data/
+/secret/
 
 # Local development and conversation records are not part of public exports.
 /AGENTS.md
