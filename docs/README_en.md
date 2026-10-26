@@ -1,8 +1,8 @@
-<p align="center"><img src="public/tooku.svg" width="96" alt="Tooku"></p>
+<p align="center"><img src="../public/tooku.svg" width="96" alt="Tooku"></p>
 
 # Tooku
 
-[简体中文](README.md) · English
+[简体中文](../README.md) · English
 
 A self-hosted, third-party Navidrome web player with a Chinese-language interface. Browse your library on desktop or mobile, play music with lyrics, and keep preferences and queue snapshots under your account.
 
@@ -25,6 +25,8 @@ Tooku does not cache music for offline listening, manage downloads, provide real
 
 You need Docker Compose and a Navidrome server reachable from the container. Build the image from this repository; a prebuilt image is not required.
 
+The GitHub Actions / Docker Hub publishing process is not configured yet. These instructions continue to build from source; image addresses and configuration will be documented when available.
+
 ```bash
 git clone https://github.com/Dewsweet/Tooku.git
 cd Tooku
@@ -45,7 +47,7 @@ docker compose ps
 
 Open `http://127.0.0.1:8080`, enter the Navidrome address and sign in with your Navidrome account. To access Tooku from your LAN, set `TOOKU_BIND_ADDRESS` to the Docker host's actual LAN IP.
 
-**Inside a container, `127.0.0.1` refers to that container.** For Navidrome on the Docker host, use a reachable listener such as `http://host.docker.internal:4533`; for another machine, use its reachable address. If both services share an existing Docker network, see the [network override](deploy/compose.same-network.yaml).
+**Inside a container, `127.0.0.1` refers to that container.** For Navidrome on the Docker host, use a reachable listener such as `http://host.docker.internal:4533`; for another machine, use its reachable address.
 
 Main settings:
 
@@ -63,7 +65,7 @@ Docker Compose reads `.env` automatically. During local development, Vite reads 
 
 ## HTTPS and Nginx
 
-Use HTTPS for remote access and proxy the **entire site** to the Tooku Node service. See the [Nginx template](deploy/default.conf.template) and [deployment notes](deploy/README.md). Serving only `dist` will not provide session, account-data, lyric or recommendation APIs.
+Use HTTPS for remote access and proxy the **entire site** to the Tooku Node service. Serving only `dist` will not provide session, account-data, lyric or recommendation APIs.
 
 Keep these headers in every location that actually proxies Tooku requests:
 
@@ -95,7 +97,7 @@ npx --yes pnpm@11.25.0 install --frozen-lockfile
 npm run dev
 ```
 
-The default development address is `http://127.0.0.1:18733`; check the terminal for the actual address. On Windows, use `npx.cmd` / `npm.cmd` if needed, or double-click `start-tooku.cmd`. Use `npm run dev:lan` for phone testing, then open the computer's LAN address.
+The default development address is `http://127.0.0.1:18733`; check the terminal for the actual address. Use `npm run dev:lan` for phone testing, then open the computer's LAN address.
 
 For native production:
 
@@ -115,6 +117,8 @@ npm test
 npm run build
 ```
 
+`npm test` runs the Node smoke tests included in the source. The full `tests/` regression suite is kept locally by the maintainer and runs automatically when present. Public source excludes that directory and the artist artwork probe script; neither is needed to build or run Tooku.
+
 Run `npm run security:audit`, `npm run security:licenses` and `npm run container:check` for dependency audits, license checks and container configuration checks. Without Docker, the container command runs static checks only.
 
 ## Layout
@@ -124,9 +128,7 @@ Run `npm run security:audit`, `npm run security:licenses` and `npm run container
 | `src/` | React interface and shared domain types/rules |
 | `server/` | Node HTTP, SQLite, sessions, Navidrome proxy, lyrics and recommendations |
 | `public/` | Brand assets, PWA manifest and license texts |
-| `tests/` | Unit, UI and API regression tests |
 | `scripts/` | Launchers, environment checks, licensing and dependency audit tools |
-| `deploy/` | Nginx and Docker network configuration |
 
 One Node process serves the built interface and APIs; no separate database service is needed. The frontend uses React, TypeScript and Vite, with TanStack Query for server queries, Zustand for interface state and IndexedDB for local snapshots.
 
@@ -136,6 +138,6 @@ Use [GitHub Issues](https://github.com/Dewsweet/Tooku/issues) to report the brow
 
 ## License
 
-Tooku's original code is licensed under the [MIT License](LICENSE). Copyright © 2026 Dewsweet.
+Tooku's original code is licensed under the [MIT License](../LICENSE). Copyright © 2026 Dewsweet.
 
 Dependencies, Source Han fonts and the Navidrome logo retain their respective licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The project license does not replace third-party terms or imply affiliation with Navidrome or external music platforms.

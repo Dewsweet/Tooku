@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 
 const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
 const compose = readFileSync(new URL('../compose.yaml', import.meta.url), 'utf8');
-const nginx = readFileSync(new URL('../deploy/default.conf.template', import.meta.url), 'utf8');
 const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
 
 const requireText = (source, expected, label) => {
@@ -35,14 +34,6 @@ for (const expected of [
   'tooku-security-key:/run/tooku-secret',
   'TOOKU_SECRET_KEY_FILE: /run/tooku-secret/tooku-secret.key',
 ]) requireText(compose, expected, 'Compose service');
-
-for (const expected of [
-  'location ^~ /api/tooku-stream/',
-  'access_log off;',
-  'proxy_set_header Range $http_range;',
-  'proxy_set_header If-Range $http_if_range;',
-  'client_max_body_size 13m;',
-]) requireText(nginx, expected, 'Nginx template');
 
 const docker = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8', windowsHide: true });
 if (docker.error?.code === 'ENOENT') {

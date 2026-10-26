@@ -6,10 +6,11 @@ import { createLyricsApi } from './server/lyrics/http.ts';
 import { createRecommendationsApi } from './server/recommendations/http.ts';
 import { tookuServiceProtocol } from './src/domain/serviceProtocol.ts';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'NAVIDROME_');
+  const hasLocalTests = existsSync(new URL('./tests/', import.meta.url));
   return {
     plugins: [react(), {
       name: 'tooku-local-health',
@@ -53,8 +54,10 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
     },
     test: {
+      include: ['tests/**/*.test.{ts,tsx,js,mjs}'],
       environment: 'jsdom',
-      setupFiles: ['./tests/setup.ts'],
+      setupFiles: hasLocalTests ? ['./tests/setup.ts'] : [],
+      passWithNoTests: !hasLocalTests,
       clearMocks: true,
     },
   };

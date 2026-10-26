@@ -36,7 +36,7 @@
     "test:watch": "vitest",
     "security:audit": "npx --yes pnpm@11.25.0 audit --prod --audit-level=low && npx --yes pnpm@11.25.0 audit --audit-level=low && node scripts/audit-signatures.mjs",
     "security:sbom": "node scripts/generate-sbom.mjs --output .local/security/tooku-prod.cdx.json && node scripts/generate-sbom.mjs --all --output .local/security/tooku-all.cdx.json",
-    "security:licenses": "node scripts/license-notices.mjs && git diff --exit-code -- THIRD_PARTY_NOTICES.md public/third-party-notices.txt",
+    "security:licenses": "node scripts/license-notices.mjs && git diff --exit-code -- docs/THIRD_PARTY_NOTICES.md public/third-party-notices.txt",
     "security:baseline": "npm run security:audit && npm run security:sbom && npm run security:licenses",
     "precontainer:check": "npm run runtime:check",
     "container:check": "node scripts/check-container-config.mjs"

@@ -11,9 +11,14 @@ test-results/
 .local/
 
 # Local development and conversation records are not part of public exports.
-AGENTS.md
-docs/
+/AGENTS.md
+/.notes/
+/deploy/
+/tests/
+/scripts/probe-artist-artwork.ts
 /scripts/probe-lyrics.ts
+/start-tooku.cmd
+/start.bat
 
 # Runtime databases, credentials and local backup archives.
 *.sqlite

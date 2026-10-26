@@ -7,7 +7,15 @@ dist
 coverage
 *.log
 AGENTS.md
-docs
+.notes/
+deploy/
+docs/*
+!docs/THIRD_PARTY_NOTICES.md
+tests
+scripts/probe-artist-artwork.ts
+scripts/probe-lyrics.ts
+start-tooku.cmd
+start.bat
 *.sqlite
 *.sqlite-*
 *.sqlite3
