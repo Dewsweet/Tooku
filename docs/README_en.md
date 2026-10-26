@@ -1,143 +1,182 @@
-<p align="center"><img src="../public/tooku.svg" width="96" alt="Tooku"></p>
+<p align="center"><img src="../public/tooku.svg" width="30%" alt="Tooku"></p>
 
 # Tooku
 
 [简体中文](../README.md) · English
 
-A self-hosted, third-party Navidrome web player with a Chinese-language interface. Browse your library on desktop or mobile, play music with lyrics, and keep preferences and queue snapshots under your account.
+Tooku is a **third-party Navidrome web player**. It is a **personal project**, **built entirely with AI**!
 
-Navidrome manages your music, scans, favorites, playlists and transcoding. Tooku provides the web interface, playback controls, managed connections and a small account-data service. It is not an official Navidrome project.
-
-**Version 0.1.0 — an early public preview.** Basic login, playback, account synchronization, Docker operation and HTTPS reverse proxying have received real-world usage feedback. Compatibility still depends on the browser, audio format and deployment environment.
+*Tooku comes from the Japanese word「遠く」, meaning “far away.” For this project, it expresses the hope that good music can travel farther and last longer.*
 
 ## Features
 
-- Albums, artists, favorites, search, listening history and playlists; playlist ordering, folders and custom artwork.
-- Sequential, shuffle and repeat playback, queue and position snapshots, system media controls and bounded playback recovery.
-- Adjustable fade-in/out, an expanded player, mobile layouts and browser fullscreen.
-- Local-first lyrics, bilingual text, timing offsets and local word timestamps; optional NetEase / QQ lyric lookup and desktop picture-in-picture lyrics.
-- Account data stored in Tooku SQLite, with browser-to-browser retrieval, export and restore. Login passwords are not stored.
-- Optional Last.fm / AI recommendations with verified platform links, plus a lightweight installable PWA shell.
+- [x] **A decent-looking music player**
+- [x] **Playlist management**: Create and edit playlists, reorder tracks by dragging, and organize playlists into folders.
+- [x] **Online lyrics**: Local lyrics take priority, with NetEase / QQ lookup, bilingual display, version selection and timing offsets.
+- [x] **AI recommendations**: Optionally connect Last.fm and AI services to generate music recommendations manually, with links to music platforms.
+- [x] **PWA**: Install through your browser and open Tooku in a standalone app window.
+- [x] **Accounts and personalization**: Light / dark modes, accent colors and custom images; account-based preferences, queues and history, with access across browsers, data export and restore.
 
-Tooku does not cache music for offline listening, manage downloads, provide real-time remote playback control or scan an independent music library. Formats and transcoding depend on Navidrome and the browser. Picture-in-picture and installation depend on browser support. External lyric and recommendation services are optional and may vary by region or upstream availability.
+## Screenshots
 
-## Deploy with Docker
+Main interface:
 
-You need Docker Compose and a Navidrome server reachable from the container. Build the image from this repository; a prebuilt image is not required.
+![Tooku main interface](pic/主界面.jpg)
 
-The Docker publishing workflow runs when a GitHub Release is published. It verifies the version, builds a Linux AMD64 image, checks container health and pushes the corresponding version tag to Docker Hub. These instructions continue to build from source; image deployment details will be documented after the first image is verified.
+Lyrics view:
 
-```bash
-git clone https://github.com/Dewsweet/Tooku.git
-cd Tooku
-```
+![Tooku lyrics view](pic/歌词.jpg)
 
-Create `.env` in the project directory and replace the example Navidrome address:
+## Architecture
 
-```dotenv
-NAVIDROME_UPSTREAM=https://music.example.com:22443
-TOOKU_BIND_ADDRESS=127.0.0.1
-TOOKU_HTTP_PORT=8080
-```
+Tooku combines a React single-page application with a Node.js backend. One Node service provides both the website and APIs, with no separate database service required.
 
-```bash
-docker compose up --build -d
-docker compose ps
-```
-
-Open `http://127.0.0.1:8080`, enter the Navidrome address and sign in with your Navidrome account. To access Tooku from your LAN, set `TOOKU_BIND_ADDRESS` to the Docker host's actual LAN IP.
-
-**Inside a container, `127.0.0.1` refers to that container.** For Navidrome on the Docker host, use a reachable listener such as `http://host.docker.internal:4533`; for another machine, use its reachable address.
-
-Main settings:
-
-| Setting | Purpose |
+| Layer | Technology and responsibilities |
 | --- | --- |
-| `NAVIDROME_UPSTREAM` | Default Navidrome base URL; ports and subpaths are supported, authentication parameters are not |
-| `TOOKU_BIND_ADDRESS` | Host address for the Docker port mapping; loopback by default |
-| `TOOKU_HTTP_PORT` | Published Docker port; defaults to `8080` |
-| `TOOKU_ALLOW_PRIVATE_NAVIDROME` | Allow registering other private-network servers at login; defaults to `false`. The configured default upstream remains supported |
-| `TOOKU_TRUST_PROXY` | Trust the HTTPS protocol header from a controlled proxy; defaults to `false` |
-| `TOOKU_COOKIE_SECURE` | Force Secure session cookies; defaults to `false` |
-| `TOOKU_HSTS` | Send HSTS on trusted HTTPS responses; defaults to `false` |
+| Frontend | React, TypeScript, Vite and React Router |
+| State and queries | TanStack Query for server data; Zustand for playback state and preferences |
+| Backend | Node.js built-in HTTP and SQLite, providing sessions, account data, a Navidrome proxy, lyrics and recommendation APIs |
+| Storage | SQLite for Tooku account data; IndexedDB and local storage for browser caches, snapshots and device preferences |
+| Music service | Navidrome manages music files, library scans, favorites, server playlists and transcoding |
 
-Docker Compose reads `.env` automatically. During local development, Vite reads `NAVIDROME_UPSTREAM` from it. For native production, supply configuration through process environment variables.
+## Requirements
 
-## HTTPS and Nginx
+| Environment | Requirement |
+| --- | --- |
+| Docker | Docker Engine and Docker Compose for image deployment; the current image supports Linux AMD64 only |
+| Node.js | Version 24.22.1 or later for running from source; not required on the host for Docker deployment |
+| pnpm | Source installation uses the pinned version 11.25.0; run it through `npx` without a global installation |
+| Git | Used to clone the source; image deployment only needs the Compose configuration |
+| Navidrome | Already running and reachable from the Tooku service |
+| Browser | A modern desktop or mobile browser; use HTTPS for remote deployment |
 
-Use HTTPS for remote access and proxy the **entire site** to the Tooku Node service. Serving only `dist` will not provide session, account-data, lyric or recommendation APIs.
+## Project structure
 
-Keep these headers in every location that actually proxies Tooku requests:
-
-```nginx
-proxy_set_header Host $http_host;
-proxy_set_header X-Forwarded-Proto $scheme;
+```text
+Tooku/
+├── .github/workflows/         # Image publishing workflow triggered by GitHub Releases
+├── src/                       # Frontend and shared business rules
+│   ├── api/                   # API requests and data conversion
+│   ├── assets/                # Build assets such as fonts
+│   ├── components/            # Shared UI components
+│   ├── domain/                # Data types and business rules
+│   ├── features/              # Player, playlists, lyrics, recommendations and more
+│   ├── pages/                 # Login, home, search, settings and other pages
+│   ├── pwa/                   # Service Worker
+│   ├── state/                 # Application state and preferences
+│   └── storage/               # Browser storage and account synchronization
+├── server/                    # Node backend and SQLite data service
+├── public/                    # Brand assets, PWA manifest and license texts
+├── scripts/                   # Startup, environment checks and maintenance tools
+├── docs/                      # English documentation, screenshots and third-party notices
+├── .env.example               # Environment configuration example
+├── compose.yaml               # Docker Compose configuration for the published image
+├── Dockerfile                 # Docker image build configuration
+├── package.json               # Project information, dependencies and commands
+└── pnpm-lock.yaml             # Dependency lockfile
 ```
 
-`$http_host` preserves the public port. If public port `22443` maps to internal port `443`, using `$host` drops that port and can fail same-origin checks. Check included location files as well as the outer server block.
+## Quick start
 
-Enable `TOOKU_TRUST_PROXY=true` only when clients cannot bypass the controlled proxy and the proxy overwrites the protocol header correctly. Enable forced Secure cookies and HSTS as appropriate after validating HTTPS. The template also preserves Range requests, limits uploads and disables access logging for temporary playback grants.
+### Local development
 
-## Data
+1. Clone the project:
 
-- Navidrome owns music, playlists, favorites and transcoding settings.
-- Tooku stores avatars, custom artwork, folders, preferences, queue snapshots and listening history. Browsers also keep local caches and device display settings.
-- Docker mounts `tooku-data` at `/data` and a separate `tooku-security-key` volume at `/run/tooku-secret`.
-- A full migration needs both the data volume and its original key volume. Do not use `docker compose down -v` when upgrading.
-- Account JSON exports exclude login credentials and external service secrets. Restored queue/history snapshots take effect on the next login.
+   ```bash
+   git clone https://github.com/Dewsweet/Tooku.git
+   cd Tooku
+   ```
 
-The native default data directory is `.local/data`. Databases, keys, `.env` and runtime caches must stay outside the source repository.
+2. Install dependencies:
 
-## Local development and native production
+   ```bash
+   npx --yes pnpm@11.25.0 install --frozen-lockfile
+   ```
 
-Use **Node.js 24.22.1 or later**. Dependencies are locked with pnpm; a global pnpm installation is not needed:
+3. Copy [.env.example](../.env.example) to `.env` and enter your actual Navidrome address. The example uses port `4533`:
 
-```bash
-npx --yes pnpm@11.25.0 install --frozen-lockfile
-npm run dev
-```
+   ```dotenv
+   NAVIDROME_UPSTREAM=http://127.0.0.1:4533
+   ```
 
-The default development address is `http://127.0.0.1:18733`; check the terminal for the actual address. Use `npm run dev:lan` for phone testing, then open the computer's LAN address.
+4. Start the development service:
 
-For native production:
+   ```bash
+   npm run dev
+   ```
+
+The default address is `http://127.0.0.1:18733`; check the terminal for the actual address. Enter your Navidrome address on the login page and sign in with your Navidrome account.
+
+### Production
+
+After installing dependencies, run:
 
 ```bash
 npm run build
 npm start
 ```
 
-`vite preview` only previews static output and does not replace the Tooku backend.
+The default address is `http://127.0.0.1:18733`. Set `TOOKU_HOST` and `TOOKU_PORT` to change the listening address and port.
 
-Basic checks:
+The production Node service receives configuration through process environment variables and does not automatically read the development `.env` file. To load that file, replace `npm start` with `node --env-file=.env server/index.ts`. The website and APIs must be served by the same Node service; hosting only `dist` as static files is insufficient.
 
-```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
+Native data is stored in `.local/data` by default. Keep both the data and its encryption key when migrating.
+
+### Docker
+
+Save the following as `compose.yaml` and change `NAVIDROME_UPSTREAM` to your Navidrome address. No `.env` file is needed:
+
+```yaml
+services:
+  tooku:
+    image: dewsweet/tooku:v0.1.0
+    container_name: tooku
+    restart: unless-stopped
+    ports:
+      - "18733:8080"
+    environment:
+      NAVIDROME_UPSTREAM: http://192.168.1.10:4533
+      TOOKU_SECRET_KEY_FILE: /run/tooku-secret/tooku-secret.key
+    volumes:
+      - ./data:/data
+      - ./secret:/run/tooku-secret
 ```
 
-`npm test` runs the Node smoke tests included in the source. The full `tests/` regression suite is kept locally by the maintainer and runs automatically when present. Public source excludes that directory and the artist artwork probe script; neither is needed to build or run Tooku.
+For the first installation, create the `data` and `secret` directories and allow the container user `1000:1000` to write to them. On a Linux host, run these commands in the directory containing the configuration:
 
-Run `npm run security:audit`, `npm run security:licenses` and `npm run container:check` for dependency audits, license checks and container configuration checks. Without Docker, the container command runs static checks only.
+```bash
+mkdir -p data secret
+sudo chown 1000:1000 data secret
+docker compose up -d
+```
 
-## Layout
+To update, change the version tag in `image`, then run:
 
-| Directory | Purpose |
-| --- | --- |
-| `src/` | React interface and shared domain types/rules |
-| `server/` | Node HTTP, SQLite, sessions, Navidrome proxy, lyrics and recommendations |
-| `public/` | Brand assets, PWA manifest and license texts |
-| `scripts/` | Launchers, environment checks, licensing and dependency audit tools |
+```bash
+docker compose pull
+docker compose up -d
+```
 
-One Node process serves the built interface and APIs; no separate database service is needed. The frontend uses React, TypeScript and Vite, with TanStack Query for server queries, Zustand for interface state and IndexedDB for local snapshots.
+`data` and `secret` store data and encryption keys respectively; keep both when migrating. Existing deployments should retain their original mounts. Data in named volumes will not automatically migrate into these two directories.
+
+### Proxy
+If Tooku uses a non-default port after the reverse proxy and gets stuck during the server address detection due to a mismatch in the `Host` header, you can modify the following fields in the `location` block that actually proxies Tooku. After saving, check the configuration and reload Nginx.
+
+```nginx
+proxy_set_header Host $http_host;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
 
 ## Feedback
 
-Use [GitHub Issues](https://github.com/Dewsweet/Tooku/issues) to report the browser, deployment method, reproduction steps and error message. Passwords, cookies, authenticated URLs and complete account backups are not needed. The PWA keeps its basic shell; ongoing work focuses on actual usage issues and stability.
+Report issues through [GitHub Issues](https://github.com/Dewsweet/Tooku/issues), including your browser, deployment method, reproduction steps and error message.
+Do not include passwords, cookies, authenticated URLs or complete account backups.
+
+This project is primarily for personal use and will be maintained according to actual usage needs.
 
 ## License
 
-Tooku's original code is licensed under the [MIT License](../LICENSE). Copyright © 2026 Dewsweet.
+Tooku is licensed under the [MIT License](../LICENSE).
 
-Dependencies, Source Han fonts and the Navidrome logo retain their respective licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The project license does not replace third-party terms or imply affiliation with Navidrome or external music platforms.
+Third-party dependencies, Source Han fonts and the Navidrome logo retain their respective licenses. See the [third-party notices](THIRD_PARTY_NOTICES.md).

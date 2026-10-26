@@ -1,4 +1,4 @@
-<p align="center"><img src="public/tooku.svg" width="60%" alt="Tooku"></p>
+<p align="center"><img src="public/tooku.svg" width="30%" alt="Tooku"></p>
 
 # Tooku
 
@@ -123,6 +123,7 @@ npm start
 本机数据默认保存在 `.local/data`。迁移时保留数据与对应的加密密钥。
 
 ### Docker 启动
+
 将以下内容保存为 `compose.yaml`，把 `NAVIDROME_UPSTREAM` 改为你的 Navidrome 地址，无需创建 `.env`：
 
 ```yaml
@@ -158,6 +159,14 @@ docker compose up -d
 
 `data` 和 `secret` 分别保存数据和加密密钥，迁移时一起保留。已有部署继续使用原挂载；命名卷中的数据不会自动迁入这两个目录。
 
+### 反向代理
+如果反向代理后 Tooku 使用非默认端口时因 Host 不一致卡在服务器地址检测，可以在实际代理 Tooku 的 `location` 修改以下字段，保存后检查配置并重载 Nginx。
+
+```nginx
+proxy_set_header Host $http_host;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
 ## 反馈
 欢迎通过 [GitHub Issues](https://github.com/Dewsweet/Tooku/issues) 反馈问题，说明浏览器、部署方式、复现步骤和错误提示。
 请勿附带密码、Cookie、认证 URL 或完整账号备份。
@@ -166,6 +175,6 @@ docker compose up -d
 
 ## 许可证
 
-Tooku 原创代码采用 [MIT License](LICENSE)，版权所有 © 2026 Dewsweet。
+Tooku 采用 [MIT License](LICENSE)
 
 第三方依赖、思源字体和 Navidrome 图标保留各自许可证，详见[第三方许可说明](docs/THIRD_PARTY_NOTICES.md)。
